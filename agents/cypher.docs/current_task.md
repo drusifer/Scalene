@@ -5,7 +5,7 @@
 **Started:** 2026-07-02
 
 ## Task Description
-`*plan sprint` for Project Scalene (Bloop chain triggered by `/bloop *plan Scalene Project`). Wrote initial PRD and user stories from `Scalene BRD.md`.
+`*plan sprint` for Project Scalene (Bloop chain triggered by `/bloop *plan Scalene Project`). Wrote initial PRD and user stories from `docs/BRD.md`.
 
 ## Progress
 - [x] Read BRD, extracted epics/FRs/NFRs

@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene, Sprint 1
 
 **Owner:** Mouse
-**Status:** Planned — pending Morpheus plan review
+**Status:** ✅ **SPRINT CLOSED 2026-07-09** — all 4 phases complete, Trin UAT + Morpheus review passed every phase. All 9 user stories' acceptance criteria verified (`docs/STORY_TRACEABILITY.md`). 77/77 tests passing.
 **Source:** `docs/USER_STORIES.md` + `docs/ARCHITECTURE.md`
 
 Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included — no deploy/CI/system-level env var work in this sprint (`SCALENE_BYPASS` is a subprocess-local var per architecture, not infra-scoped); revisit if that changes.
@@ -15,7 +15,7 @@ Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included 
 | 1.2 | `PolicyConfig`: YAML loader + schema validation for `scalene_policy.yaml` | STORY-201 |
 | 1.3 | JSONPath rule evaluator (`PolicyConfig.evaluate`) + fail-safe path on malformed/no-match | STORY-102, STORY-202 |
 
-**Exit criteria:** Trin UAT passes on all 3 tasks; Morpheus reviews for architecture fit before Phase 2 starts.
+**Exit criteria:** Trin UAT passes on all 3 tasks; Morpheus reviews for architecture fit before Phase 2 starts. ✅ **DONE 2026-07-08** — `src/scalene/taint_state.py`, `src/scalene/policy_config.py`, 20/20 tests passing.
 
 ---
 
@@ -29,7 +29,7 @@ Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included 
 | 2.2 | `MaskingEngine`: mask decision + payload substitution + audit log entry + `systemMessage` on mask (Smith Gate 1 follow-up) | STORY-401 |
 | 2.3 | `PostToolUse` hook adapter: provenance updater, taint state write-back | STORY-302 |
 
-**Exit criteria:** Trin UAT passes (incl. verifying masking never raises); Morpheus reviews.
+**Exit criteria:** Trin UAT passes (incl. verifying masking never raises); Morpheus reviews. ✅ **DONE 2026-07-09** — `src/scalene/masking.py`, `src/scalene/hook_adapter.py`, 40/40 tests passing.
 
 ---
 
@@ -43,7 +43,7 @@ Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included 
 | 3.2 | Scanner subprocess isolation: spawn with `SCALENE_BYPASS=1`, confirm no hook re-trigger | STORY-601 |
 | 3.3 | Onboarding success confirmation output (rule + YAML diff) + audit log entry (Smith Gate 1 follow-up) | STORY-501 |
 
-**Exit criteria:** Trin UAT passes (incl. verifying onboarding works fully offline); Morpheus reviews.
+**Exit criteria:** Trin UAT passes (incl. verifying onboarding works fully offline); Morpheus reviews. ✅ **DONE 2026-07-09** — `src/scalene/reputation.py`, `secrets_scan.py`, `scan_worker.py`, `subprocess_isolation.py`, `onboard.py`, 67/67 tests passing.
 
 ---
 
@@ -57,7 +57,7 @@ Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included 
 | 4.2 | Perf test: verify pre-tool-call evaluation stays under 15ms (NFR, flagged by Smith at Gate 2) | NFR-Performance |
 | 4.3 | Full UAT across all 9 stories' acceptance criteria | All |
 
-**Exit criteria:** All AC pass; Morpheus final review; sprint closes.
+**Exit criteria:** All AC pass; Morpheus final review; sprint closes. ✅ **DONE 2026-07-09** — `src/scalene/cli.py`, `main_cli.py`, `docs/SETUP.md`, `docs/STORY_TRACEABILITY.md`, `tests/test_performance.py`, 77/77 tests passing. **SPRINT 1 CLOSED.**
 
 ---
 

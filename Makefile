@@ -18,13 +18,30 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test setup install-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
 
+setup: ## Create project venv and install dependencies (editable install)
+	@python3 -m venv .venv
+	@./.venv/bin/pip install -q --upgrade pip
+	@./.venv/bin/pip install -q -e .
+	@$(MAKE) MKF_ACTIVE=1 install-hooks
+	@echo "venv ready at .venv (make test/run use it automatically)"
+
+install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
+	@chmod +x .githooks/*
+	@git config core.hooksPath .githooks
+	@if command -v gitleaks >/dev/null 2>&1; then \
+		echo "git hooks installed (core.hooksPath=.githooks); gitleaks found on PATH."; \
+	else \
+		echo "git hooks installed (core.hooksPath=.githooks); WARNING: gitleaks not found on PATH — pre-commit secret scan will be skipped until installed (e.g. 'apt install gitleaks')."; \
+	fi
+
 test: ## Run unit tests
-	@python -m unittest discover -s tests
+	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 via_index: ## Build the via index required by the via MCP server
 	@via index "$(CURDIR)"
@@ -164,7 +181,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat test setup install-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -214,6 +231,12 @@ chat: ## Post a message to CHAT.md (usage: make chat MSG="<msg>" [PERSONA="<name
 		$(if $(TO),--to "$(TO)")
 
 test: ## Run unit tests
+	@./agents/tools/mkf.py $(V) $@
+
+setup: ## Create project venv and install dependencies (editable install)
+	@./agents/tools/mkf.py $(V) $@
+
+install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@./agents/tools/mkf.py $(V) $@
 
 via_index: ## Build the via index required by the via MCP server

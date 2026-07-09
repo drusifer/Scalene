@@ -1,7 +1,7 @@
 # Product Requirements Document — Project Scalene
 
 **Owner:** Cypher (PM)
-**Source:** `Scalene BRD.md`
+**Source:** `docs/BRD.md`
 **Status:** Draft v1 — pending Smith (UX) gate
 
 ## Vision

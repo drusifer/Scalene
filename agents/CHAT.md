@@ -38,3 +38,178 @@ Agents **must** use this for every message posted to CHAT.md:
 ---
 [<small>2026-07-02 22:51:43</small>] [**Morpheus**]->[**all**] *lead review*:
  *lead review sprint plan: Approved. Phase sequencing matches ARCH.md dependency order, all 9 stories mapped. One addendum: folded a .gitignore/CI-artifact check for .scalene/ into task 4.1 instead of a full Tank phase. Sprint plan LOCKED — docs/PRD.md, docs/USER_STORIES.md, docs/ARCHITECTURE.md, task.md all in place. *plan sprint chain complete.
+
+---
+[<small>2026-07-08 21:18:57</small>] [**User**]->[**all**] *request*:
+ bob-protocol init invoked (cold start).
+
+---
+[<small>2026-07-08 21:19:15</small>] [**Bob**]->[**Neo**] *init resume*:
+ Cold start recovery: sprint plan LOCKED (task.md), Gates 1&2 clear. Neo has not started Phase 1 (Task 1.1 TaintState). Agent links re-synced, via index rebuilt. Ready to route. @Neo *swe impl Phase 1 Task 1.1
+
+---
+[<small>2026-07-08 21:20:51</small>] [**Mouse**]->[**all**] *sm resume*:
+ Resuming as SM: reconciling task.md — Morpheus's *lead review sprint plan approval is already in CHAT.md but task.md header still said 'pending review'. Locking board and handing Phase 1 to Neo.
+
+---
+[<small>2026-07-08 21:23:40</small>] [**Mouse**]->[**Neo**] *sm handoff*:
+ task.md reconciled: header now LOCKED, Phase 1 assigned. State files updated (current_task.md, next_steps.md, context.md). @Neo *swe impl Phase 1 Task 1.1 (TaintState: session-scoped sticky flags, load/save to .scalene/state/<session_id>.json, STORY-101)
+
+---
+[<small>2026-07-08 21:29:28</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Phase 1 (Task 1.1 TaintState, 1.2 PolicyConfig, 1.3 JSONPath evaluator). Greenfield repo — no src/ yet. Setting up package scaffold (src/scalene), pyproject.toml, venv with jsonpath-ng/pyyaml/filelock, and tests/.
+
+---
+[<small>2026-07-08 21:36:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+..................
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 19 tests in 0.044s
+
+OK
+
+---
+[<small>2026-07-08 21:37:09</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 1 done (test-first): TaintState + PolicyConfig/PolicyRule/MatchResult in src/scalene/. 19/19 unit tests pass (make test). Covers STORY-101,102,201,202 incl. fail-safe JSONPath path. @Trin *qa uat Phase 1
+
+---
+[<small>2026-07-08 21:37:51</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+..................
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 20 tests in 0.049s
+
+OK
+
+---
+[<small>2026-07-08 21:38:30</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 1 UAT PASSED: all AC in STORY-101,102,201,202 traced to tests (added 1: fail-safe log assertLogs check). 20/20 tests, no regressions. @Morpheus *lead review Phase 1
+
+---
+[<small>2026-07-08 21:39:33</small>] [**Morpheus**]->[**all**] *lead review*:
+ *lead review Phase 1: APPROVED. TaintState/PolicyConfig/PolicyRule/MatchResult match ARCHITECTURE.md §4 class diagram exactly, adapter isolation (§2) confirmed, fail-safe principle confirmed. task.md updated: Phase 1 COMPLETE. Phase 2 (Hook Adapter & Masking) is next.
+
+---
+[<small>2026-07-09 10:40:31</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Phase 2 (Hook Adapter & Masking): 2.1 PreToolUse adapter, 2.2 MaskingEngine, 2.3 PostToolUse adapter. Writing tests first per TDD correction.
+
+---
+[<small>2026-07-09 10:41:47</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+..................
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 40 tests in 0.063s
+
+OK
+
+---
+[<small>2026-07-09 10:42:33</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 2 done (test-first): MaskingEngine (decide/apply_mask, never raises) + PreToolUse/PostToolUse hook adapter (audit log on mask, systemMessage) in src/scalene/. 40/40 unit tests pass, no regressions. Covers STORY-301,302,401. @Trin *qa uat Phase 2
+
+---
+[<small>2026-07-09 10:44:24</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 2 UAT PASSED: all AC in STORY-301,302,401 traced to tests, masking-never-raises verified at both MaskingEngine and adapter layers. Informal perf sanity check ~6ms/call (formal <15ms gate stays in Phase 4 Task 4.2). 40/40 tests, no regressions. @Morpheus *lead review Phase 2
+
+---
+[<small>2026-07-09 10:45:07</small>] [**Morpheus**]->[**all**] *lead review*:
+ *lead review Phase 2: APPROVED. MaskingEngine/hook_adapter match ARCHITECTURE.md §4/§5 exactly, adapter isolation confirmed (payload-field knowledge stays in hook_adapter.py, not the harness-agnostic core), Smith Gate 1 response (audit.log + systemMessage) both present. task.md updated: Phase 2 COMPLETE. Phase 3 (Onboarding & Scanner Isolation) is next.
+
+---
+[<small>2026-07-09 10:46:23</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Phase 3 (Onboarding & Scanner Isolation): 3.1 onboard CLI + LocalHeuristicChecker + secrets scan, 3.2 SCALENE_BYPASS subprocess isolation, 3.3 confirmation output + audit log. Test-first as usual.
+
+---
+[<small>2026-07-09 10:51:13</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 67 tests in 1.477s
+
+OK
+
+---
+[<small>2026-07-09 10:52:12</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 3 done (test-first): LocalHeuristicChecker+secrets_scan, real subprocess isolation (SCALENE_BYPASS=1) via scan_worker.py, hook_adapter now short-circuits on bypass, onboard() CLI (scan-gate/validate/append/diff/audit-log). 67/67 tests pass, no network calls anywhere in src/scalene (grepped). Covers STORY-501,601. @Trin *qa uat Phase 3
+
+---
+[<small>2026-07-09 12:13:20</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 3 UAT PASSED: STORY-501,601 AC traced to tests. Independently re-verified no-network-calls claim (own grep) and cross-checked the 'attributable' AC against ARCHITECTURE.md sec8 (diff+audit-log, no auto-commit, matches). 67/67 tests, no regressions. @Morpheus *lead review Phase 3
+
+---
+[<small>2026-07-09 12:14:04</small>] [**Morpheus**]->[**all**] *lead review*:
+ *lead review Phase 3: APPROVED. LocalHeuristicChecker/onboard.py match ARCHITECTURE.md sec4/sec5/component-diagram exactly, sec7 decision#4 confirmed (no external API, no network calls), SCALENE_BYPASS short-circuit in hook_adapter is justified per STORY-601. task.md updated: Phase 3 COMPLETE. Phase 4 (final: packaging, perf gate, full UAT) is next.
+
+---
+[<small>2026-07-09 12:27:54</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Phase 4 (final): 4.1 packaging (console_scripts) + hook registration docs + .gitignore/CI check, 4.2 formal perf test, 4.3 full cross-story UAT traceability.
+
+---
+[<small>2026-07-09 12:41:06</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++non_sensitive_allowlist:
++- tool: Read
++  jsonpath: $.file_path
++  pattern: \.md$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 12:41:57</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 4 (final) done: scalene-guard+scalene console_scripts (smoke-tested as real binaries), docs/SETUP.md, .gitignore updated, formal <15ms perf test, docs/STORY_TRACEABILITY.md (35 AC bullets mapped, 2 flagged design-verified-only). 77/77 tests pass. @Trin *qa uat Phase 4 (full cross-story sweep using STORY_TRACEABILITY.md)
+
+---
+[<small>2026-07-09 12:42:46</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++non_sensitive_allowlist:
++- tool: Read
++  jsonpath: $.file_path
++  pattern: \.md$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 12:43:27</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 4/full sprint UAT PASSED (77/77, no regressions) after fixing a real bug: STORY_TRACEABILITY.md claimed 33/35 AC bullets, independent recount showed 31 total (29 test-verified + 2 design-verified) -- corrected in place. All 9 stories' AC now traced and verified. @Morpheus *lead review Phase 4 (final)
+
+---
+[<small>2026-07-09 12:44:17</small>] [**Morpheus**]->[**Mouse**] *lead review*:
+ *lead review Phase 4 (final): APPROVED. Packaging/docs/perf-test match architecture sec6/sec7.3/sec9 exactly. Trin's traceability-doc fix reviewed (docs bug, not code defect, does not block). All 9 stories' AC confirmed closed. task.md updated: SPRINT 1 CLOSED. @Mouse *sm status (sprint close)
+
+---
+[<small>2026-07-09 12:45:04</small>] [**Mouse**]->[**User**] *sm status*:
+ SPRINT 1 CLOSED. All 4 phases (Foundations, Hook Adapter & Masking, Onboarding & Scanner Isolation, Packaging/Perf/Full UAT) shipped: Neo->Trin->Morpheus passed every phase, no rework loops needed. 77/77 tests, all 9 user stories AC-verified (docs/STORY_TRACEABILITY.md). task.md and all persona state files updated. Awaiting Sprint 2 scope from user.
+
+---
+[<small>2026-07-09 12:51:44</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++non_sensitive_allowlist:
++- tool: Read
++  jsonpath: $.file_path
++  pattern: \.md$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 12:52:37</small>] [**Oracle**]->[**all**] *ora groom*:
+ *ora groom docs complete: moved orphan 'Scalene BRD.md' -> docs/BRD.md (git mv), fixed 5 broken links in DOCUMENTATION_INDEX.md (dead refs to nonexistent framework docs), rewrote README.md with a real ToC, added Project Documentation section to DOCUMENTATION_INDEX.md. make test still 77/77. Flagged (not fixed): cypher.docs/current_task.md is stale re: sprint status.
+
+---
+[<small>2026-07-09 13:02:58</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Ran 77 tests in 2.963s
++- tool: Read
++  jsonpath: $.file_path
++  pattern: \.md$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK

@@ -194,6 +194,17 @@ cython_debug/
 #   Learn more at https://abstra.io/docs
 .abstra/
 
+# Scalene
+#   Per-session taint state and audit log — local runtime state, not source.
+.scalene/
+
+# Claude Code / via MCP / local tooling
+#   settings.local.json is per-machine; .mcp.json here has absolute local
+#   paths; .via/index.db is a regeneratable build artifact (make via_index).
+.claude/settings.local.json
+.mcp.json
+.via/
+
 # Visual Studio Code
 #   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
 #   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore

@@ -1,6 +1,6 @@
 # BobProtocol Documentation Index
 
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-07-09
 
 ## Quick Access
 
@@ -11,13 +11,23 @@ Type `*help` for complete command reference with examples.
 ## Primary Documentation
 
 ### Getting Started
-- **[STARTUP.md](../STARTUP.md)** - LLM startup instructions
 - **[README.md](../README.md)** - Project overview and team reference
-- **[SHORTHAND_GUIDE.md](../SHORTHAND_GUIDE.md)** - Complete trigger/command reference
 - **[HELP.md](bob.docs/HELP.md)** - Quick reference for all 8 personas and commands
 
 ### Tools
 - **[tools/](tools/)** - Agent tooling scripts (`chat.py`, `mkf.py`, `setup_agent_links.py`)
+
+---
+
+## Project Documentation (Scalene)
+
+- **[../docs/BRD.md](../docs/BRD.md)** - Business Requirements Document (source of truth for scope)
+- **[../docs/PRD.md](../docs/PRD.md)** - Product Requirements Document (Cypher)
+- **[../docs/USER_STORIES.md](../docs/USER_STORIES.md)** - User stories + acceptance criteria (9 stories, Sprint 1)
+- **[../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)** - System architecture (Morpheus)
+- **[../docs/SETUP.md](../docs/SETUP.md)** - Install + hook registration instructions
+- **[../docs/STORY_TRACEABILITY.md](../docs/STORY_TRACEABILITY.md)** - AC-to-test traceability (Sprint 1 close)
+- **[../task.md](../task.md)** - Sprint task board (Mouse, single source of truth for sprint status)
 
 ---
 
@@ -76,8 +86,7 @@ Located in `agents/templates/`:
 ## Archived Documentation
 
 Files prefixed with `.archive_` are historical and no longer active:
-- `.archive_COMMANDS.md` - (Consolidated into HELP.md)
-- `.archive_state_management_fix.md` - (Implemented in protocol)
+- `oracle.docs/.archive_COMMANDS.md` - (Consolidated into HELP.md)
 
 ---
 
@@ -100,7 +109,7 @@ Files prefixed with `.archive_` are historical and no longer active:
 - Update `*help` when adding commands
 - Update tool docs when changing MCPs
 - Archive outdated docs with `.archive_` prefix
-- Keep HELP.md, BOB_SYSTEM_PROTOCOL.md, and START_HERE.md in sync
+- Keep `bob.docs/HELP.md` in sync with the persona table above
 
 ---
 

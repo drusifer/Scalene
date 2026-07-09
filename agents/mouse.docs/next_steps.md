@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Wait for Morpheus's review of `task.md` (Step 3a: `*lead review sprint plan`). If Morpheus flags misalignment with the architecture, revise phase/task breakdown and resubmit. If approved, the sprint plan is locked and Phase 1 can start with Neo.
+None — Sprint 1 is closed. Waiting on the user for Sprint 2 scope, or a retrospective request.
 
 ## Waiting On
-Morpheus (`*lead review sprint plan`)
+User (Sprint 2 scope / next priorities).
 
 ## Planned Work
-- [ ] Incorporate any Morpheus feedback on `task.md`
-- [ ] Once locked, post `@Neo *swe impl Phase 1` to kick off implementation
-- [ ] Track phase progress via `*sm status` as implementation proceeds
+- [x] Tracked all 4 phases through to close
+- [ ] When Sprint 2 is scoped: repeat `*plan sprint` chain (Cypher → Smith gates → Morpheus → Mouse phase breakdown → Morpheus review)
+- [ ] If a retrospective is requested: carry forward process lessons already logged in Morpheus's/Trin's/Neo's context.md files (TDD test-first, `make`-only build tasks, independently recount claimed numbers)
 
 ---
-*Last updated: 2026-07-02*
+*Last updated: 2026-07-09*

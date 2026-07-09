@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Blocks a commit if gitleaks finds a secret in the staged changes.
+# Installed via `make setup` (sets core.hooksPath to .githooks).
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "warning: gitleaks not installed — skipping secret scan for this commit." >&2
+    echo "         install gitleaks (e.g. 'apt install gitleaks') to enable it." >&2
+    exit 0
+fi
+
+gitleaks protect --staged --redact --no-banner

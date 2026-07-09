@@ -1,16 +1,30 @@
-# Agent Local Context Template:
+# Agent Local Context: Neo
 
-Agents *must* use this for keeping their context.md files organized
+## Recent Decisions
+- Greenfield repo had no `src/` — added `pyproject.toml` (src layout, package `scalene-guard`, deps: pyyaml, jsonpath-ng, filelock) and a `make setup` target (venv + editable install) rather than installing packages ad hoc, per user instruction to always front-end build tasks through `make`.
+- `TaintState`/`PolicyConfig` written test-first after a mid-task correction from the user ("with tdd we write tests first") — deleted the first-pass implementation, wrote `tests/test_taint_state.py` + `tests/test_policy_config.py` against the not-yet-existing modules, confirmed both failed with `ModuleNotFoundError` (right reason), then wrote the implementation to make them pass. Applied the same test-first order to Phase 2 and Phase 3 (every new module's tests written and confirmed failing before the module existed).
+- `PolicyConfig.evaluate()` semantics: `non_sensitive_allowlist`/`trusted_sources_list` are *exception* lists layered on top of `defaults.sensitive_by_default`/`untrusted_by_default` — `is_sensitive = sensitive_by_default and not non_sensitive_match`; `is_trusted = trusted_match or not untrusted_by_default`. Any rule that raises during JSONPath parse/find (malformed expression) sets `fail_safe_triggered=True` and forces `is_sensitive=True, is_trusted=False` regardless of other matches (STORY-202), logged via `logging.getLogger("scalene.policy")`.
+- `TaintState.reset()` is the only method that can flip flags back to `False` (also deletes the persisted state file) — satisfies STORY-101's "never reverts except explicit reset" AC.
+- `MaskingEngine.apply_mask()` degrades to a no-op (returns args unchanged, logs a warning) rather than raising when `payload_field` is `None`, missing from `args`, or `args` isn't a dict — satisfies STORY-401's "masking never throws a runtime error" AC without needing a blanket try/except in the adapter.
+- `hook_adapter.py`'s `DEFAULT_PAYLOAD_FIELDS` (`Write→content`, `Edit→new_string`, `Bash→command`, `WebFetch→prompt`) encodes the real Claude Code tool schemas (grounded, not guessed) but is injectable via the `payload_fields` param so callers/tests aren't locked to it.
+- Audit log (`.scalene/audit.log`) writes only happen in `hook_adapter.py` and `onboard.py`, never `masking.py` — matches the architecture component diagram (only Adapter and Onboarding CLI touch `audit.log`).
+- **Phase 3**: `LocalHeuristicChecker` (reputation.py) implements exactly the 3 heuristics architecture §7.4 named — IP-literal (via stdlib `ipaddress`), punycode (`xn--` label prefix), suspicious-length label (>30 chars) — no network calls anywhere in `src/scalene/` (grepped to confirm), satisfying "onboarding works fully offline."
+- STORY-601 (scanner isolation): added a real `subprocess.run` boundary (`subprocess_isolation.run_scanner` → `scan_worker.py` as a `python -m` entrypoint) rather than just calling the checker/scanner functions in-process, because the story explicitly requires a separate process, not just logical isolation. `SCALENE_BYPASS=1` is set in the subprocess's env, and — symmetrically — `hook_adapter.pre_tool_use`/`post_tool_use` now check `os.environ.get("SCALENE_BYPASS") == "1"` and short-circuit (pass through unmodified / don't touch taint state) so the scanner's own actions can't recurse back through policy evaluation.
+- `onboard()` validates the new rule via `PolicyRule.from_dict()` before writing (catches malformed rules before touching the file), computes a unified diff of `scalene_policy.yaml` before/after, and does **not** auto-`git commit` — STORY-501's "attributable (git-committed)" AC is satisfied by making the diff easy for the developer to review and commit themselves, not by having Scalene commit on their behalf (safer, and avoids Scalene needing git-write authority).
 
-> ## Recent Decisions
->
->
-> ## Key Findings
-> - {WHAT}: 
->   - {WHY}
->
-> ## Important Notes
-> {EXTESIVE Notes}
->
->---
->*Last updated: [timestamp]*
+## Key Findings
+- `jsonpath_ng.parse` (not `.ext`) is sufficient for all STORY-201 AC cases (nested params, `$.command`, URL paths, file paths, DB table/column) — no need for the extended grammar.
+- `filelock` guards both `TaintState.save()` and `.load()` against the "rare concurrent-call" case the architecture doc flags (§6), using a sibling `<file>.lock` path.
+- STORY-302's "sanitized output (post-masking, if applicable) is what's returned to the context window" doesn't require `post_tool_use` to do its own masking — masking already happened in `pre_tool_use` before the tool executed, so `post_tool_use` just passes `tool_response` through unchanged while updating taint flags.
+- `run_scanner()` never raises regardless of what goes wrong (unknown scan type, subprocess spawn failure, malformed JSON stdout) — always returns `{"ok": False, "reason": ...}` on any failure, which `onboard()` then surfaces as a clear `OnboardError` message.
+
+## Important Notes
+- Phase 1 (`taint_state.py`, `policy_config.py`) + Phase 2 (`masking.py`, `hook_adapter.py`) + Phase 3 (`reputation.py`, `secrets_scan.py`, `scan_worker.py`, `subprocess_isolation.py`, `onboard.py`) + Phase 4 (`cli.py`, `main_cli.py`, `docs/SETUP.md`, formal perf test, `docs/STORY_TRACEABILITY.md`) all implemented. 77/77 unit tests pass (`make test`). Sprint 1 is functionally complete pending Trin's full UAT + Morpheus's final review.
+- Phase 4 additions: `scalene-guard` (hook dispatcher, console_script) and `scalene` (dev CLI, `onboard` subcommand) both registered via `pyproject.toml [project.scripts]` and smoke-tested as real installed binaries (not just unit-tested modules) — piped real JSON through `.venv/bin/scalene-guard` and got back a real `{"allow": true, ...}` response. `.scalene/` added to `.gitignore`; no CI workflows exist in this repo so no artifact-capture exclusion was needed beyond that.
+- Formal perf test (`test_performance.py`) uses a representative (non-empty) `PolicyConfig`, 5 warmup + 100 measured iterations, asserts average <15ms — this supersedes the informal sanity checks Trin ran during Phase 2/3 review.
+- `docs/STORY_TRACEABILITY.md` maps all 35 AC bullets across all 9 stories to specific tests; 33/35 are test-verified, 2 are flagged explicitly as design-verified only (STORY-301's cross-platform NFR-Portability claim, STORY-302's "sanitized output" being a consequence of call ordering) — did not silently count design-only coverage as tested.
+- Environment: `make setup` creates `.venv` + editable install; `make test` runs `.venv/bin/python -m unittest discover -s tests` (Makefile updated in both `ifdef MKF_ACTIVE` and `else` blocks per make-discover skill convention — no `Makefile.prj` exists yet in this repo, both blocks live in the root `Makefile`).
+- Nothing left unbuilt for Sprint 1 — Phase 4 was the last phase per `task.md`.
+
+---
+*Last updated: 2026-07-09*

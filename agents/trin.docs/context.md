@@ -1,16 +1,20 @@
-# Agent Local Context Template:
+# Agent Local Context: Trin
 
-Agents *must* use this for keeping their context.md files organized
+## Recent Decisions
+- Phase 1 UAT (2026-07-08): cross-checked `src/scalene/taint_state.py` + `policy_config.py` against every AC bullet in `docs/USER_STORIES.md` STORY-101, 102, 201, 202. All satisfied for what's in-scope for Phase 1; STORY-102's "runs on every tool result via post_tool_call" bullet is correctly deferred to Phase 2 (STORY-302, PostToolUse adapter) per `task.md`'s phase mapping — Phase 1 only needed to deliver the `evaluate()` primitive.
+- Added `test_fail_safe_path_is_logged_not_silent` (uses `assertLogs`) because the existing tests only checked the fail-safe *side effect* (`fail_safe_triggered=True`), not the AC's explicit "logged (not silent)" requirement.
+- Phase 2 UAT (2026-07-09): cross-checked `masking.py` + `hook_adapter.py` against STORY-301, 302, 401. Ran an informal timing sanity check on `pre_tool_use` (~6ms/call avg over 200 calls) — comfortably under the 15ms NFR, but did **not** treat this as a formal pass of STORY-301's perf AC bullet: `task.md` Phase 4 Task 4.2 explicitly owns rigorous perf verification, so that AC stays open until then.
+- Phase 3 UAT (2026-07-09): cross-checked `reputation.py`/`secrets_scan.py`/`subprocess_isolation.py`/`onboard.py` against STORY-501, 601. Did **not** just trust Neo's "no network calls" claim — independently re-ran the grep myself (artifact-based verification protocol: don't guess/trust, check). Also cross-checked STORY-501's "attributable (git-committed)" AC against `ARCHITECTURE.md` §8 directly: architecture explicitly resolves this as diff+audit-log output (no auto-commit), which is what Neo built — not a gap.
+- Phase 4 UAT (2026-07-09, final sprint UAT): found a real bug in Neo's `docs/STORY_TRACEABILITY.md` — its summary line claimed "33 of 35 AC bullets," but an independent `grep -c "^\- \[ \]"` against `docs/USER_STORIES.md` gives 31 total, and the table itself has exactly 31 content rows (29 test-verified + 2 design-verified). Fixed the summary line in place rather than just filing it as a finding, since it was a one-line, unambiguous correction. This is exactly why artifact-based verification means independently counting, not trusting a stated number.
 
-> ## Recent Decisions
->
->
-> ## Key Findings
-> - {WHAT}: 
->   - {WHY}
->
-> ## Important Notes
-> {EXTESIVE Notes}
->
->---
->*Last updated: [timestamp]*
+## Key Findings
+- `PolicyConfig.evaluate()`'s fail-safe trigger is scoped to exceptions during JSONPath parse/find (malformed expression or incompatible data shape) — not "no rule matched," which is normal default-driven behavior. This matches architecture §2's "any ambiguity resolves to sensitive=true, trusted=false," not every non-match.
+- STORY-401's "never throws a runtime error" AC is tested at both layers: `MaskingEngine.apply_mask` directly (missing field/None field/non-dict args) and `hook_adapter.pre_tool_use` end-to-end (unmapped tool name) — good defense in depth, not redundant.
+- STORY-601's isolation is tested at two levels too: a mocked `subprocess.run` call (asserts `SCALENE_BYPASS=1` is actually in the env kwarg and that `scalene.scan_worker` is the module invoked) plus real, non-mocked end-to-end runs (`test_subprocess_isolation.py`'s secrets/reputation tests actually spawn the subprocess).
+- The 2 design-verified-only AC bullets (STORY-301 cross-platform NFR-Portability, STORY-302 sanitized-output-is-ordering-not-mechanism) are legitimate to accept at sprint close — no CI/Docker test matrix exists in this repo to test the former directly, and the latter isn't a separate mechanism to test.
+
+## Important Notes
+- Verdict: **Phase 1 PASSED** (20/20). **Phase 2 PASSED** (40/40). **Phase 3 PASSED** (67/67). **Phase 4 / full sprint UAT PASSED** (77/77, no regressions) — after fixing the traceability-doc count bug. All 29 test-verifiable AC bullets across all 9 stories pass; 2 are accepted as design-verified. Handed to Morpheus for final architecture/quality review and sprint close.
+
+---
+*Last updated: 2026-07-09*
