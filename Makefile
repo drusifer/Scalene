@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test setup install-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test setup install-hooks install-scalene-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -38,6 +38,10 @@ install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-com
 	else \
 		echo "git hooks installed (core.hooksPath=.githooks); WARNING: gitleaks not found on PATH — pre-commit secret scan will be skipped until installed (e.g. 'apt install gitleaks')."; \
 	fi
+
+install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json PreToolUse/PostToolUse hooks (default TARGET=.)
+	@if [ ! -x .venv/bin/scalene ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+	@.venv/bin/scalene install-hooks --settings-path "$(or $(TARGET),.)/.claude/settings.json"
 
 test: ## Run unit tests
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests; \
@@ -181,7 +185,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test setup install-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat test setup install-hooks install-scalene-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -238,6 +242,9 @@ setup: ## Create project venv and install dependencies (editable install)
 
 install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@./agents/tools/mkf.py $(V) $@
+
+install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json PreToolUse/PostToolUse hooks (default TARGET=.)
+	@./agents/tools/mkf.py $(V) $@ TARGET="$(TARGET)"
 
 via_index: ## Build the via index required by the via MCP server
 	@./agents/tools/mkf.py $(V) $@

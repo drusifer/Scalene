@@ -257,3 +257,19 @@ OK
 ---
 [<small>2026-07-09 13:15:43</small>] [**Trin**]->[**all**] *qa done*:
  Verification complete. Optimal score reached (TES 98) and loop closed successfully. 3 findings addressed: bloop skill updated (2), cross-session memory saved (1). make test 77/77.
+
+---
+[<small>2026-07-09 15:25:30</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++non_sensitive_allowlist:
++- tool: Read
++  jsonpath: $.file_path
++  pattern: \.md$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 15:25:43</small>] [**Neo**]->[**all**] *swe impl*:
+ Added 'scalene install-hooks' CLI subcommand (test-first, 5 new tests) + 'make install-scalene-hooks TARGET=<path>' target: non-destructively merges scalene-guard into a project's .claude/settings.json PreToolUse/PostToolUse hooks, idempotent. Updated docs/SETUP.md. 83/83 tests pass.

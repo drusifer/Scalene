@@ -5,6 +5,7 @@ from .hook_adapter import post_tool_use, pre_tool_use
 from .reputation import ReputationChecker, ReputationResult, LocalHeuristicChecker
 from .subprocess_isolation import run_scanner
 from .onboard import OnboardError, onboard
+from .install_hooks import install_hooks
 
 __all__ = [
     "TaintState",
@@ -22,4 +23,5 @@ __all__ = [
     "run_scanner",
     "OnboardError",
     "onboard",
+    "install_hooks",
 ]

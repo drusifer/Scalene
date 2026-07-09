@@ -1,12 +1,13 @@
-"""`scalene` — developer-facing CLI. Currently one subcommand: `scalene onboard`."""
+"""`scalene` — developer-facing CLI. Subcommands: `onboard`, `install-hooks`."""
 
 from __future__ import annotations
 
 import sys
 
 from .onboard import main as onboard_main
+from .install_hooks import main as install_hooks_main
 
-_SUBCOMMANDS = {"onboard": onboard_main}
+_SUBCOMMANDS = {"onboard": onboard_main, "install-hooks": install_hooks_main}
 
 
 def main(argv: list[str] | None = None) -> int:
