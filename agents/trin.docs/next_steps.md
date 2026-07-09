@@ -1,14 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-Waiting on Morpheus's final architecture/quality review (`*lead review Phase 4`), then sprint close.
+None planned. Judge loop closed at TES 98.
 
 ## Waiting On
-Morpheus
+Nothing.
 
 ## Planned Work
-- [ ] Sprint 1 is UAT-complete. No further Trin work planned unless Morpheus's final review surfaces something.
-- [ ] Sprint 2 (if any): keep independently recounting/spot-checking claimed numbers in any traceability or summary doc rather than trusting stated totals — this sprint's one real bug was a doc arithmetic error, not a code defect.
+- [ ] Sprint 2 (if any): keep independently recounting/spot-checking claimed numbers rather than trusting stated totals; also check whether any "persona X re-engages" note in a sprint plan actually has a corresponding step in the relevant Bloop chain (per S1-003)
+- [ ] Smith's retroactive `*user test` against real `scalene-guard` behavior (S1-003 follow-up) is still open — Smith's task, not mine
 
 ---
 *Last updated: 2026-07-09*

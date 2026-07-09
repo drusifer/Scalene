@@ -1,14 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-Both sprint-planning gates are clear. Wait for Mouse's phase plan and Morpheus's review of it; no further Smith action required until implementation phases begin (per-phase UAT is Trin's domain, not Smith's — Smith re-engages for usability testing/`*user test` once there's running software).
+Waiting on Bob to update prompts/skills per the 3 filed findings, then Trin to close the judge loop.
 
 ## Waiting On
-Nothing blocking. Available for `*user consult` if Mouse/Morpheus hit a UX question during phase planning.
+Bob (`*prompt update judge session`).
 
 ## Planned Work
-- [ ] Once Neo starts implementation, remind Trin to verify the <15ms hook-latency NFR (flagged during Gate 2, not a gate blocker)
-- [ ] Run `*user test` against the real hook adapter once it exists
+- [ ] Once Bob's updates land: consider actually running the retroactive `*user test` against the real `scalene-guard` binary that S1-003 recommends — this is still open regardless of how Bob addresses the chain-definition gap for future sprints
+- [ ] For Sprint 2: check whether Mouse's phase plan writes any "persona X re-engages" notes that aren't backed by an actual step in the relevant Bloop chain, before the sprint starts (not after)
 
 ---
-*Last updated: 2026-07-02*
+*Last updated: 2026-07-09*

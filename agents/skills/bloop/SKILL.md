@@ -51,7 +51,7 @@ Chain: Neo → Trin → Morpheus
 **Implementation loop** — implement, test, and review a feature or sprint phase.
 
 ```
-Chain: Neo → Trin → Morpheus → [Tank if deploy in scope] → [context check]
+Chain: Neo → Trin → Morpheus → [Tank if deploy in scope] → [Smith if UX/dev-facing behavior changed] → [context check]
 ```
 
 | Step | Persona | Action |
@@ -61,12 +61,16 @@ Chain: Neo → Trin → Morpheus → [Tank if deploy in scope] → [context chec
 | 2 | Trin | UAT — run tests, verify acceptance criteria: `*qa uat <phase>` (unit + integration only; E2E requires a separate `@Trin *qa e2e` invocation) |
 | 3 | Morpheus | Code review — quality and architecture: `*lead review <phase>` |
 | 3a | Tank | **DevOps gate** (if phase touches env vars, deployment, CI, or infra): `*devops review <phase>`. Tank approves or flags infra concerns before deploy. Skip if phase is app-only. |
+| 3b | Smith | **UX gate** (if the phase changes behavior a developer/end-user directly observes or interacts with — CLI output, hook responses, error messages, onboarding flow, etc. — not purely internal refactors): `*user test <phase>` against the real running behavior, not just a spec review. Skip if the phase is internal-only (e.g. a pure data-layer/config-engine phase with no observable surface yet). If `task.md` or any prior planning artifact says "Smith re-engages" for a specific phase, that phase's Smith step is **required, not optional**, regardless of this default heuristic. |
 | 4 | (bloop) | **Context check**: report current context %. If > 60%, post "Context at X% — recommend `/clear` before next phase." and stop. |
 
 - If Trin UAT fails → back to Neo for that phase only
 - If Morpheus review fails → back to Neo for that phase only
 - If Tank review flags infra issues → back to Neo/Morpheus to resolve before Tank re-reviews
+- If Smith's UX test flags issues → back to Neo for that phase only
 - Do NOT restart the full sprint; fix the failing phase only
+
+> **Lesson (Sprint 1, Project Scalene):** a sprint plan wrote "Smith re-engages post-Phase 2 for `*user test`" in `task.md`, but the `*impl` chain at the time had no Smith step at all — so it silently never happened, and the sprint closed without any UX testing against real hook behavior. If a plan promises a persona re-engagement, it must correspond to an actual step above, not just prose in `task.md`.
 
 **Example:** `*impl phase-2`
 
@@ -182,6 +186,6 @@ To minimize token usage and prevent coordination overhead:
 3. **Active Anti-Loop Guard**: If any loop iteration (e.g. Neo fix → Trin test fail → Neo fix) repeats **more than twice** for the same issue without resolution, the loop must be paused. The active agent must post logs, describe the blocker to the user, and request manual intervention rather than attempting a third cycle.
 4. **Fast-Track Sprint Planning**: If a sprint plan consists only of small maintenance items, bypass the full 6-step planning chain. Cypher and Morpheus should compile stories and architecture details into a single document for unified approval by Smith, reducing the transition count.
 5. **No Protocol Re-Load**: Do NOT invoke `bob-protocol` at bloop entry. The protocol is already active when bloop is triggered. Re-loading it wastes ~6k tokens per invocation.
-6. **No Sub-Skill Re-Invocation**: Do not call `Skill(make, ...)` or `Skill(chat, ...)` more than once per session. Each call reloads the full SKILL.md body unnecessarily. After the first load, run `make <target>` and `make chat MSG=...` via the Bash tool directly — always through make, never bypassing it.
+6. **No Sub-Skill Re-Invocation**: Do not call `Skill(make, ...)` or `Skill(chat, ...)` more than once per session. Each call reloads the full SKILL.md body unnecessarily. After the first load, run `make <target>` and `make chat MSG=...` via the Bash tool directly — always through make, never bypassing it. **This has actually been violated** (Sprint 1, Project Scalene: `Skill(make)` was called for `setup`, then called again later in the same session for `test` — the second call should have been a plain `Bash("make test")`). Before calling `Skill(make)` or `Skill(chat)`, check whether you already loaded it earlier in this same session — if so, use Bash directly instead.
 7. **Context Budget Between Phases**: After each bloop phase completes, check the context percentage. If > 60%, explicitly warn the user and recommend `/clear` before the next phase. Ensure all state files are written before clearing.
 
