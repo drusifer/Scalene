@@ -1,22 +1,18 @@
 # Current Task
 
-**Status:** `*ora groom docs` complete
+**Status:** `*ora groom` for Sprint 2 close complete
 **Assigned to:** Oracle
-**Started:** 2026-07-09
-**Completed:** 2026-07-09
+**Started:** 2026-07-10
+**Completed:** 2026-07-10
 
 ## Task Description
-`*ora groom docs` — audit and organize the documentation tree, fix broken links, ensure no orphan files in root, update README.md ToC.
+Stage 3 sprint close, step 7: groom docs, archive CHAT.md if oversized, record durable lessons.
 
 ## Progress
-- [x] Surveyed root, `docs/`, and `agents/` for misplaced/orphan files
-- [x] Moved `Scalene BRD.md` → `docs/BRD.md` (`git mv`, preserves history)
-- [x] Updated live references to the moved file (`docs/PRD.md`, `agents/cypher.docs/current_task.md`)
-- [x] Rewrote root `README.md` with a doc table + quickstart + Bob Protocol pointer
-- [x] Fixed 5 broken links in `agents/DOCUMENTATION_INDEX.md` (4 nonexistent framework docs, 1 nonexistent archive file)
-- [x] Added a "Project Documentation (Scalene)" section to `agents/DOCUMENTATION_INDEX.md`
-- [x] Verified every touched/added link resolves (file-existence check, not assumed)
-- [x] Ran `make test` post-move — 77/77 still passing
+- [x] `CHAT.md` was at 109 messages (over the 50-100 threshold) — archived messages 1-81 to `agents/chat_archive/CHAT-ARCHIVE-20260710.md`, replaced with a summary + link, kept the recent tail live
+- [x] Recorded 2 durable lessons in `agents/oracle.docs/lessons.md`: "real execution catches what code review misses" (3 confirmed instances this sprint) and the `detect-secrets` `scan_line()` vs `scan_file()` gotcha
+- [x] Flagged 2 AC-text staleness items to Cypher (STORY-701 timestamp, STORY-702 placeholder wording) rather than editing her story content myself
+- [x] Handed off to Smith for Stage 3 step 8 (end-to-end sprint testing)
 
 ## Blockers
 None
@@ -25,4 +21,4 @@ None
 None yet
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

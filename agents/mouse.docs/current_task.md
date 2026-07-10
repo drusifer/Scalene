@@ -1,21 +1,16 @@
 # Current Task
 
-**Status:** SPRINT 1 CLOSED
-**Assigned to:** N/A (sprint finished)
-**Started:** 2026-07-02
-**Completed:** 2026-07-09
+**Status:** Sprint 2 tracking — Phase 1 & 2 CLOSED, Phase 3 not yet started
+**Assigned to:** N/A (tracking only, no active coordination task)
+**Started:** 2026-07-10
 
 ## Task Description
-Sprint 1 tracking, from board-lock reconciliation through all 4 implementation phases to close.
+Track Sprint 2's 3 phases through to close, per the locked plan in `task.md`.
 
 ## Progress
-- [x] Board locked and reconciled (2026-07-08)
-- [x] Phase 1 — Policy Engine Foundations: Neo → Trin → Morpheus, all passed (20 tests)
-- [x] Phase 2 — Hook Adapter & Masking: Neo → Trin → Morpheus, all passed (40 tests)
-- [x] Phase 3 — Onboarding & Scanner Isolation: Neo → Trin → Morpheus, all passed (67 tests)
-- [x] Phase 4 — Packaging, Perf Verification & Full UAT: Neo → Trin → Morpheus, all passed (77 tests)
-- [x] All 9 user stories' acceptance criteria verified (`docs/STORY_TRACEABILITY.md`)
-- [x] `task.md` updated to reflect sprint close
+- [x] Phase 1 — Secrets Scan Upgrade: Neo → Trin → Morpheus, all passed (90 tests at close), no Smith gate needed. ✅ CLOSED
+- [x] Phase 2 — Console Foundations: Neo → Trin → Morpheus → Smith, all passed (109 tests at close). Smith's required UX gate found a real bug (session-selection cursor silently diverging from the actual filter on poll refresh) — triaged by Trin, fixed by Neo test-first, independently re-verified by both Trin and Smith across repeated poll ticks. ✅ CLOSED
+- [ ] Phase 3 — Guided Onboarding Action: not started. Requires a Smith gate too (per `task.md`).
 
 ## Blockers
 None.
@@ -24,4 +19,4 @@ None.
 None yet
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

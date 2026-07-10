@@ -151,6 +151,28 @@ class TestPreToolUse(unittest.TestCase):
             self.assertIn("$.command", message)
             self.assertIn("curl", message)
 
+    def test_suggested_command_target_placeholder_is_domain_only(self):
+        """Regression for Smith's Sprint-1 wording nit, fixed in Phase 3: the
+        placeholder previously said 'domain-or-file' but the suggestion is
+        always --list-type trust (domain-only per onboard.py's own help
+        text) — '-or-file' offered a choice that never actually existed."""
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                config,
+                state_dir=state_dir,
+            )
+            message = result["systemMessage"]
+            self.assertIn("<domain-this-call-reaches>", message)
+            self.assertNotIn("domain-or-file", message)
+
     def test_suggested_command_is_valid_shell_syntax_even_unedited(self):
         """Regression test for a Trin UAT finding: every token in the suggested
         command must be shell-safe, including the --target placeholder — a

@@ -12,303 +12,28 @@ Agents **must** use this for every message posted to CHAT.md:
 ---
 
 ---
-[<small>2026-07-02 22:26:12</small>] [**User**]->[**all**] *request*:
- Bob Protocol initialized for Scalene repo. Agent links synced (via CLI not installed — index/MCP skipped). CHAT.md is fresh with no prior session to resume. Ready for task routing.
+**Archived:** [agents/chat_archive/CHAT-ARCHIVE-20260710.md](chat_archive/CHAT-ARCHIVE-20260710.md) — messages 1-81 (2026-07-02 through 2026-07-10 18:03).
+
+Summary of archived history: Sprint 1 planning through close (all 4 phases, 9 stories, 77 tests) → post-sprint "copyable system messages" feature (Neo→Trin→Morpheus→Smith) → Sprint 2 planning (`*plan sprint`: Cypher's E7/E8 stories → Smith Gate 1 → Morpheus architecture (TUI decision) → Smith Gate 2 → Mouse's 3-phase breakdown → Morpheus review, LOCKED) → Sprint 2 Phase 1 (Secrets Scan Upgrade, detect-secrets) implemented/UAT'd → Sprint 2 Phase 2 (Console Foundations, `scalene monitor` TUI) implemented, UAT'd, reviewed, and Smith's UX gate found+fixed a real cursor/selection-divergence bug → Sprint 2 Phase 3 UAT (Guided Onboarding Action) begun.
 
 ---
-[<small>2026-07-02 22:35:18</small>] [**Cypher**]->[**Smith**] *pm handoff*:
- Wrote docs/PRD.md and docs/USER_STORIES.md from Scalene BRD: 6 epics, 9 stories w/ AC, 2 flagged for Tank (STORY-501 threat-intel lookup, STORY-601 SCALENE_BYPASS env var + sandboxing), 4 open questions for Morpheus. @Smith *user review docs/USER_STORIES.md
+[<small>2026-07-10 18:03:20</small>] [**Trin**]->[**Morpheus**] *qa uat*:
+ UAT PASSES phase-2 (Console Foundations), 1 non-blocking finding. Independently re-ran make test (108/108, added 1 ordering test Neo missed). Really uninstalled textual and ran the real binaries to confirm graceful degradation, not just code-read. Found genuine AC conflict: STORY-701 wants a timestamp column but audit.log has no timestamp field + a companion AC forbids format changes - flagging to Cypher for wording, not blocking. @Morpheus *lead review phase-2
 
 ---
-[<small>2026-07-02 22:41:19</small>] [**Smith**]->[**Morpheus**] *user approve*:
- GATE 1: *user approve (with notes). Stories are sound. 2 non-blocking AC gaps for Cypher's next pass: STORY-401 masking has no dev-visible signal when a mask fires (Nielsen #1); STORY-501 onboarding has no success confirmation AC. @Morpheus *lead arch sprint
+[<small>2026-07-10 18:03:56</small>] [**Morpheus**]->[**Smith**] *lead review*:
+ *lead review phase-2: APPROVED. Clean 3-module split, isolation confirmed independently. 2 non-blocking notes in context.md: unbounded event list (fine for now), sessions table full-redraw every poll (flagging to Smith to check for flicker in real terminal). @Smith *user test phase-2 (required gate)
 
 ---
-[<small>2026-07-02 22:47:27</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
- Architecture drafted: docs/ARCHITECTURE.md. Two-layer design (Claude Code hook adapter + harness-agnostic policy engine), no daemon (per-session JSON state files), Python 3.11 pip CLI. Resolved all 4 open questions incl. STORY-501 threat-intel (v1 = local heuristic checker, no paid API/egress). Addressed both Smith Gate-1 notes (mask audit log + systemMessage, onboarding confirm+diff). @Smith *user review docs/ARCHITECTURE.md
+[<small>2026-07-10 18:08:02</small>] [**Smith**]->[**Trin**] *user bug*:
+ *user test phase-2: FOUND A BUG (not the flicker Morpheus flagged, worse). Drove real MonitorApp via textual Pilot. Select session row 2 -> selected_session_id correctly = that session. Any poll_data() tick after that resets visual cursor_row to 0 while selected_session_id stays correct - highlighted row and actual filter silently diverge. Nielsen #1 violation. Full repro in current_task.md. @Trin *qa triage this *user bug
 
 ---
-[<small>2026-07-02 22:50:08</small>] [**Smith**]->[**Mouse**] *user approve*:
- GATE 2: *user approve. Both Gate 1 notes resolved architecturally (audit log+systemMessage for masks, confirm+diff for onboarding). Bonus: LocalHeuristicChecker decision also makes onboarding fully offline-capable. Flagged (non-blocking) for Trin: verify <15ms hook latency once implemented. @Mouse *sm plan sprint
+[<small>2026-07-10 18:08:25</small>] [**Trin**]->[**Neo**] *qa triage*:
+ Triaged Smith's bug: confirmed root cause independently - DataTable.clear() unconditionally resets cursor_coordinate to (0,0), that's the whole story. UX issue (visual state), not a data-correctness bug (selected_session_id/filter logic is fine). Routing to Neo: after refresh_sessions() repopulates, restore cursor to the row matching self.selected_session_id. Smith re-tests after fix. @Neo *swe fix phase-2 cursor bug
 
 ---
-[<small>2026-07-02 22:51:03</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
- task.md: Sprint 1 broken into 4 phases (Foundations, Hook Adapter+Masking, Onboarding+Isolation, Packaging+Perf+UAT), 3 tasks each, mapped to all 9 stories. No Tank phase (SCALENE_BYPASS is subprocess-local, not infra-scoped per ARCH.md §9). @Morpheus *lead review sprint plan
-
----
-[<small>2026-07-02 22:51:43</small>] [**Morpheus**]->[**all**] *lead review*:
- *lead review sprint plan: Approved. Phase sequencing matches ARCH.md dependency order, all 9 stories mapped. One addendum: folded a .gitignore/CI-artifact check for .scalene/ into task 4.1 instead of a full Tank phase. Sprint plan LOCKED — docs/PRD.md, docs/USER_STORIES.md, docs/ARCHITECTURE.md, task.md all in place. *plan sprint chain complete.
-
----
-[<small>2026-07-08 21:18:57</small>] [**User**]->[**all**] *request*:
- bob-protocol init invoked (cold start).
-
----
-[<small>2026-07-08 21:19:15</small>] [**Bob**]->[**Neo**] *init resume*:
- Cold start recovery: sprint plan LOCKED (task.md), Gates 1&2 clear. Neo has not started Phase 1 (Task 1.1 TaintState). Agent links re-synced, via index rebuilt. Ready to route. @Neo *swe impl Phase 1 Task 1.1
-
----
-[<small>2026-07-08 21:20:51</small>] [**Mouse**]->[**all**] *sm resume*:
- Resuming as SM: reconciling task.md — Morpheus's *lead review sprint plan approval is already in CHAT.md but task.md header still said 'pending review'. Locking board and handing Phase 1 to Neo.
-
----
-[<small>2026-07-08 21:23:40</small>] [**Mouse**]->[**Neo**] *sm handoff*:
- task.md reconciled: header now LOCKED, Phase 1 assigned. State files updated (current_task.md, next_steps.md, context.md). @Neo *swe impl Phase 1 Task 1.1 (TaintState: session-scoped sticky flags, load/save to .scalene/state/<session_id>.json, STORY-101)
-
----
-[<small>2026-07-08 21:29:28</small>] [**Neo**]->[**all**] *swe impl*:
- Starting Phase 1 (Task 1.1 TaintState, 1.2 PolicyConfig, 1.3 JSONPath evaluator). Greenfield repo — no src/ yet. Setting up package scaffold (src/scalene), pyproject.toml, venv with jsonpath-ng/pyyaml/filelock, and tests/.
-
----
-[<small>2026-07-08 21:36:12</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-..................
-----------------------------------------------------------------------
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 19 tests in 0.044s
-
-OK
-
----
-[<small>2026-07-08 21:37:09</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Phase 1 done (test-first): TaintState + PolicyConfig/PolicyRule/MatchResult in src/scalene/. 19/19 unit tests pass (make test). Covers STORY-101,102,201,202 incl. fail-safe JSONPath path. @Trin *qa uat Phase 1
-
----
-[<small>2026-07-08 21:37:51</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-..................
-----------------------------------------------------------------------
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 20 tests in 0.049s
-
-OK
-
----
-[<small>2026-07-08 21:38:30</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- Phase 1 UAT PASSED: all AC in STORY-101,102,201,202 traced to tests (added 1: fail-safe log assertLogs check). 20/20 tests, no regressions. @Morpheus *lead review Phase 1
-
----
-[<small>2026-07-08 21:39:33</small>] [**Morpheus**]->[**all**] *lead review*:
- *lead review Phase 1: APPROVED. TaintState/PolicyConfig/PolicyRule/MatchResult match ARCHITECTURE.md §4 class diagram exactly, adapter isolation (§2) confirmed, fail-safe principle confirmed. task.md updated: Phase 1 COMPLETE. Phase 2 (Hook Adapter & Masking) is next.
-
----
-[<small>2026-07-09 10:40:31</small>] [**Neo**]->[**all**] *swe impl*:
- Starting Phase 2 (Hook Adapter & Masking): 2.1 PreToolUse adapter, 2.2 MaskingEngine, 2.3 PostToolUse adapter. Writing tests first per TDD correction.
-
----
-[<small>2026-07-09 10:41:47</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-..................
-----------------------------------------------------------------------
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 40 tests in 0.063s
-
-OK
-
----
-[<small>2026-07-09 10:42:33</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Phase 2 done (test-first): MaskingEngine (decide/apply_mask, never raises) + PreToolUse/PostToolUse hook adapter (audit log on mask, systemMessage) in src/scalene/. 40/40 unit tests pass, no regressions. Covers STORY-301,302,401. @Trin *qa uat Phase 2
-
----
-[<small>2026-07-09 10:44:24</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- Phase 2 UAT PASSED: all AC in STORY-301,302,401 traced to tests, masking-never-raises verified at both MaskingEngine and adapter layers. Informal perf sanity check ~6ms/call (formal <15ms gate stays in Phase 4 Task 4.2). 40/40 tests, no regressions. @Morpheus *lead review Phase 2
-
----
-[<small>2026-07-09 10:45:07</small>] [**Morpheus**]->[**all**] *lead review*:
- *lead review Phase 2: APPROVED. MaskingEngine/hook_adapter match ARCHITECTURE.md §4/§5 exactly, adapter isolation confirmed (payload-field knowledge stays in hook_adapter.py, not the harness-agnostic core), Smith Gate 1 response (audit.log + systemMessage) both present. task.md updated: Phase 2 COMPLETE. Phase 3 (Onboarding & Scanner Isolation) is next.
-
----
-[<small>2026-07-09 10:46:23</small>] [**Neo**]->[**all**] *swe impl*:
- Starting Phase 3 (Onboarding & Scanner Isolation): 3.1 onboard CLI + LocalHeuristicChecker + secrets scan, 3.2 SCALENE_BYPASS subprocess isolation, 3.3 confirmation output + audit log. Test-first as usual.
-
----
-[<small>2026-07-09 10:51:13</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-----------------------------------------------------------------------
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 67 tests in 1.477s
-
-OK
-
----
-[<small>2026-07-09 10:52:12</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Phase 3 done (test-first): LocalHeuristicChecker+secrets_scan, real subprocess isolation (SCALENE_BYPASS=1) via scan_worker.py, hook_adapter now short-circuits on bypass, onboard() CLI (scan-gate/validate/append/diff/audit-log). 67/67 tests pass, no network calls anywhere in src/scalene (grepped). Covers STORY-501,601. @Trin *qa uat Phase 3
-
----
-[<small>2026-07-09 12:13:20</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- Phase 3 UAT PASSED: STORY-501,601 AC traced to tests. Independently re-verified no-network-calls claim (own grep) and cross-checked the 'attributable' AC against ARCHITECTURE.md sec8 (diff+audit-log, no auto-commit, matches). 67/67 tests, no regressions. @Morpheus *lead review Phase 3
-
----
-[<small>2026-07-09 12:14:04</small>] [**Morpheus**]->[**all**] *lead review*:
- *lead review Phase 3: APPROVED. LocalHeuristicChecker/onboard.py match ARCHITECTURE.md sec4/sec5/component-diagram exactly, sec7 decision#4 confirmed (no external API, no network calls), SCALENE_BYPASS short-circuit in hook_adapter is justified per STORY-601. task.md updated: Phase 3 COMPLETE. Phase 4 (final: packaging, perf gate, full UAT) is next.
-
----
-[<small>2026-07-09 12:27:54</small>] [**Neo**]->[**all**] *swe impl*:
- Starting Phase 4 (final): 4.1 packaging (console_scripts) + hook registration docs + .gitignore/CI check, 4.2 formal perf test, 4.3 full cross-story UAT traceability.
-
----
-[<small>2026-07-09 12:41:06</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 12:41:57</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Phase 4 (final) done: scalene-guard+scalene console_scripts (smoke-tested as real binaries), docs/SETUP.md, .gitignore updated, formal <15ms perf test, docs/STORY_TRACEABILITY.md (35 AC bullets mapped, 2 flagged design-verified-only). 77/77 tests pass. @Trin *qa uat Phase 4 (full cross-story sweep using STORY_TRACEABILITY.md)
-
----
-[<small>2026-07-09 12:42:46</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 12:43:27</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- Phase 4/full sprint UAT PASSED (77/77, no regressions) after fixing a real bug: STORY_TRACEABILITY.md claimed 33/35 AC bullets, independent recount showed 31 total (29 test-verified + 2 design-verified) -- corrected in place. All 9 stories' AC now traced and verified. @Morpheus *lead review Phase 4 (final)
-
----
-[<small>2026-07-09 12:44:17</small>] [**Morpheus**]->[**Mouse**] *lead review*:
- *lead review Phase 4 (final): APPROVED. Packaging/docs/perf-test match architecture sec6/sec7.3/sec9 exactly. Trin's traceability-doc fix reviewed (docs bug, not code defect, does not block). All 9 stories' AC confirmed closed. task.md updated: SPRINT 1 CLOSED. @Mouse *sm status (sprint close)
-
----
-[<small>2026-07-09 12:45:04</small>] [**Mouse**]->[**User**] *sm status*:
- SPRINT 1 CLOSED. All 4 phases (Foundations, Hook Adapter & Masking, Onboarding & Scanner Isolation, Packaging/Perf/Full UAT) shipped: Neo->Trin->Morpheus passed every phase, no rework loops needed. 77/77 tests, all 9 user stories AC-verified (docs/STORY_TRACEABILITY.md). task.md and all persona state files updated. Awaiting Sprint 2 scope from user.
-
----
-[<small>2026-07-09 12:51:44</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 12:52:37</small>] [**Oracle**]->[**all**] *ora groom*:
- *ora groom docs complete: moved orphan 'Scalene BRD.md' -> docs/BRD.md (git mv), fixed 5 broken links in DOCUMENTATION_INDEX.md (dead refs to nonexistent framework docs), rewrote README.md with a real ToC, added Project Documentation section to DOCUMENTATION_INDEX.md. make test still 77/77. Flagged (not fixed): cypher.docs/current_task.md is stale re: sprint status.
-
----
-[<small>2026-07-09 13:02:58</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-Ran 77 tests in 2.963s
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 13:10:00</small>] [**Trin**]->[**all**] *qa judge*:
- *qa judge session: compiling tool/skill usage trace for today's full session (bob-protocol init, *plan sprint, *impl Sprint 1 x4 phases, *ora groom docs, gitleaks setup, commit). @Smith next.
-
----
-[<small>2026-07-09 13:10:32</small>] [**Trin**]->[**Smith**] *qa handoff*:
- Trace compiled: agents/trin.docs/judge_session_trace.md. 2 bugs found, both self-caught, no lasting damage. @Smith *user feedback judge session
-
----
-[<small>2026-07-09 13:12:47</small>] [**Smith**]->[**Bob**] *user feedback*:
- TES=98/100 for today's session. 3 findings filed (S1-001 double Skill(make), S1-002 git stash -u care lapse, S1-003: my own planned post-Phase-2 UX gate never ran -- *impl chain has no Smith step at all, standing gap not one-off). All route to Bob, not Neo (no code bugs). @Bob *prompt update judge session
-
----
-[<small>2026-07-09 13:14:02</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 13:14:39</small>] [**Bob**]->[**Trin**] *prompt update*:
- Addressed all 3 findings: S1-001 anchored concrete example in bloop rule#6, S1-002 saved as cross-session memory (not project-specific), S1-003 added conditional 3b Smith UX-gate step to *impl chain in bloop/SKILL.md + mandatory-if-planned rule. make test 77/77 (doc-only). @Trin *qa verify judge session
-
----
-[<small>2026-07-09 13:14:58</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 13:15:43</small>] [**Trin**]->[**all**] *qa done*:
- Verification complete. Optimal score reached (TES 98) and loop closed successfully. 3 findings addressed: bloop skill updated (2), cross-session memory saved (1). make test 77/77.
-
----
-[<small>2026-07-09 15:25:30</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+non_sensitive_allowlist:
-+- tool: Read
-+  jsonpath: $.file_path
-+  pattern: \.md$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-09 15:25:43</small>] [**Neo**]->[**all**] *swe impl*:
- Added 'scalene install-hooks' CLI subcommand (test-first, 5 new tests) + 'make install-scalene-hooks TARGET=<path>' target: non-destructively merges scalene-guard into a project's .claude/settings.json PreToolUse/PostToolUse hooks, idempotent. Updated docs/SETUP.md. 83/83 tests pass.
-
----
-[<small>2026-07-09 19:20:39</small>] [**User**]->[**all**] *request*:
- *bob-protocol init load neo
-
----
-[<small>2026-07-09 19:21:30</small>] [**Neo**]->[**all**] *resume*:
- Cold-start reconciled: prior state said 'waiting on Trin Phase 4 UAT' but task.md shows Sprint 1 CLOSED + a later install-hooks commit already landed. Details + 2 unresolved live findings (false-positive mask logging on Read/WebSearch, no policy scaffold on install) written to agents/neo.docs/current_task.md. No task assigned yet — awaiting user direction.
-
----
-[<small>2026-07-09 19:28:44</small>] [**User**]->[**all**] *request*:
- *chat TO=all: thinking through tool-call onboarding UX — how does a user know how to filter a payload without having seen existing tool calls as examples? What are user-friendly ways to allowlist tool calls?
-
----
-[<small>2026-07-09 19:29:56</small>] [**Smith**]->[**all**] *user consult*:
- *user consult on onboarding UX: ran onboard.py — it requires tool/jsonpath/pattern all hand-written with zero example (Nielsen #6/#10 gap). Key fix: pre_tool_use already has the real tool_input at mask time — turn the mask systemMessage into a ready-to-run 'scalene onboard' command instead of discarding that data. Full options in agents/smith.docs/context.md. Discussion only, no code changed.
-
----
-[<small>2026-07-09 19:33:32</small>] [**Smith**]->[**Neo**] *user handoff*:
- User approved option #1 (actionable mask systemMessage w/ ready-to-run onboard command). Handing off @Neo *swe impl: extend pre_tool_use's mask systemMessage + audit log entry to include a suggested 'scalene onboard' command built from the real tool_input (jsonpath -> matched/payload field, pattern -> escaped literal of real value). Test-first.
-
----
-[<small>2026-07-09 19:45:08</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-+  jsonpath: $.command
-+  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
-+  description: ''
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-OK
-
----
-[<small>2026-07-09 19:46:01</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Implemented copyable system messages (test-first): mask systemMessage + audit log now include a ready-to-run 'scalene onboard --list-type trust ...' command built from the real tool_input. Also fixed the false-positive mask report for tools with no mapped payload field (Read/WebSearch/etc no longer falsely announce a mask). Added e2e test that runs the suggested command through the real CLI and confirms it stops future masking. 87/87 tests pass. @Trin *qa uat copyable system messages
-
----
-[<small>2026-07-09 19:46:53</small>] [**make**]->[**all**] *build*:
+[<small>2026-07-10 18:09:59</small>] [**make**]->[**all**] *build*:
  Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  jsonpath: $.command
 +  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
@@ -318,11 +43,11 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 OK
 
 ---
-[<small>2026-07-09 19:49:35</small>] [**Trin**]->[**Neo**] *qa uat*:
- UAT FAILS on copyable-system-messages: every onboard-command arg is shlex.quote()'d except the --target placeholder (hook_adapter.py:58, raw '<domain-or-file-this-call-reaches>'). Pasting the message as-is into bash hits a redirection syntax error before scalene even runs (confirmed by actually running it). One-line fix: quote the placeholder too. Everything else passes (87/87, independently re-run). @Neo *swe fix
+[<small>2026-07-10 18:10:45</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Fixed cursor/selection-divergence bug, test-first (confirmed red then green). refresh_sessions() now restores cursor to selected_session_id's row via get_row_index()+move_cursor(), catches specific RowDoesNotExist not bare Exception. 109/109 pass. @Trin *qa re-verify the fix
 
 ---
-[<small>2026-07-09 21:51:46</small>] [**make**]->[**all**] *build*:
+[<small>2026-07-10 18:10:56</small>] [**make**]->[**all**] *build*:
  Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  jsonpath: $.command
 +  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
@@ -332,11 +57,19 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 OK
 
 ---
-[<small>2026-07-09 21:52:12</small>] [**Neo**]->[**Trin**] *swe handoff*:
- Fixed: --target placeholder now shlex.quote()'d like every other arg. Added bash -n regression test (test_suggested_command_is_valid_shell_syntax_even_unedited) that syntax-checks the exact suggested line without needing scalene on PATH. 88/88 tests pass. @Trin *qa uat re-verify the fix only
+[<small>2026-07-10 18:11:12</small>] [**Trin**]->[**Smith**] *qa reverify*:
+ Re-verified fix independently: re-ran make test (109/109) AND re-ran the exact original repro script myself (not just the new automated test) - cursor_row now correctly stays matched to selected_session_id across a poll tick. Fix holds. @Smith *user retest phase-2 cursor bug
 
 ---
-[<small>2026-07-09 21:53:29</small>] [**make**]->[**all**] *build*:
+[<small>2026-07-10 18:12:01</small>] [**Smith**]->[**all**] *user test*:
+ *user retest phase-2 cursor bug: CONFIRMED FIXED. Re-ran the repro across 5 consecutive poll ticks (realistic long-running-session scenario), cursor stayed matched to selection every time. Sprint 2 Phase 2 (Console Foundations) UX gate: APPROVED. Phase 2 complete: Neo -> Trin -> Morpheus -> Smith (bug found+fixed+reverified) all passed.
+
+---
+[<small>2026-07-10 18:13:32</small>] [**Mouse**]->[**all**] *sm status*:
+ Sprint 2 Phase 2 (Console Foundations) CLOSED. task.md updated. Neo -> Trin -> Morpheus -> Smith all passed, incl a real bug found/fixed/reverified along the way. Next: Phase 3 (Guided Onboarding Action) whenever user is ready.
+
+---
+[<small>2026-07-10 18:24:36</small>] [**make**]->[**all**] *build*:
  Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  jsonpath: $.command
 +  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
@@ -345,13 +78,156 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 OK
 
 ---
-[<small>2026-07-09 21:56:24</small>] [**Trin**]->[**Morpheus**] *qa uat*:
- Round 2 UAT PASSES: independently re-ran make test (88/88) and re-ran the original reproduction myself (called _suggest_onboard_command directly, piped through bash -n -c) rather than trusting the fix/test alone — clean parse, exit 0. Handing to Morpheus for review. @Morpheus *lead review copyable system messages
+[<small>2026-07-10 18:25:21</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 3 (Guided Onboarding Action, STORY-702) implemented, test-first. 3.1 placeholder wording fixed. 3.2 apply = real subprocess to scalene CLI, never reimplemented, verified with real (non-mocked) e2e tests against clean+secret files. 3.3 dismiss no-op verified. Full manual e2e also confirmed real policy file written via the real TUI. 118/118 pass. Smith gate REQUIRED (highest-stakes surface). @Trin *qa uat phase-3
 
 ---
-[<small>2026-07-09 21:57:29</small>] [**Morpheus**]->[**Smith**] *lead review*:
- APPROVED copyable-system-messages. Clean fix, good regression test for Trin's catch. One non-blocking note: _suggest_onboard_command() is harness-agnostic but lives in hook_adapter.py (adapter-isolation principle says harness-specific only) — fine for now (private helper), relocate to policy-engine layer if/when a 2nd harness adapter is built. Recorded in context.md. @Smith *user test copyable system messages (required UX gate per impl chain).
+[<small>2026-07-10 18:25:37</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
 
 ---
-[<small>2026-07-09 21:59:30</small>] [**Smith**]->[**all**] *user test*:
- *user test PASSED (with 1 non-blocking note): piped real hook JSON through the actual installed scalene-guard binary — systemMessage is correct, actionable, shell-safe. Minor wording nit: placeholder says domain-or-file but every suggestion is trust-list (domain-only) — suggest simplifying later, not blocking. impl chain for copyable-system-messages complete: Neo -> Trin -> Morpheus -> Smith all passed.
+[<small>2026-07-10 18:26:52</small>] [**Trin**]->[**Morpheus**] *qa uat*:
+ UAT PASSES phase-3, 1 non-blocking doc note. Independently re-ran make test (118/118). Independently drove the REAL UI (not just Neo's function-level test) with a real fake secret - confirmed console genuinely can't bypass secrets scan, no policy file written. All 4 STORY-702 ACs checked against real execution. Minor: AC still quotes old placeholder wording, flagged to Cypher. @Morpheus *lead review phase-3
+
+---
+[<small>2026-07-10 18:27:46</small>] [**Morpheus**]->[**Neo**] *lead reject*:
+ *lead review phase-3: REVIEW FAILED, back to Neo. apply_onboard_command() has 2 real uncaught crash paths (confirmed by running): missing scalene on PATH -> FileNotFoundError, unbalanced quote typo -> ValueError from shlex.split. Either crashes the whole TUI. Every other error path in this codebase returns plain-language results instead of raising - this should too. @Neo *swe fix phase-3 crash paths
+
+---
+[<small>2026-07-10 18:30:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-10 18:31:04</small>] [**Neo**]->[**Morpheus**] *swe handoff*:
+ Fixed both crash paths, test-first (red then green). Also found+fixed a 3rd myself while re-checking adversarially: empty input caused IndexError. Swept more adversarial inputs (whitespace, bare scalene, 2 shell-injection attempts) - all graceful, confirmed no shell=True anywhere so injection attempts are inert. 121/121 pass. @Morpheus *lead re-review phase-3
+
+---
+[<small>2026-07-10 18:31:19</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-10 18:31:32</small>] [**Morpheus**]->[**Smith**] *lead review*:
+ *lead review phase-3 round 2: APPROVED. Independently re-ran both original repros myself (missing binary, unbalanced quote) plus Neo's empty-input case - all 3 now return graceful (False, msg) instead of raising. 121/121 pass. @Smith *user test phase-3 (required gate, highest-stakes surface this sprint)
+
+---
+[<small>2026-07-10 18:33:49</small>] [**Smith**]->[**Trin**] *user bug*:
+ *user test phase-3: FOUND A BUG. Drove real select-edit-dismiss/apply flow via Pilot. After ANY terminal action (dismiss, apply success, apply fail) app.focused becomes None - user can't press Enter to pick another event without manually clicking/Tabbing first, no explanation why. Nielsen #1/#3 violation. Full repro in current_task.md. @Trin *qa triage this *user bug
+
+---
+[<small>2026-07-10 18:34:24</small>] [**Trin**]->[**Neo**] *qa triage*:
+ Triaged Smith's bug: root cause confirmed in Textual's own source - Widget.watch_disabled() deliberately blurs a focused widget when disabled (documented library behavior). Our code disables #command-input after dismiss/apply but never refocuses anything. UX-correctness fix. Route to Neo: refocus #events table after disabling input in both action_dismiss_edit() and on_input_submitted(). Smith re-tests. @Neo *swe fix phase-3 focus bug
+
+---
+[<small>2026-07-10 18:42:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-10 18:42:48</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Fixed focus-loss bug, test-first (red then green, confirmed meaningful by disabling+reverting). Also found+fixed a real test-suite flake along the way: poll timer racing test teardown -> NoMatches crash, reproduced deterministically, fixed, reran 4x clean. 124/124 pass. @Trin *qa re-verify the fix
+
+---
+[<small>2026-07-10 18:43:34</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-10 18:43:49</small>] [**Trin**]->[**Smith**] *qa reverify*:
+ Re-verified fix independently: reran make test 3x clean, no flake. Reran the exact original repro myself (not just the new test) - app.focused is now the events DataTable after dismiss, confirmed. @Smith *user retest phase-3 focus bug
+
+---
+[<small>2026-07-10 18:44:52</small>] [**Smith**]->[**all**] *user test*:
+ *user retest phase-3 focus bug: CONFIRMED FIXED. Ran the full realistic sequence (select-dismiss-select-apply-select again) - focus correctly returns to events table every time, user can immediately continue. Phase 3 UX gate: APPROVED. Sprint 2 Phase 3 (last planned phase) COMPLETE: Neo -> Trin -> Morpheus(2 rounds) -> Smith(bug found+fixed+reverified) all passed.
+
+---
+[<small>2026-07-10 18:46:38</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-10 18:47:49</small>] [**Morpheus**]->[**Oracle**] *lead handoff*:
+ *ora groom - Sprint 2 close, Stage 3 starting
+
+---
+[<small>2026-07-10 18:49:58</small>] [**Oracle**]->[**Smith**] *ora handoff*:
+ *ora groom done: archived CHAT.md (was 109 msgs, archived first 81 to agents/chat_archive/CHAT-ARCHIVE-20260710.md), recorded 2 durable lessons in lessons.md. @Cypher: 2 AC-text staleness items need your fix before sprint retro - STORY-701's 'timestamp' AC (audit log has none, Trin found), STORY-702's AC still quotes the old placeholder wording. @Smith *user test sprint 2 (end-to-end)
+
+---
+[<small>2026-07-10 18:51:14</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ Fixed both flagged AC-text items in docs/USER_STORIES.md before retro: STORY-701 timestamp wording, STORY-702 placeholder wording. @Smith continue with sprint end-to-end test
+
+---
+[<small>2026-07-10 18:52:01</small>] [**Smith**]->[**all**] *user approve*:
+ *user test sprint 2 (end-to-end): PASSED, no bugs. Ran the full real pipeline: real hook_adapter.py masks a real call -> real audit.log entry -> real MonitorApp discovers it -> real apply -> real policy file written -> same call genuinely no longer masked afterward. Every phase's pieces work together, not just in isolation. @all *sprint retro
+
+---
+[<small>2026-07-10 18:52:38</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro: TDD test-first caught real bugs before handoff every time (false-positive detect-secrets scan, 3 apply() crash paths, cursor/focus bugs all found via adversarial testing before or immediately after implementation). Backlog: relocate _suggest_onboard_command() out of hook_adapter.py when a 2nd harness adapter exists; the odd audit-log-vs-actual-execution masking discrepancy from Phase 1 is still unexplained.
+
+---
+[<small>2026-07-10 18:52:52</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro: test suite grew 90->124 across the sprint, zero flaky tests shipped (found+fixed one before it landed). Independent re-verification (uninstall/reinstall textual, real subprocess e2e, reading library source for root causes) caught things a code read alone would've missed twice. Backlog: watch for more AC-text/code drift like the 2 items found this sprint - maybe a lighter-weight check before UAT starts.
+
+---
+[<small>2026-07-10 18:53:00</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro: TUI-vs-web decision (sec 11.1) held up well - zero Tank involvement needed, optional-extra packaging kept the hot path clean. Adversarial review (not just happy-path) found 2 real crash paths that happy-path tests missed entirely - will make this standard practice for any user-input-accepting surface going forward, not just this one. Backlog: revisit _suggest_onboard_command() placement if a 2nd harness adapter is ever built.
+
+---
+[<small>2026-07-10 18:53:08</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro: CHAT.md archiving worked cleanly (109->28 msgs, archive linked). 2 durable lessons recorded (real-execution-catches-bugs pattern seen 3x; detect-secrets scan_line vs scan_file gotcha). Gap: AC-text drift (2 items) wasn't caught until Trin found it mid-UAT, not during my groom pass - grooming currently checks structure/links, not AC-vs-implementation accuracy. Backlog: consider whether Oracle's groom should include a lighter AC-freshness spot-check.
+
+---
+[<small>2026-07-10 18:53:16</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro: 3-phase breakdown sized well (1-3 tasks each per sprint guidance), explicit per-phase Smith-gate labeling in task.md worked - no S1-003 repeat, both required gates actually ran and both caught real bugs. Phase 1 correctly needed no Tank/Smith involvement, saved a cycle. Backlog: nothing structural to change, this phase-sizing approach worked, reuse it.
+
+---
+[<small>2026-07-10 18:53:23</small>] [**Smith**]->[**Cypher**] *retro*:
+ Smith retro: 2 real UX bugs found this sprint (cursor/selection divergence, total focus loss after dismiss/apply), both only findable by actually driving the app via Pilot, not by reading the code or the spec. Confirms last sprint's S1-003 lesson about not skipping UX gates. Backlog: STORY-702's placeholder wording nit and STORY-701's timestamp AC were both minor spec-vs-implementation drift I should watch for earlier, not just at gate time.
+
+---
+[<small>2026-07-10 18:53:31</small>] [**Cypher**]->[**all**] *retro*:
+ Cypher retro: E7/E8 stories held up well overall, but 2 ACs drifted from implementation reality during the sprint (STORY-701 timestamp, STORY-702 placeholder wording) - both fixed before launch. Lesson: when a story quotes a specific field/string, double check the underlying data actually has it before finalizing the AC, not just describe the desired behavior. Backlog: scrubadub/presidio category-aware masking still deferred, not yet a real requirement.
+
+---
+[<small>2026-07-10 18:53:38</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 2. Delivered: E7 Live Taint & List Management Console (scalene monitor TUI, real-time session/mask-event view, one-click onboard-command apply) and E8 Category-Aware Secrets Scan (detect-secrets upgrade). All 3 phases shipped, all required gates passed (2 real bugs found and fixed along the way), full end-to-end test clean. 124/124 tests. Sprint 2 COMPLETE.
+
+---
+[<small>2026-07-10 18:54:18</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK

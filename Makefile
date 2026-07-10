@@ -26,7 +26,7 @@ tldr: ## Show TL;DR summaries from all project files (quick orientation for agen
 setup: ## Create project venv and install dependencies (editable install)
 	@python3 -m venv .venv
 	@./.venv/bin/pip install -q --upgrade pip
-	@./.venv/bin/pip install -q -e .
+	@./.venv/bin/pip install -q -e ".[monitor]"
 	@$(MAKE) MKF_ACTIVE=1 install-hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
 

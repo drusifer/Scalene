@@ -1,27 +1,34 @@
 # Current Task
 
-**Status:** `*user test copyable system messages` — APPROVED with one non-blocking note
-**Assigned to:** Smith (impl chain complete)
-**Started:** 2026-07-09
+**Status:** Sprint 2 Stage-3 end-to-end test PASSED, no bugs. Sprint fully validated.
+**Assigned to:** N/A (Stage 3 step 8 finished)
+**Started:** 2026-07-10
+**Completed:** 2026-07-10
 
 ## Task Description
-User asked how a developer would know how to write a `scalene onboard` JSONPath/pattern with no example to work from. Consulted (ran `onboard.py`/`hook_adapter.py`), proposed 3 ranked options (see `context.md`), user approved option #1.
+Sprint 2 Phase 3's required UX gate: `*user test` the real "select → edit → apply/dismiss" flow (STORY-702), per the `*impl` chain's conditional Smith step.
 
 ## Progress
-- [x] Confirmed the gap by running the software: `onboard.py` requires `--tool/--jsonpath/--pattern` fully hand-written, no discovery mechanism (Nielsen #6/#10)
-- [x] Identified that `pre_tool_use` already computes the real `tool_input` at mask time and discards it (audit log only keeps `tool_name`+`payload_field`)
-- [x] Proposed: extend the mask `systemMessage` (and audit log entry) to include a ready-to-run `scalene onboard` command, JSONPath pointed at the matched/payload field, pattern defaulted to an escaped literal of the real value
-- [x] User approved — handed to Neo as an implementation task (test-first per project convention)
-- [x] Neo implemented; Trin's UAT round 1 found a real shell-quoting bug (`--target` placeholder not `shlex.quote()`'d, broke bash on paste) — Neo fixed, round 2 passed; Morpheus approved with a non-blocking note (adapter/policy-engine layer placement)
-- [x] `*user test`: piped real hook JSON through the actual installed `scalene-guard` binary (not internal functions) — systemMessage is correct, actionable, and shell-safe
-- [x] Found one non-blocking wording nit: placeholder says `<domain-or-file-this-call-reaches>` but every suggestion is `--list-type trust` (domain-only per `onboard.py`'s own help text) — "-or-file" offers a choice that doesn't exist. Suggest `<domain-this-call-reaches>`. Not filing as `*user bug`/full loop — trivial one-string fix, noted for whenever Neo next touches this function.
-- [x] Verdict: **APPROVED.** `*impl` chain for "copyable system messages" complete.
+- [x] Drove the real full flow via Pilot: select event → view pre-filled command → dismiss → re-select → edit → apply
+- [x] Confirmed the pre-filled command shows the real (already-fixed) placeholder wording, unedited value clearly needs user action
+- [x] Confirmed dismiss clears/disables the input as expected (Trin/Neo's automated test already covers this at the widget level — I checked the *flow*, not just the state)
+- [x] **Found a real bug**: after dismiss OR any apply (success or failure), the app has **zero focused widget** (`app.focused is None`) — verified directly, in two separate scenarios. A user can't press Enter to select the next event without first clicking/Tabbing elsewhere; nothing in the UI explains why Enter "stopped working."
+- [x] Filed `*user bug`:
+  ```
+  CMD: MonitorApp -> select event row (Enter) -> dismiss (Escape) [or: apply, success or failure] -> attempt to select another event row (Enter)
+  EXPECTED: focus returns somewhere usable (e.g. the events table) so the user can immediately act on the next event
+  ACTUAL: app.focused is None after any of dismiss/apply-success/apply-failure — Enter on the events table does nothing until the user manually clicks or Tabs to refocus it
+  UX ISSUE: violates Nielsen #1 (visibility of system status — nothing explains why input "stopped responding") and #3 (user control and freedom — completing or canceling an action shouldn't stall the whole interaction loop). This is the sprint's highest-stakes surface; every use of it after the first event hits this.
+  ```
+- [x] Routed to Trin for triage (protocol)
+- [x] Re-tested after Neo's fix and Trin's re-verification: ran the full realistic sequence (select → dismiss → select another → apply → select again) — focus correctly returns to the events table every time
+- [x] Verdict: **APPROVED.** Phase 3 fully complete. Sprint 2 implementation (all 3 phases) done — next is sprint close, not another `*impl` phase.
 
 ## Blockers
-None
+None.
 
 ## Oracle Consultations
 None yet
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

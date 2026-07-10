@@ -51,7 +51,7 @@ class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
             suggested_line = message.split("run:\n", 1)[1]
             argv = shlex.split(suggested_line)[1:]  # drop the leading "scalene"
             argv = [
-                "reports.internal.example.com" if arg == "<domain-or-file-this-call-reaches>" else arg
+                "reports.internal.example.com" if arg == "<domain-this-call-reaches>" else arg
                 for arg in argv
             ]
             argv += ["--policy-path", str(policy_path)]

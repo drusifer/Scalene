@@ -2,7 +2,7 @@
 
 **Owner:** Cypher (PM)
 **Source:** `docs/BRD.md`
-**Status:** Draft v1 — pending Smith (UX) gate
+**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) — Draft v1, pending Smith (UX) gate 1.
 
 ## Vision
 
@@ -43,5 +43,12 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 | E4 | Structural Masking | Blind payload substitution at the Triangle-of-Doom boundary |
 | E5 | Onboarding Workflow | Developer-guided allow/trust rule additions with pre-write scans |
 | E6 | Fail-Safe & Isolation | Error handling, scanner-loop prevention, sandboxed scanning |
+| E7 | Live Taint & List Management Console | Realtime dashboard (TUI or web) over `.scalene/audit.log` + taint state, with one-click onboarding of suggested rules |
+| E8 | Category-Aware Secrets Scan | Upgrade onboarding secrets scan from 3 hand-rolled regexes to `detect-secrets` |
 
-See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+E7-E8 are Sprint 2. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+
+## Sprint 2 Goals (added 2026-07-10)
+
+6. Give developers a realtime, human-friendly view of taint status and mask events instead of raw log files — usability is the primary driver for Sprint 2 (user directive).
+7. Let developers act on a suggested onboarding rule with one click/action instead of copy-pasting a terminal command.

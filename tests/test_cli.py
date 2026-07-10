@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scalene.cli import main as guard_main
 from scalene.main_cli import main as scalene_main
@@ -92,6 +92,19 @@ class TestScaleneMainCli(unittest.TestCase):
             )
             self.assertEqual(exit_code, 0)
             self.assertTrue(policy_path.exists())
+
+    def test_monitor_subcommand_dispatches(self):
+        # Only tests dispatch wiring — monitor.main's own behavior (incl. the
+        # missing-textual-extra fallback) is covered in test_monitor_cli.py.
+        # Must patch the _SUBCOMMANDS dict entry itself (not the `monitor_main`
+        # name) since the dict already bound the real function object at
+        # import time — patching the module attribute alone would not stop
+        # the real TUI from launching (and hanging) in this test.
+        mock_monitor = Mock(return_value=0)
+        with patch.dict("scalene.main_cli._SUBCOMMANDS", {"monitor": mock_monitor}):
+            exit_code = scalene_main(["monitor"])
+        mock_monitor.assert_called_once_with([])
+        self.assertEqual(exit_code, 0)
 
     def test_unknown_subcommand_returns_error(self):
         exit_code = scalene_main(["bogus"])

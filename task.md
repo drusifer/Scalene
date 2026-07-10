@@ -1,8 +1,14 @@
-# Sprint Task Board — Project Scalene, Sprint 1
+# Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
+**Status:** Sprint 1 closed 2026-07-09. **Sprint 2 CLOSED 2026-07-10** — all 3 phases shipped, all gates passed, end-to-end test clean, retro complete, launched. 124/124 tests.
+
+---
+
+# Sprint 1 (closed)
+
 **Status:** ✅ **SPRINT CLOSED 2026-07-09** — all 4 phases complete, Trin UAT + Morpheus review passed every phase. All 9 user stories' acceptance criteria verified (`docs/STORY_TRACEABILITY.md`). 77/77 tests passing.
-**Source:** `docs/USER_STORIES.md` + `docs/ARCHITECTURE.md`
+**Source:** `docs/USER_STORIES.md` (E1-E6) + `docs/ARCHITECTURE.md` (§1-10)
 
 Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included — no deploy/CI/system-level env var work in this sprint (`SCALENE_BYPASS` is a subprocess-local var per architecture, not infra-scoped); revisit if that changes.
 
@@ -64,3 +70,64 @@ Both sprint-planning gates (Smith Gate 1 & 2) are clear. No Tank phase included 
 ## Notes
 - No Tank phase this sprint (see header). Reassess at Phase 3 if onboarding scope grows to include a real external threat-intel API.
 - Smith re-engages post-Phase 2 for `*user test` against real hook behavior (not just spec review).
+
+---
+
+# Sprint 2
+
+**Owner:** Mouse
+**Status:** ✅ **SPRINT CLOSED 2026-07-10** — all 3 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 2 & 3, both found and closed real bugs). Full end-to-end test passed with no bugs. 124/124 tests passing. Retro complete, launched by Cypher.
+**Source:** `docs/USER_STORIES.md` (E7-E8) + `docs/ARCHITECTURE.md` (§11)
+**Scope:** User-directed (2026-07-10) — usability focus, promote backlogged items, add a live console for taint status + guided list maintenance.
+
+Every phase below carries a **required** Smith UX gate (`*user test`) after Trin/Morpheus, per bloop's `*impl` conditional Smith step — called out explicitly per phase so this doesn't repeat Sprint 1's S1-003 gap (a "Smith re-engages" note with no actual chain step behind it).
+
+## Phase 1 — Secrets Scan Upgrade
+*Chain: Neo → Trin → Morpheus*
+*Independent of Phases 2-3 — no shared code, can run first or in parallel if ever parallelized.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 1.1 | Integrate `detect-secrets` into `secrets_scan.py`, routed through the existing plain-language result-translation layer (never raw library exception text) | STORY-801 |
+| 1.2 | Update/fix existing secrets-scan test fixtures for the new detector's real match set — fix fixtures, do not add scanner allowlist exceptions (project policy) | STORY-801 |
+
+**Exit criteria:** Trin UAT passes (incl. confirming onboarding-blocked message stays plain-language); Morpheus reviews. No Tank, no Smith gate required this phase (no new user-facing surface — same CLI behavior, better detection under the hood). *If a secrets-scan failure message actually changes wording, Smith spot-checks it — optional, not blocking.*
+
+✅ **DONE 2026-07-10** — `src/scalene/secrets_scan.py` rewritten on `detect-secrets` (via `scan_file()`, not the unfiltered `scan_line()` adhoc API — caught a real false-positive trap there before implementing), `detect-secrets>=1.5.0` added to `pyproject.toml`. No network egress (verified against docs + a regression test). 90/90 tests passing. Trin UAT + Morpheus review both passed.
+
+---
+
+## Phase 2 — Console Foundations
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: nothing new — reads existing `.scalene/audit.log` / `.scalene/state/*.json` formats as-is.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 2.1 | `scalene monitor` console-script entrypoint, `textual` as an optional `[monitor]` pip extra (never a hard dependency of the base package) | STORY-701 |
+| 2.2 | Polling data layer (~500ms) over audit log (mask events only — never announce a non-mask call, per hook_adapter.py's existing guarantee) + session state files | STORY-701 |
+| 2.3 | Multi-session list view (default) + per-session filter + "all sessions" aggregate toggle | STORY-701 |
+
+**Exit criteria:** Trin UAT passes, including a concrete realtime check (new mask event visible within ~1s of the audit-log write, per Smith's Gate 2 note); Morpheus reviews. **Smith `*user test` required** (STORY-701 is directly developer-observable UI) — run against a real session's real audit.log, not a mocked feed.
+
+✅ **DONE 2026-07-10** — `src/scalene/monitor_data.py` (pure data layer), `monitor_app.py` (Textual App), `monitor.py` (CLI entrypoint, graceful missing-extra fallback). `textual>=8.0` as the `[monitor]` optional extra. Trin UAT passed; Morpheus approved; **Smith's UX gate found a real bug** (session-selection cursor silently diverged from the actual filter on every poll refresh) — triaged by Trin, fixed by Neo (test-first), independently re-verified by both Trin and Smith across repeated poll ticks before final approval. 109/109 tests passing. One non-blocking spec-conflict flagged to Cypher (STORY-701's "timestamp" AC bullet vs. the audit log's actual schema — needs a wording fix, not a code fix).
+
+---
+
+## Phase 3 — Guided Onboarding Action
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: Phase 2 (console must exist to act within).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 3.1 | Render each mask event's `suggested_onboard_command` with the `<domain-or-file-this-call-reaches>` placeholder editable inline — also fix the placeholder wording itself (Smith's non-blocking Sprint-1 nit: it's always trust-list/domain-only, never "-or-file") since this is the first time it's directly user-facing in a UI, not just a copyable terminal string | STORY-702 |
+| 3.2 | "Apply" action: subprocess call to the real `scalene onboard` CLI (never a reimplementation) using the edited command; report success/failure back in the console | STORY-702 |
+| 3.3 | "Dismiss" action with no side effect (no partial YAML write, no state change) | STORY-702 |
+
+**Exit criteria:** Trin UAT passes (incl. confirming apply/dismiss never bypass onboarding's existing secrets-scan/reputation-check gates); Morpheus reviews. **Smith `*user test` required** (STORY-702 is the sprint's highest-stakes UX surface — a one-click action that writes to `scalene_policy.yaml`).
+
+✅ **DONE 2026-07-10** — placeholder wording fixed; `apply_onboard_command()` (real subprocess to the actual `scalene` CLI, never a reimplementation) wired into `monitor_app.py`'s command-input/apply-status UI. Trin UAT passed (verified independently through the real UI that a real secret genuinely blocks the write). Morpheus's review round 1 found and rejected 2 uncaught crash paths (missing binary, malformed quoting) — Neo fixed both plus a 3rd found while re-checking (empty input), round 2 approved. Smith's UX gate found a real bug (focus lost entirely after dismiss/apply, stranding the user) — triaged by Trin, fixed by Neo, re-verified by both Trin and Smith across a full realistic multi-step sequence. 124/124 tests passing. **Sprint 2's last planned phase — all 3 phases now closed.**
+
+## Notes
+- No Tank phase this sprint — see header; Morpheus's architecture decision (§11.1) explicitly avoided introducing anything that would need one.
+- Phase 1 is independent of Phases 2-3; sequenced first here only because it's the smallest/lowest-risk phase, not because of a hard dependency.
+- Two items intentionally **not** phased as their own tasks (`docs/USER_STORIES.md`'s "Deferred / Not Promoted" section): the placeholder-wording fix is folded into task 3.1 instead of a standalone task (too small); relocating `_suggest_onboard_command()` out of `hook_adapter.py` stays deferred until a second harness adapter exists.

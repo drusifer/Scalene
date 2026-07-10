@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-None — Sprint 1 is closed. Waiting on the user for Sprint 2 scope, or a retrospective request.
+Phase 1 and 2 are both closed. Next actual work is `*impl phase-3` (Neo, Guided Onboarding Action) whenever the user is ready.
 
 ## Waiting On
-User (Sprint 2 scope / next priorities).
+User (to trigger `*impl phase-3`).
 
 ## Planned Work
-- [x] Tracked all 4 phases through to close
-- [ ] When Sprint 2 is scoped: repeat `*plan sprint` chain (Cypher → Smith gates → Morpheus → Mouse phase breakdown → Morpheus review)
-- [ ] If a retrospective is requested: carry forward process lessons already logged in Morpheus's/Trin's/Neo's context.md files (TDD test-first, `make`-only build tasks, independently recount claimed numbers)
+- [x] Confirmed Phase 2's Smith gate actually ran (not just prose) — and it mattered, it caught a real bug. S1-003 concern didn't repeat.
+- [ ] Track Phase 3's Smith gate the same way when it comes up
+- [ ] If a retrospective is requested: carry forward process lessons already logged in Morpheus's/Trin's/Neo's/Smith's context.md files (TDD test-first, `make`-only build tasks, independently recount claimed numbers, git-stash blast-radius care)
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

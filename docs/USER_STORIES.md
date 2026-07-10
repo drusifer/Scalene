@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Draft v1 — pending Smith (UX) gate 1
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) — Draft v1, pending Smith gate 1.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -111,9 +111,64 @@ As an engineer, I want the scanning infrastructure (credential scans, threat-int
 
 ---
 
-## Open Questions for Architecture (Morpheus)
+## Open Questions for Architecture (Morpheus) — Sprint 1
 
 1. What runtime/language implements the hook layer — is this a Claude Code / Cursor plugin, a language-agnostic sidecar process, or both?
 2. Where does taint state live for the session — in-memory per process, or persisted to disk for crash recovery mid-session?
 3. What's the actual mechanism for `pre_tool_call`/`post_tool_call` hook registration — does this target a specific agent harness's hook API, or is it meant to be harness-agnostic?
 4. What threat-intel/reputation service does trust-list onboarding call (STORY-501)? Is this a paid third-party API, and what happens if the developer runs offline?
+
+All 4 resolved during Sprint 1 architecture/implementation — see `docs/ARCHITECTURE.md` and `docs/STORY_TRACEABILITY.md`.
+
+---
+
+# Sprint 2
+
+**Scope per user direction (2026-07-10):** usability focus, promote backlogged items, and a new live list-management console.
+
+## E7 — Live Taint & List Management Console
+
+**Motivation:** Onboarding a false-positive already produces a ready-to-run `scalene onboard` command (`hook_adapter.py:_suggest_onboard_command`, shipped as the "copyable system messages" feature) and a JSON-lines audit trail (`.scalene/audit.log`) plus per-session taint state (`.scalene/state/<session_id>.json`). Today a developer only sees this if they're reading raw terminal `systemMessage` output or hand-parsing the log files. E7 turns those existing data sources into a live view a developer keeps open alongside their agent session.
+
+### STORY-701
+As an engineer running an agent session, I want a live view of my session's taint status and recent mask events, so I understand in real time why a call was masked without hand-parsing `.scalene/audit.log` or `.scalene/state/*.json`.
+
+**Acceptance Criteria**
+- [ ] Displays current `has_sensitive_data` / `has_untrusted_data` flags per active session, updating automatically as `.scalene/state/<session_id>.json` changes — no manual refresh action required.
+- [ ] Displays a running feed of `.scalene/audit.log` mask events (tool name, payload field), newest first (by append order — the audit log has no timestamp field, and a separate AC below forbids adding one; ordering satisfies the "real time" intent), as they're appended.
+- [ ] **Only surfaces an entry/indicator for calls where masking actually occurred** — mirrors the existing `hook_adapter.py` guarantee that no audit entry or `systemMessage` is emitted when nothing was actually masked (e.g. tools like `Read`/`WebSearch` with no mapped payload field). The console must consume that guarantee, not re-derive or weaken it — every tool call is not a mask event, and the UI must not imply otherwise. (User directive, 2026-07-10.)
+- [ ] Requires zero changes to the audit log / state file formats to become visible — reads the existing files as-is.
+- [ ] If no session/audit data exists yet (fresh project, no calls made), the view says so clearly rather than showing a blank screen or an error.
+
+### STORY-702
+As an engineer, I want the console to show me the suggested `scalene onboard` command for each masked call and let me run it without a terminal context-switch, so onboarding a false positive is a one-click action.
+
+**Acceptance Criteria**
+- [ ] Each mask event surfaces its existing `suggested_onboard_command` audit field, with the `<domain-this-call-reaches>` placeholder editable inline before running.
+- [ ] Triggering "apply" runs the exact `scalene onboard` command and reports success/failure back in the console — not fire-and-forget.
+- [ ] The console is a UI shell over the existing onboarding CLI only — it never bypasses onboarding's existing safety gates (secrets scan / reputation lookup).
+- [ ] Dismissing a suggestion has no side effect (no partial YAML write, no state change).
+
+**Open question for Morpheus (architecture step):** TUI (e.g. Textual, reads local files directly, no new process/port) vs. local web frontend (needs a localhost server — evaluate whether that counts as a "new service" requiring a lightweight Tank note, even though it's dev-local-only with no deploy/CI footprint). Also: filesystem-watch vs. poll for "realtime" — `audit.log`/state files are plain files, not a socket or event stream.
+
+---
+
+## E8 — Category-Aware Secrets Scan (from backlog)
+
+**Origin:** `agents/morpheus.docs/BACKLOG.md` (2026-07-09 research, promoted into Sprint 2 per user direction to include backlogged items).
+
+### STORY-801
+As a security-conscious engineer, I want the onboarding secrets scan to detect a broader category of credential types instead of 3 hand-rolled regexes, so trust-list onboarding doesn't approve a resource that still contains an undetected credential.
+
+**Acceptance Criteria**
+- [ ] `secrets_scan.py`'s detection is upgraded to use `detect-secrets` (per backlog recommendation) in place of the current 3 hand-rolled regexes, with no change to the onboarding CLI's external interface/behavior for callers.
+- [ ] All existing secrets-scan test fixtures continue to pass, adjusted for the new detector's actual match set — fixtures are fixed to reflect real detection, not weakened with scanner allowlist exceptions (project policy).
+- [ ] No network egress introduced — `detect-secrets` is pure Python, preserves the offline-scan requirement (`ARCHITECTURE.md` §9).
+- [ ] Category-aware masking of the mask *literal itself* (`MaskingEngine.apply_mask`, `scrubadub`/`presidio` per backlog) is explicitly **out of scope** for this story — backlog defers that until category-aware masking becomes an actual requirement, not just a nice-to-have.
+
+---
+
+## Sprint 2 — Deferred / Not Promoted to a Story
+
+- **Placeholder wording fix** (Smith's non-blocking note, 2026-07-10: onboard-command placeholder says "domain-or-file" but every current suggestion is trust-list/domain-only): too small for a full story per Bloop's fast-track/consolidation rule — flagged to Mouse as a one-line task to fold into whichever Sprint 2 phase touches `hook_adapter.py`.
+- **Relocate `_suggest_onboard_command()` out of `hook_adapter.py`** (Morpheus's review note, 2026-07-09): explicitly deferred until a second harness adapter is built — not actionable now, no second adapter exists.

@@ -1,15 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-None planned. Grooming pass is done.
+None planned. Sprint 2 groom pass done, CHAT.md archived.
 
 ## Waiting On
 None.
 
 ## Planned Work
-- [ ] Flag to the user/Cypher: `agents/cypher.docs/current_task.md` is stale (says "Awaiting Smith gate 1" though Sprint 1 is closed) — not fixed here since it's Cypher's owned narrative content, not a structural/link issue.
-- [ ] If `agents/CHAT.md` grows past 50-100 messages, run `*ora archive` (currently well under that threshold).
-- [ ] No `*ora tldr` sweep has been run yet on the new `src/scalene/*.py` or `tests/*.py` files — consider if `make tldr` output should surface them.
+- [x] `agents/cypher.docs/current_task.md` staleness — since resolved by Cypher herself during Sprint 2 planning
+- [ ] `agents/CHAT.md` now at ~28 messages post-archive — check again at the next groom pass
+- [ ] No `*ora tldr` sweep has been run on `src/scalene/monitor*.py` or the new `tests/test_monitor_*.py` files — consider running one
+- [ ] Watch for more orphans landing bundled inside code commits — same lesson as before, still applies
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

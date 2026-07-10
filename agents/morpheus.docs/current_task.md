@@ -1,27 +1,35 @@
 # Current Task
 
-**Status:** Phase 4 (final) architecture/quality review — APPROVED. Sprint 1 CLOSED.
-**Assigned to:** N/A (sprint finished)
-**Started:** 2026-07-09
-**Completed:** 2026-07-09
+**Status:** Sprint 2 Phase 3 fully complete — Smith's UX gate found and closed a real bug. Sprint 2 implementation (all 3 phases) done.
+**Assigned to:** N/A (implementation stage finished; next is sprint close)
+**Started:** 2026-07-10
+**Completed:** 2026-07-10
 
 ## Task Description
-`*lead review Phase 4` — final review: packaging (`cli.py`/`main_cli.py`), hook registration docs, formal perf test, and full cross-story UAT sign-off. Last phase in `task.md`.
+`*lead arch sprint` (Sprint 2), per the `*plan sprint` Bloop chain, following Smith's Gate 1 approval-with-notes on Cypher's E7/E8 stories.
 
 ## Progress
-- [x] `scalene-guard`/`scalene` console_scripts match architecture §6 Distribution decision exactly (pip-installable CLI, `.claude/settings.json` invokes it as `hooks.PreToolUse[].hooks[].command`)
-- [x] `docs/SETUP.md` resolves the "hook registration mechanism...documented in project setup instructions (Neo to write during implementation)" item architecture §7.3 explicitly deferred to implementation time
-- [x] `.scalene/` `.gitignore` exclusion confirmed — folds into task 4.1 per Mouse's original no-Tank-phase decision (§9's Tank note said this check was useful but not a hard gate)
-- [x] Formal perf test (`test_performance.py`) closes out STORY-301's <15ms AC that Phase 2/3 correctly left open
-- [x] Reviewed Trin's UAT finding (traceability doc arithmetic bug, fixed) — a docs bug, not a code defect; doesn't block sprint close
-- [x] Confirmed all 9 user stories in `docs/USER_STORIES.md` have their AC closed (29 test-verified + 2 accepted design-verified, per `docs/STORY_TRACEABILITY.md`)
-- [x] Verdict: **APPROVED**. Sprint 1 exit criteria met. **Sprint 1 is CLOSED.**
+- [x] Read Cypher's Sprint 2 stories (`docs/USER_STORIES.md` E7/E8) and Smith's Gate 1 notes
+- [x] Resolved the open TUI-vs-web-frontend question → TUI (`textual`), optional pip extra
+- [x] Decided polling (not filesystem-watch) for reading `.scalene/audit.log`/state files
+- [x] Resolved Smith's session-scope note: default multi-session list view + per-session filter + aggregate toggle
+- [x] Resolved Smith's plain-language-errors note: `detect-secrets` output routed through existing `secrets_scan.py` translation layer
+- [x] Decided the onboarding "apply" action is a subprocess call to the existing `scalene onboard` CLI, not a reimplementation
+- [x] Determined **no Tank gate needed** this sprint (no new port/service/env var/CI impact) — recorded explicitly in `docs/ARCHITECTURE.md` §11.1
+- [x] Wrote `docs/ARCHITECTURE.md` §11 (Sprint 2 Architecture) + updated doc status line
+- [x] Smith Gate 2: approved with one note (realtime AC), folded into Phase 2's exit criteria by Mouse
+- [x] Mouse phase breakdown: 3 phases in `task.md`, Smith gates explicitly placed per-phase
+- [x] Reviewed Mouse's sprint plan vs. architecture: **APPROVED**, phase sequencing correct, Smith gate placement correct, no Tank phase confirmed correct. **Sprint 2 plan LOCKED.**
+- [x] `*lead review phase-1`: independently grepped to confirm only `scan_worker.py` imports `secrets_scan`/`detect_secrets` (hot-path `hook_adapter.py`/`cli.py` untouched). **APPROVED.** Phase 1 complete, `task.md` updated.
+- [x] `*lead review phase-2`: independently re-grepped for `textual`/`monitor_app`/`monitor_data` imports in the hot path (clean). **APPROVED** with 2 non-blocking notes (unbounded event list, full-redraw-per-poll — see context.md). Handed to Smith for the required UX gate.
+- [x] `*lead review phase-3`, round 1: ran `apply_onboard_command()` with adversarial inputs (missing binary, malformed quoting) — **found 2 real uncaught crash paths**. **REJECTED.** Handed back to Neo.
+- [x] `*lead review phase-3`, round 2: independently re-ran both original repros + Neo's own new empty-input finding — all 3 now graceful. **APPROVED.** Handed to Smith for the required UX gate.
 
 ## Blockers
-None
+Waiting on Smith Gate 2 approval before the chain proceeds to Mouse.
 
 ## Oracle Consultations
 None yet
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

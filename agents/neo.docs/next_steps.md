@@ -1,14 +1,18 @@
 # Next Steps
 
 ## Immediate Next Action
-Handed off to Trin: `*qa uat` on the "copyable system messages" feature (`hook_adapter.py` mask-suggestion + false-positive fix, `tests/test_hook_adapter.py`, `tests/test_onboard_suggestion_e2e.py`). Then Morpheus review. Then Smith `*user test` (required per the `*impl` chain's UX gate — this phase changes a developer-facing `systemMessage`/audit-log shape, and Smith already committed in her own `next_steps.md` to testing it).
+Sprint 2's implementation stage (all 3 planned phases) is fully complete. No active Neo task until sprint close begins or a new phase is scoped.
 
 ## Waiting On
-Trin (UAT) → Morpheus (review) → Smith (UX test against the real message).
+User to trigger sprint close (Stage 3) or further work.
 
 ## Planned Work
-- [ ] If Trin/Morpheus/Smith find gaps: fix in this same phase, don't restart
-- [ ] Not part of this task, still open from earlier this session: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml` (fresh installs default to mask-everything) — still unaddressed, not yet a formal task
+- [ ] `_suggest_onboard_command()` relocation out of `hook_adapter.py` still deferred until a 2nd harness adapter exists — no action needed now
+- [ ] `install-hooks` still doesn't scaffold a starter `scalene_policy.yaml` — unaddressed, not yet a formal task
+- [ ] This is Sprint 2's last planned phase (`task.md` only has 3) — if all gates pass, next is Stage 3 sprint close (Oracle groom → Smith end-to-end test → retro → Cypher launch), per `/sprint`'s skill definition
+- [ ] Not part of this task, still open: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml`; the odd audit-log-vs-actual-execution masking discrepancy noticed during Phase 1 — neither blocking, neither actioned yet
+- [ ] Not part of this task, still open from earlier: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml` (fresh installs default to mask-everything) — still unaddressed, not yet a formal task
+- [ ] Also noticed during Phase 1 work: this session's `scalene-guard` hook computes/logs a "mask" decision for nearly every tool call (real audit.log entries), but the actual tool execution never appeared to receive the masked `updatedInput` — worth a closer look at some point, not blocking
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

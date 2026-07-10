@@ -55,7 +55,7 @@ def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> 
         f"--tool {shlex.quote(tool_name)} "
         f"--jsonpath {shlex.quote(jsonpath)} "
         f"--pattern {shlex.quote(pattern)} "
-        f"--target {shlex.quote('<domain-or-file-this-call-reaches>')}"
+        f"--target {shlex.quote('<domain-this-call-reaches>')}"
     )
 
 

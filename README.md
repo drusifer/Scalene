@@ -14,6 +14,7 @@ Scalene is a provenance-based DLP layer for AI coding agents. It tracks where da
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, class/sequence diagrams |
 | [docs/SETUP.md](docs/SETUP.md) | Install + `.claude/settings.json` hook registration |
 | [docs/STORY_TRACEABILITY.md](docs/STORY_TRACEABILITY.md) | AC-to-test traceability (Sprint 1 close) |
+| [docs/URL_MALWARE_CHECKING.md](docs/URL_MALWARE_CHECKING.md) | Research notes: URL/malware reputation API options |
 | [task.md](task.md) | Sprint task board (current status) |
 
 ## Getting started

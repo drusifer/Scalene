@@ -1,14 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-Wait for Smith's gate 1 verdict on `docs/USER_STORIES.md`. If rejected, revise stories per Smith's feedback and resubmit. If approved, hand off to Morpheus for `*lead arch sprint`.
+None. Sprint 2 is fully implemented; AC-text is clean. Waiting for Smith's Stage-3 end-to-end test and the sprint retro before `*pm launch`.
 
 ## Waiting On
-Smith (`*user review docs/USER_STORIES.md` → `*user approve`/`*user reject`)
+Smith (end-to-end test) → all personas (retro) → then it's my turn to launch.
 
 ## Planned Work
-- [ ] Resolve Smith feedback if rejected
-- [ ] Once approved, notify Morpheus to begin architecture (Step 2 of `*plan sprint`)
+- [ ] At retro: incorporate this sprint's findings into the next backlog pass (e.g. the deferred `scrubadub`/`presidio` category-aware masking backlog item, still not promoted)
+- [ ] `*pm launch` once retro completes
 
 ---
-*Last updated: 2026-07-02*
+*Last updated: 2026-07-10*
