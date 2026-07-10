@@ -1,5 +1,7 @@
 """Tests for the Claude Code PreToolUse/PostToolUse hook adapter (STORY-301, STORY-302)."""
 
+import json
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -101,6 +103,97 @@ class TestPreToolUse(unittest.TestCase):
                 audit_log_path=audit_log,
             )
             self.assertFalse(audit_log.exists())
+
+    def test_no_false_mask_report_for_tool_with_no_mapped_payload_field(self):
+        """A tool with no entry in DEFAULT_PAYLOAD_FIELDS can't actually be masked
+        (STORY-401 masking is a no-op without a known field) — so pre_tool_use must
+        not claim a mask happened via systemMessage or audit log."""
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            audit_log = Path(tmp) / "audit.log"
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": "bar"}},
+                config,
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+            )
+            self.assertTrue(result["allow"])
+            self.assertNotIn("systemMessage", result)
+            self.assertFalse(audit_log.exists())
+
+    def test_mask_systemmessage_includes_suggested_onboard_command(self):
+        """STORY-501 UX follow-up: a mask event should hand the developer a
+        ready-to-run onboard command for the exact call that was masked, not
+        just an explanation — so they don't have to hand-write JSONPath/regex
+        with no example to work from."""
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                config,
+                state_dir=state_dir,
+            )
+            message = result["systemMessage"]
+            self.assertIn("scalene onboard", message)
+            self.assertIn("--tool Bash", message)
+            self.assertIn("$.command", message)
+            self.assertIn("curl", message)
+
+    def test_suggested_command_is_valid_shell_syntax_even_unedited(self):
+        """Regression test for a Trin UAT finding: every token in the suggested
+        command must be shell-safe, including the --target placeholder — a
+        developer's first move is often to paste the command before editing
+        it, and the placeholder's '<'/'>' are shell redirection operators if
+        left unquoted. `bash -n` syntax-checks without needing `scalene` on
+        PATH or executing anything."""
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                config,
+                state_dir=state_dir,
+            )
+            suggested_line = result["systemMessage"].split("run:\n", 1)[1]
+            completed = subprocess.run(["bash", "-n", "-c", suggested_line], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_audit_log_includes_suggested_onboard_command(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            audit_log = Path(tmp) / "audit.log"
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                config,
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+            )
+            entry = json.loads(audit_log.read_text().strip().splitlines()[-1])
+            self.assertIn("suggested_onboard_command", entry)
+            self.assertIn("scalene onboard", entry["suggested_onboard_command"])
 
 
 class TestPostToolUse(unittest.TestCase):

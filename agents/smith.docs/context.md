@@ -13,5 +13,23 @@
 ## Important Notes
 - Both sprint planning gates (Gate 1, Gate 2) are clear; Sprint 1 fully implemented and closed (2026-07-09) — but see S1-003: the planned post-Phase-2 UX test against real hook behavior never happened. Recommend a retroactive lightweight `*user test` pass against the real `scalene-guard` binary before Sprint 2 starts.
 
+## `*user consult` — onboarding UX for allowlisting tool calls (2026-07-09)
+
+**Question posed by user (broadcast, no assigned persona):** how does a developer know what JSONPath/pattern to write to allowlist a tool call, having never seen an example of that tool's actual call shape? What's a user-friendly onboarding flow?
+
+**Ran the software to confirm the gap (heuristic #6, recognition over recall):** `scalene onboard` (`src/scalene/onboard.py`) requires `--tool`, `--jsonpath`, `--pattern`, `--target` all supplied up front, with zero discovery mechanism — the developer must already know Claude Code's internal tool-call JSON schema (field names per tool) and hand-write both a JSONPath expression and a regex, with no example to copy from. This is a real defect against Nielsen #6 and #10 (recognition rather than recall; help and documentation) — today's flow assumes expert prior knowledge of an undocumented internal schema.
+
+**Key existing asset that's currently wasted:** `pre_tool_use` (`hook_adapter.py`) already has the full real `tool_input` in hand at the exact moment it decides to mask — that's the ideal onboarding example, generated for free, and today it's thrown away (audit log only stores `tool_name` + `payload_field`, not the field shape).
+
+**Options surfaced (ranked, presented to user):**
+1. **Actionable mask `systemMessage`** (lowest effort, highest leverage): extend the existing mask `systemMessage`/audit entry to include a ready-to-run `scalene onboard` command, pre-filled with the real tool name, a JSONPath into the field that actually matched, and a literal-escaped regex derived from the real value — the user only loosens the pattern if they want it broader. Turns every block into its own worked example.
+2. **Persist last-blocked call for later onboarding** (`--from-last-block`): store the real pre-mask `tool_input` per session (e.g. `.scalene/pending/<session_id>.json`, capped) so the suggested command survives past transcript scrollback.
+3. **Static `docs/RECIPES.md`**: table of common built-in tool → jsonpath → pattern examples (Read/Write/Edit/Bash/WebFetch), for users who want to write a rule pre-emptively before ever hitting a block. Complement, not replacement — doesn't reflect the user's actual project.
+4. (Discussed, not detailed) an interactive/wizard onboarding mode.
+
+**Recommendation given:** (1) first — free, uses data already computed, closes the "never seen an example" gap directly by making the blocking event the example. (2) as a durable follow-up. (3) as cheap complementary docs.
+
+**Status:** Discussion only, not yet a story/task. No code changed. Not blocking anything.
+
 ---
 *Last updated: 2026-07-09*

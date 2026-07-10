@@ -273,3 +273,85 @@ OK
 ---
 [<small>2026-07-09 15:25:43</small>] [**Neo**]->[**all**] *swe impl*:
  Added 'scalene install-hooks' CLI subcommand (test-first, 5 new tests) + 'make install-scalene-hooks TARGET=<path>' target: non-destructively merges scalene-guard into a project's .claude/settings.json PreToolUse/PostToolUse hooks, idempotent. Updated docs/SETUP.md. 83/83 tests pass.
+
+---
+[<small>2026-07-09 19:20:39</small>] [**User**]->[**all**] *request*:
+ *bob-protocol init load neo
+
+---
+[<small>2026-07-09 19:21:30</small>] [**Neo**]->[**all**] *resume*:
+ Cold-start reconciled: prior state said 'waiting on Trin Phase 4 UAT' but task.md shows Sprint 1 CLOSED + a later install-hooks commit already landed. Details + 2 unresolved live findings (false-positive mask logging on Read/WebSearch, no policy scaffold on install) written to agents/neo.docs/current_task.md. No task assigned yet — awaiting user direction.
+
+---
+[<small>2026-07-09 19:28:44</small>] [**User**]->[**all**] *request*:
+ *chat TO=all: thinking through tool-call onboarding UX — how does a user know how to filter a payload without having seen existing tool calls as examples? What are user-friendly ways to allowlist tool calls?
+
+---
+[<small>2026-07-09 19:29:56</small>] [**Smith**]->[**all**] *user consult*:
+ *user consult on onboarding UX: ran onboard.py — it requires tool/jsonpath/pattern all hand-written with zero example (Nielsen #6/#10 gap). Key fix: pre_tool_use already has the real tool_input at mask time — turn the mask systemMessage into a ready-to-run 'scalene onboard' command instead of discarding that data. Full options in agents/smith.docs/context.md. Discussion only, no code changed.
+
+---
+[<small>2026-07-09 19:33:32</small>] [**Smith**]->[**Neo**] *user handoff*:
+ User approved option #1 (actionable mask systemMessage w/ ready-to-run onboard command). Handing off @Neo *swe impl: extend pre_tool_use's mask systemMessage + audit log entry to include a suggested 'scalene onboard' command built from the real tool_input (jsonpath -> matched/payload field, pattern -> escaped literal of real value). Test-first.
+
+---
+[<small>2026-07-09 19:45:08</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-09 19:46:01</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Implemented copyable system messages (test-first): mask systemMessage + audit log now include a ready-to-run 'scalene onboard --list-type trust ...' command built from the real tool_input. Also fixed the false-positive mask report for tools with no mapped payload field (Read/WebSearch/etc no longer falsely announce a mask). Added e2e test that runs the suggested command through the real CLI and confirms it stops future masking. 87/87 tests pass. @Trin *qa uat copyable system messages
+
+---
+[<small>2026-07-09 19:46:53</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 19:49:35</small>] [**Trin**]->[**Neo**] *qa uat*:
+ UAT FAILS on copyable-system-messages: every onboard-command arg is shlex.quote()'d except the --target placeholder (hook_adapter.py:58, raw '<domain-or-file-this-call-reaches>'). Pasting the message as-is into bash hits a redirection syntax error before scalene even runs (confirmed by actually running it). One-line fix: quote the placeholder too. Everything else passes (87/87, independently re-run). @Neo *swe fix
+
+---
+[<small>2026-07-09 21:51:46</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-09 21:52:12</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Fixed: --target placeholder now shlex.quote()'d like every other arg. Added bash -n regression test (test_suggested_command_is_valid_shell_syntax_even_unedited) that syntax-checks the exact suggested line without needing scalene on PATH. 88/88 tests pass. @Trin *qa uat re-verify the fix only
+
+---
+[<small>2026-07-09 21:53:29</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-09 21:56:24</small>] [**Trin**]->[**Morpheus**] *qa uat*:
+ Round 2 UAT PASSES: independently re-ran make test (88/88) and re-ran the original reproduction myself (called _suggest_onboard_command directly, piped through bash -n -c) rather than trusting the fix/test alone — clean parse, exit 0. Handing to Morpheus for review. @Morpheus *lead review copyable system messages
+
+---
+[<small>2026-07-09 21:57:29</small>] [**Morpheus**]->[**Smith**] *lead review*:
+ APPROVED copyable-system-messages. Clean fix, good regression test for Trin's catch. One non-blocking note: _suggest_onboard_command() is harness-agnostic but lives in hook_adapter.py (adapter-isolation principle says harness-specific only) — fine for now (private helper), relocate to policy-engine layer if/when a 2nd harness adapter is built. Recorded in context.md. @Smith *user test copyable system messages (required UX gate per impl chain).
+
+---
+[<small>2026-07-09 21:59:30</small>] [**Smith**]->[**all**] *user test*:
+ *user test PASSED (with 1 non-blocking note): piped real hook JSON through the actual installed scalene-guard binary — systemMessage is correct, actionable, shell-safe. Minor wording nit: placeholder says domain-or-file but every suggestion is trust-list (domain-only) — suggest simplifying later, not blocking. impl chain for copyable-system-messages complete: Neo -> Trin -> Morpheus -> Smith all passed.

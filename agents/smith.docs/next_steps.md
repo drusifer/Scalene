@@ -1,14 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Waiting on Bob to update prompts/skills per the 3 filed findings, then Trin to close the judge loop.
+None — "copyable system messages" `*impl` chain is complete (Neo → Trin → Morpheus → Smith, all passed). This also *is* a version of the retroactive `*user test` against real `scalene-guard` behavior S1-003 recommended, though scoped to this one feature, not the whole hook surface.
 
 ## Waiting On
-Bob (`*prompt update judge session`).
+Nothing.
 
 ## Planned Work
-- [ ] Once Bob's updates land: consider actually running the retroactive `*user test` against the real `scalene-guard` binary that S1-003 recommends — this is still open regardless of how Bob addresses the chain-definition gap for future sprints
-- [ ] For Sprint 2: check whether Mouse's phase plan writes any "persona X re-engages" notes that aren't backed by an actual step in the relevant Bloop chain, before the sprint starts (not after)
+- [ ] Minor wording nit noted in `current_task.md` (`<domain-or-file-this-call-reaches>` → `<domain-this-call-reaches>`) — pick up whenever Neo next touches `_suggest_onboard_command`, no urgency
+- [ ] S1-003's broader ask (a full retroactive UX pass across all of `scalene-guard`'s hook surface, not just this one feature) is still open
+- [ ] For Sprint 2: check whether Mouse's phase plan writes any "persona X re-engages" notes not backed by an actual Bloop chain step, before the sprint starts
 
 ---
 *Last updated: 2026-07-09*

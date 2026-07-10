@@ -1,14 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-Waiting on Trin's full UAT for Phase 4 (`*qa uat Phase 4`) — this should be a full cross-story sweep using `docs/STORY_TRACEABILITY.md`, not just Phase 4's own new tests. Then Morpheus's final review, then sprint close (Mouse).
+Handed off to Trin: `*qa uat` on the "copyable system messages" feature (`hook_adapter.py` mask-suggestion + false-positive fix, `tests/test_hook_adapter.py`, `tests/test_onboard_suggestion_e2e.py`). Then Morpheus review. Then Smith `*user test` (required per the `*impl` chain's UX gate — this phase changes a developer-facing `systemMessage`/audit-log shape, and Smith already committed in her own `next_steps.md` to testing it).
 
 ## Waiting On
-Trin (full UAT), then Morpheus (final architecture/quality review), then sprint close.
+Trin (UAT) → Morpheus (review) → Smith (UX test against the real message).
 
 ## Planned Work
-- [ ] Sprint 1 is done pending gates above — no further Neo implementation work planned unless Trin/Morpheus find gaps
-- [ ] If a retrospective happens: the TDD test-first correction (early Phase 1) and using `make` for all build tasks are the two process lessons worth carrying into Sprint 2
+- [ ] If Trin/Morpheus/Smith find gaps: fix in this same phase, don't restart
+- [ ] Not part of this task, still open from earlier this session: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml` (fresh installs default to mask-everything) — still unaddressed, not yet a formal task
 
 ---
 *Last updated: 2026-07-09*
