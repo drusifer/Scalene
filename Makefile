@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test setup install-hooks install-scalene-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -26,9 +26,13 @@ tldr: ## Show TL;DR summaries from all project files (quick orientation for agen
 setup: ## Create project venv and install dependencies (editable install)
 	@python3 -m venv .venv
 	@./.venv/bin/pip install -q --upgrade pip
-	@./.venv/bin/pip install -q -e ".[monitor]"
+	@./.venv/bin/pip install -q -e ".[monitor,dev]"
 	@$(MAKE) MKF_ACTIVE=1 install-hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
+
+judge-trace: ## Annotated tool-use trace from real Claude Code JSONL sessions (usage: make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md])
+	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+	@.venv/bin/python agents/tools/trace_annotate.py $(if $(DATE),--date "$(DATE)") $(if $(FORMAT),--format "$(FORMAT)")
 
 install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@chmod +x .githooks/*
@@ -185,7 +189,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test setup install-hooks install-scalene-hooks via_index install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -249,7 +253,10 @@ install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json
 via_index: ## Build the via index required by the via MCP server
 	@./agents/tools/mkf.py $(V) $@
 
-# Interception logic: 
+judge-trace: ## Annotated tool-use trace from real Claude Code JSONL sessions (usage: make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md])
+	@./agents/tools/mkf.py $(V) $@ DATE="$(DATE)" FORMAT="$(FORMAT)"
+
+# Interception logic:
 # If we are the entry point (direct make call), intercept everything.
 # If we are included, we only provide targets, unless specified.
 ifeq ($(MKF_ACTIVE),)

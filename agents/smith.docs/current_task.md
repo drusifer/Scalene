@@ -1,11 +1,14 @@
 # Current Task
 
-**Status:** Sprint 2 Stage-3 end-to-end test PASSED, no bugs. Sprint fully validated.
-**Assigned to:** N/A (Stage 3 step 8 finished)
+**Status:** `*qa judge session` (revised) closed, TES=98. Sprint 2 (all phases + close) also complete — see below.
+**Assigned to:** N/A (no active task)
 **Started:** 2026-07-10
 **Completed:** 2026-07-10
 
-## Task Description
+## Task Description (most recent): `*qa judge session` (revised)
+Scored the real `make judge-trace` output (superseding a voided CHAT.md-reconstructed score of TES=100/no-bugs). Filed 4 bugs, rescored to TES=98 after fixes verified. See bottom of Progress section.
+
+## Task Description (prior): Sprint 2 Phase 3 UX Gate
 Sprint 2 Phase 3's required UX gate: `*user test` the real "select → edit → apply/dismiss" flow (STORY-702), per the `*impl` chain's conditional Smith step.
 
 ## Progress
@@ -22,7 +25,13 @@ Sprint 2 Phase 3's required UX gate: `*user test` the real "select → edit → 
   ```
 - [x] Routed to Trin for triage (protocol)
 - [x] Re-tested after Neo's fix and Trin's re-verification: ran the full realistic sequence (select → dismiss → select another → apply → select again) — focus correctly returns to the events table every time
-- [x] Verdict: **APPROVED.** Phase 3 fully complete. Sprint 2 implementation (all 3 phases) done — next is sprint close, not another `*impl` phase.
+- [x] Verdict: **APPROVED.** Phase 3 fully complete. Sprint 2 implementation (all 3 phases) done. Sprint 2 closed and launched by Cypher the same day.
+
+## `*qa judge session` (revised) — 2026-07-10
+- [x] Scored the first (CHAT.md-reconstructed) trace TES=100/no-bugs — **voided**; user correctly rejected the reconstruction approach in favor of the real `agents/tools/trace_annotate.py` tool.
+- [x] Rescored the real `make judge-trace` output: TES=96, filed 4 bugs (`agents/smith.docs/bugs/s20260710_bug_001-004.md`) — 2 routed to Neo (script bugs in `trace_annotate.py`), 2 routed to Bob (habitual `make test|tail`, via-mandate bypass — both real, already-documented-rule violations, not doc gaps).
+- [x] Final rescore after Neo's fixes + Trin's rerun-verification: TES=98. Loop closed (`agents/smith.docs/trace_eval_20260710.md`).
+- [x] Carried forward (not a bug): next `*qa judge session` should check whether Bob's new Trin-UAT-gate checkpoint actually reduces real violation counts vs. today's baseline (39 make-test-pipes, 13 via-bypasses).
 
 ## Blockers
 None.

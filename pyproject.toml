@@ -19,6 +19,9 @@ dependencies = [
 # out of the hard `dependencies` list so the hot-path hook adapter
 # (`scalene-guard`) never imports a TUI framework it doesn't use.
 monitor = ["textual>=8.0"]
+# Agent tooling only (agents/tools/trace_annotate.py) — never imported by
+# src/scalene, kept out of the shipped package's dependency footprint.
+dev = ["jinja2>=3.0"]
 
 [project.scripts]
 scalene-guard = "scalene.cli:main"

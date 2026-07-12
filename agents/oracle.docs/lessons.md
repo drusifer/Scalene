@@ -60,3 +60,24 @@ Before integrating a third-party scanning/detection library, test it against a k
 
 ### References
 - **Files:** `src/scalene/secrets_scan.py`, `tests/test_secrets_scan.py`
+
+---
+
+## [2026-07-10] A Written Rule Nobody Checks Is Not an Enforced Rule
+
+> **Tags:** #Process #Trin #Smith #Bob #Neo #Tooling
+
+### Context
+`*qa judge session` was run twice today. The first pass reconstructed a trace from `agents/CHAT.md` prose and scored TES=100 with zero bugs. The user rejected that approach and pointed at `agents/tools/trace_annotate.py` — a tool that already existed, parses real Claude Code JSONL session transcripts, and programmatically flags anti-patterns. It was orphaned: missing `jinja2` dependency, no `make` target, and never referenced by `judge/SKILL.md` or Trin's own `SKILL.md`. Once wired up (`make judge-trace`) and run against the same day's real sessions, it found 190 flags across 566 real tool calls — including `make test 2>&1 | tail -N` used ~39 times, directly contradicting a rule already written verbatim in `agents/neo.docs/SKILL.md`.
+
+### The Issue
+Two separate failure modes stacked on top of each other:
+1. **Judging from a self-report, not a measurement.** CHAT.md is what personas chose to say about their own work — it cannot show tool-call-level behavior, and reconstructing a "trace" from it will always look better than reality, because anything not worth mentioning in a handoff message is invisible to it.
+2. **A correct, specific, already-written rule was violated at scale anyway.** This wasn't a documentation gap (contrast with S1-003's missing chain step) — the exact right rule text (`NEVER: make test 2>&1 | tail -30 → use make test-q`) was sitting right there and simply wasn't consulted at the moment of running a test, 39 times over.
+
+### The Rule (The "Lesson")
+1. When judging tool/skill usage, use `make judge-trace` (real session-transcript parsing) as the primary evidence source. CHAT.md/state files remain the right source for *process* adherence (chain sequencing, gate compliance) — the two check different things and neither substitutes for the other.
+2. When a violation is of an already-correct, already-specific rule (not a documentation gap), adding more prose to the same file is unlikely to fix it — the fix needs an actual checkpoint (Trin's UAT gate now runs `make judge-trace` before sign-off) rather than relying on recall alone. Save the distinction (documentation gap vs. enforcement gap) explicitly when filing similar findings — they need different fixes.
+
+### References
+- **Files:** `agents/tools/trace_annotate.py`, `agents/tools/trace_rules.json`, `agents/skills/judge/SKILL.md`, `agents/neo.docs/SKILL.md`, `agents/trin.docs/SKILL.md`, `agents/trin.docs/judge_20260710_trace.md`, `agents/smith.docs/trace_eval_20260710.md`

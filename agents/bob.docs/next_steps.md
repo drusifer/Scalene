@@ -1,14 +1,13 @@
 # Next Steps
 
 ## Immediate Next Action
-Waiting on Trin's verification run (`*qa verify judge session`) to confirm the updated `bloop` skill reads correctly and the loop can close.
+Trin's verification run confirmed the loop closed (TES=98, 2026-07-10). No active Bob task — awaiting next user direction.
 
 ## Waiting On
-Trin.
+Nothing right now.
 
 ## Planned Work
-- [ ] If Trin's re-run surfaces anything new: continue the Trin↔Smith↔Bob loop until TES ≥ 90 with no unresolved findings
-- [ ] S1-003's retroactive fix (actually running `*user test` against real `scalene-guard` behavior) is Smith's follow-up, not mine — don't duplicate
+- [ ] Next `*qa judge session`: if Sprint 3's real `make judge-trace` counts for `make test|tail`/via-bypass are still high despite the new Trin UAT checkpoint, the checkpoint itself isn't enough — would need a stronger mechanism than a written gate step (e.g. something that actually blocks sign-off, not just prompts a look).
 
 ---
-*Last updated: 2026-07-09*
+*Last updated: 2026-07-10*

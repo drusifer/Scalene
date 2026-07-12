@@ -33,8 +33,10 @@ When executing `*judge <target>`, the loop evaluates the specified target (e.g.,
 ```
 Trin *qa judge <target>
 ```
-- Trin compiles or executes a set of representative test cases or usage scenarios for the specified `<target>`.
-- Trin captures the session history, commands run, output size, and writes a trace report to `agents/trin.docs/judge_<target>_trace.log` (or similar).
+- **Required tool — `make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md]`**: this runs `agents/tools/trace_annotate.py`, which parses the **real Claude Code JSONL session transcripts** (`~/.claude/projects/<slug>/*.jsonl`) for the given date and programmatically flags anti-patterns (`AP-SKILL-RELOAD`, `AP-MAKE-BYPASS`, `AP-RAW-VENV`, `AP-MAKE-PIPE`, `AP-VIA-GREP`, `AP-VIA-READ`, `AP-DUP-READ`) via `agents/tools/trace_rules.json`. This is ground truth — actual tool-call events, not a prose summary. Output defaults to `agents/trin.docs/judge_tool_trace.{html,md}`.
+- **Do not hand-reconstruct a trace from `agents/CHAT.md` instead.** CHAT.md only contains what personas chose to summarize about their own work — it cannot show tool-call-level behavior (redundant invocations, piping, raw venv calls, via-bypasses) and produces a systematically over-optimistic trace. `make judge-trace` is the only source of truth for tool/skill-use judging; CHAT.md and persona `context.md` files remain the source of truth for *process/protocol* adherence (chain sequencing, gate compliance, handoffs) — the two are complementary, not interchangeable.
+- **Manual review is still required after running the tool**: read the raw flags before scoring — the rule regexes are heuristics and can both over-flag (e.g. a `make <target> | tail` where `<target>` isn't actually mkf-captured) and under-flag. Note any flag you're overriding and why in the trace report, per-flag, not as a blanket dismissal.
+- Trin writes the analysis (raw counts + manual-review verdict per flag type + any additional scenario coverage the tool can't see) to `agents/trin.docs/judge_<target>_trace.md`.
 - **Trin's constraints**: Ensure that the target is exercised in realistic conditions representing typical developer/agent workflow.
 
 ### Handoff:

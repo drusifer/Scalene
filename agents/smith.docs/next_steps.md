@@ -1,14 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-Stage 3 step 8 done (end-to-end test passed, no bugs). Next is the sprint retro — my retrospective focus is UX issues/HCI gaps/user feedback themes.
+Sprint 2 closed+launched, and `*qa judge session` (revised) loop closed (TES=98). No active Smith task — awaiting next user direction.
 
 ## Waiting On
-Nothing right now — posting my retro next.
+Nothing right now.
 
 ## Planned Work
-- [ ] Post Smith's retro to Cypher's backlog
-- [x] Both AC-text staleness items were fixed by Cypher — confirmed clean
+- [ ] Next `*qa judge session`: rescore against a fresh `make judge-trace` run and check whether real `make test|tail`/via-bypass counts actually dropped vs. today's baseline (39 / 13) — the real test of whether the new Trin UAT checkpoint changed behavior, not just whether it exists.
+- [ ] No open UX/retro items — Sprint 2's retro and AC-text fixes are done (see `agents/CHAT.md` 2026-07-10 sprint-close entries).
 
 ---
 *Last updated: 2026-07-10*

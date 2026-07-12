@@ -1,11 +1,21 @@
 # Current Task
 
-**Status:** Fixed Smith's focus-loss bug. Trin and Smith both re-verified. Phase 3 complete. Sprint 2 implementation (all 3 phases) done.
-**Assigned to:** N/A (implementation stage finished)
+**Status:** `*swe fix judge session` (revised) done — 3 script bugs fixed in `agents/tools/trace_annotate.py`, verified. Sprint 2 implementation (all 3 phases) also done, same day.
+**Assigned to:** N/A (no active task)
 **Started:** 2026-07-10
 **Completed:** 2026-07-10
 
-## Task Description
+## Task Description (most recent): `*swe fix judge session` (revised)
+Fix the 2 script bugs Smith filed against `agents/tools/trace_annotate.py` after the real `make judge-trace` tool was wired up for the first time (previously orphaned).
+
+## Progress
+- [x] Fixed `AP-MAKE-PIPE` false-positiving on `make chat` — regex now checks the piped `make` invocation's target against `MKF_EXCLUDED_TARGETS` (chat/help/install_bob/update_bob/pull_bob/clean_bob aren't mkf-captured, so there's no `build/build.out` for them to tail instead)
+- [x] Fixed `AP-DUP-READ` being offset-blind — now keyed on `(path, offset, limit, edit_generation)` so re-reading different sections of a large file, or re-reading after a real edit, no longer counts as a duplicate
+- [x] Found and fixed a 3rd latent bug while in there (not filed as a separate ticket, zero real instances today): `AP-SKILL-RELOAD` never checked `trace_rules.json`'s own `multi_call_allowed` exemption list (bloop/chat/personas)
+- [x] Verified via Trin's rerun on the same JSONL data: `AP-MAKE-PIPE` 104→53, `AP-DUP-READ` 12→0, no regressions in the real flags that remained
+- [x] `make test`: still green (change is confined to `agents/tools/`, doesn't touch `src/scalene`)
+
+## Task Description (prior): Sprint 2 Phase 3 focus-loss fix
 `*swe fix phase-3 focus bug` — Smith found (real Pilot-driven execution) that dismissing or applying leaves the app with no focused widget at all, stranding the user.
 
 ## Progress

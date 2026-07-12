@@ -130,7 +130,15 @@ MAKE_BYPASS_RE = re.compile(
     re.MULTILINE
 )
 VENV_RE = re.compile(r'\.venv/bin/\w+')
-MAKE_PIPE_RE = re.compile(r'\bmake\b[^\n]*\|')
+# Only flag `make <target> ... |` when <target> is actually routed through mkf.py
+# (captured to build/build.out, per the Makefile's interception layer). Targets
+# excluded from mkf capture (chat, help, install_bob, update_bob, pull_bob,
+# clean_bob) have no build.out equivalent to tail instead, so piping their
+# output isn't the anti-pattern this rule targets.
+MKF_EXCLUDED_TARGETS = {'help', 'chat', 'install_bob', 'update_bob', 'pull_bob', 'clean_bob'}
+MAKE_PIPE_RE = re.compile(
+    r'\bmake\b\s+(?:MKF_ACTIVE=\S+\s+)?(?P<target>[a-zA-Z_-]+)[^\n]*\|'
+)
 VIA_SYMBOL_GREP_RE = re.compile(
     r'\b(grep|rg)\b.*?(def |class |import |from |__init__|__call__|->|@\w+)',
     re.IGNORECASE
@@ -144,7 +152,8 @@ def classify_bash(cmd: str) -> list[str]:
         flags.append('AP-MAKE-BYPASS')
     if VENV_RE.search(cmd):
         flags.append('AP-RAW-VENV')
-    if MAKE_PIPE_RE.search(cmd):
+    pipe_match = MAKE_PIPE_RE.search(cmd)
+    if pipe_match and pipe_match.group('target') not in MKF_EXCLUDED_TARGETS:
         flags.append('AP-MAKE-PIPE')
     if VIA_SYMBOL_GREP_RE.search(cmd):
         flags.append('AP-VIA-GREP')
@@ -226,9 +235,14 @@ def _paths_edited(events: list[dict]) -> set[str]:
 
 def annotate_events(events: list[dict], rules: dict, no_via: bool) -> list[dict]:
     """Return list of annotated event dicts for template rendering."""
-    read_seen: Counter = Counter()
     skill_seen: Counter = Counter()
     edited_paths = _paths_edited(events)
+    # Per-path edit "generation" — bumped on every Edit/Write to that path, so a
+    # Read at a given offset only counts as a duplicate of an earlier Read at
+    # the same offset if no edit landed on the file in between.
+    edit_generation: Counter = Counter()
+    read_sig_seen: Counter = Counter()
+    skill_reload_allowed = set(rules.get('AP-SKILL-RELOAD', {}).get('multi_call_allowed', []))
     annotated = []
 
     for seq, ev in enumerate(events, 1):
@@ -240,17 +254,22 @@ def annotate_events(events: list[dict], rules: dict, no_via: bool) -> list[dict]
             flags = classify_bash(inp.get('command', ''))
         elif name == 'Read':
             path = inp.get('file_path', '')
-            read_seen[path] += 1
+            sig = (path, inp.get('offset'), inp.get('limit'), edit_generation[path])
+            read_sig_seen[sig] += 1
             if (Path(path).suffix in SOURCE_EXTENSIONS
                     and path not in edited_paths
                     and not no_via):
                 flags.append('AP-VIA-READ')
-            if read_seen[path] >= 3:
+            if read_sig_seen[sig] >= 3:
                 flags.append('AP-DUP-READ')
+        elif name in ('Edit', 'Write'):
+            path = inp.get('file_path', '')
+            if path:
+                edit_generation[path] += 1
         elif name == 'Skill':
             skill = inp.get('skill', '')
             skill_seen[skill] += 1
-            if skill_seen[skill] > 1:
+            if skill_seen[skill] > 1 and skill not in skill_reload_allowed:
                 flags.append('AP-SKILL-RELOAD')
 
         if no_via:

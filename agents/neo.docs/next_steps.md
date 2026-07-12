@@ -1,18 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 2's implementation stage (all 3 planned phases) is fully complete. No active Neo task until sprint close begins or a new phase is scoped.
+Sprint 2 fully closed+launched, and the `*qa judge session` (revised) loop that followed is also closed (TES=98). No active Neo task — awaiting next user direction.
 
 ## Waiting On
-User to trigger sprint close (Stage 3) or further work.
+Nothing right now.
 
 ## Planned Work
+- [ ] Bob's `agents/neo.docs/SKILL.md` update (2026-07-10) added a real enforcement note: Trin's UAT gate now runs `make judge-trace` before signing off a phase. Expect real `AP-MAKE-PIPE`/`AP-RAW-VENV`/`AP-VIA-GREP` flags to actually surface during Sprint 3's UAT passes — that's the mechanism working as intended, not a regression.
 - [ ] `_suggest_onboard_command()` relocation out of `hook_adapter.py` still deferred until a 2nd harness adapter exists — no action needed now
-- [ ] `install-hooks` still doesn't scaffold a starter `scalene_policy.yaml` — unaddressed, not yet a formal task
-- [ ] This is Sprint 2's last planned phase (`task.md` only has 3) — if all gates pass, next is Stage 3 sprint close (Oracle groom → Smith end-to-end test → retro → Cypher launch), per `/sprint`'s skill definition
-- [ ] Not part of this task, still open: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml`; the odd audit-log-vs-actual-execution masking discrepancy noticed during Phase 1 — neither blocking, neither actioned yet
-- [ ] Not part of this task, still open from earlier: `install-hooks` doesn't scaffold a starter `scalene_policy.yaml` (fresh installs default to mask-everything) — still unaddressed, not yet a formal task
-- [ ] Also noticed during Phase 1 work: this session's `scalene-guard` hook computes/logs a "mask" decision for nearly every tool call (real audit.log entries), but the actual tool execution never appeared to receive the masked `updatedInput` — worth a closer look at some point, not blocking
+- [ ] `install-hooks` still doesn't scaffold a starter `scalene_policy.yaml` (fresh installs default to mask-everything) — unaddressed, not yet a formal task
+- [ ] Unexplained from Phase 1: `scalene-guard` computes/logs a "mask" decision for nearly every tool call, but the actual tool execution never appeared to receive the masked `updatedInput` — worth a closer look at some point, not blocking
 
 ---
 *Last updated: 2026-07-10*
