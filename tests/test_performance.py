@@ -21,14 +21,17 @@ def _representative_config() -> PolicyConfig:
     # A handful of rules, not an empty config — an empty config trivially
     # short-circuits and would understate real-world evaluation cost.
     return PolicyConfig(
-        non_sensitive_allowlist=[
-            PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.md$"),
-            PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.txt$"),
-            PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git status"),
-        ],
-        trusted_sources_list=[
-            PolicyRule(tool="WebFetch", jsonpath="$.url", pattern=r"^https://internal\.example\.com/"),
-            PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git "),
+        allowlist=[
+            PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.md$", target="file:///workspace/docs"),
+            PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.txt$", target="file:///workspace/docs"),
+            PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git status", target="file:///workspace/docs"),
+            PolicyRule(
+                tool="WebFetch",
+                jsonpath="$.url",
+                pattern=r"^https://internal\.example\.com/",
+                target="https://internal.example.com",
+            ),
+            PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git ", target="https://github.com"),
         ],
     )
 

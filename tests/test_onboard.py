@@ -1,4 +1,9 @@
-"""Tests for the `scg onboard` CLI/library function (STORY-501)."""
+"""Tests for the `scg onboard` CLI/library function (STORY-501).
+
+2026-07-14: `--list-type` removed — the scan type (secrets vs reputation)
+and the policy effect (non-sensitive vs trusted) are now both inferred from
+`target`'s URI scheme (file:// vs http(s)://) instead of a separate flag.
+"""
 
 import unittest
 from pathlib import Path
@@ -8,7 +13,7 @@ from scalene.onboard import OnboardError, onboard
 from scalene.policy_config import PolicyConfig
 
 
-class TestOnboardAllowlist(unittest.TestCase):
+class TestOnboardFileTarget(unittest.TestCase):
     def test_clean_target_writes_rule_and_returns_diff(self):
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -18,11 +23,10 @@ class TestOnboardAllowlist(unittest.TestCase):
             audit_log = tmp_path / "audit.log"
 
             result = onboard(
-                "allowlist",
+                f"file://{target}",
                 "Read",
                 "$.file_path",
                 r"\.md$",
-                str(target),
                 description="markdown is fine",
                 policy_path=policy_path,
                 audit_log_path=audit_log,
@@ -30,7 +34,7 @@ class TestOnboardAllowlist(unittest.TestCase):
             self.assertIn("rule", result)
             self.assertIn("diff", result)
             self.assertTrue(policy_path.exists())
-            self.assertIn("non_sensitive_allowlist", policy_path.read_text())
+            self.assertIn("allowlist", policy_path.read_text())
             self.assertTrue(audit_log.exists())
             self.assertIn("onboard", audit_log.read_text())
 
@@ -45,32 +49,31 @@ class TestOnboardAllowlist(unittest.TestCase):
             policy_path = tmp_path / "scalene_policy.yaml"
 
             with self.assertRaises(OnboardError) as ctx:
-                onboard("allowlist", "Read", "$.file_path", r"\.env$", str(target), policy_path=policy_path)
+                onboard(f"file://{target}", "Read", "$.file_path", r"\.env$", policy_path=policy_path)
             self.assertIn("secrets", str(ctx.exception).lower())
             self.assertFalse(policy_path.exists())
 
 
-class TestOnboardTrustList(unittest.TestCase):
+class TestOnboardUrlTarget(unittest.TestCase):
     def test_trusted_domain_writes_rule(self):
         with TemporaryDirectory() as tmp:
             policy_path = Path(tmp) / "scalene_policy.yaml"
             result = onboard(
-                "trust",
+                "https://internal.example.com",
                 "WebFetch",
                 "$.url",
                 r"^https://internal\.example\.com/",
-                "internal.example.com",
                 policy_path=policy_path,
             )
             self.assertTrue(policy_path.exists())
-            self.assertIn("trusted_sources_list", policy_path.read_text())
+            self.assertIn("allowlist", policy_path.read_text())
             self.assertIn("rule", result)
 
     def test_untrusted_ip_target_blocks_onboarding_with_no_write(self):
         with TemporaryDirectory() as tmp:
             policy_path = Path(tmp) / "scalene_policy.yaml"
             with self.assertRaises(OnboardError) as ctx:
-                onboard("trust", "WebFetch", "$.url", r".*", "203.0.113.42", policy_path=policy_path)
+                onboard("https://203.0.113.42", "WebFetch", "$.url", r".*", policy_path=policy_path)
             self.assertTrue(str(ctx.exception))
             self.assertFalse(policy_path.exists())
 
@@ -80,25 +83,26 @@ class TestOnboardAppendsToExistingConfig(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             policy_path = Path(tmp) / "scalene_policy.yaml"
             policy_path.write_text(
-                "non_sensitive_allowlist:\n"
+                "allowlist:\n"
                 "  - tool: Read\n"
                 '    jsonpath: "$.file_path"\n'
                 '    pattern: "\\\\.txt$"\n'
+                '    target: "file:///workspace/docs"\n'
                 "    description: existing rule\n"
             )
             target = Path(tmp) / "clean.md"
             target.write_text("ordinary docs")
 
-            onboard("allowlist", "Read", "$.file_path", r"\.md$", str(target), policy_path=policy_path)
+            onboard(f"file://{target}", "Read", "$.file_path", r"\.md$", policy_path=policy_path)
 
             config = PolicyConfig.from_yaml(policy_path)
-            self.assertEqual(len(config.non_sensitive_allowlist), 2)
+            self.assertEqual(len(config.allowlist), 2)
 
-    def test_unknown_list_type_blocks_with_no_write(self):
+    def test_unknown_scheme_blocks_with_no_write(self):
         with TemporaryDirectory() as tmp:
             policy_path = Path(tmp) / "scalene_policy.yaml"
             with self.assertRaises(OnboardError):
-                onboard("bogus", "Read", "$.file_path", r".*", "x.md", policy_path=policy_path)
+                onboard("ftp://x.md", "Read", "$.file_path", r".*", policy_path=policy_path)
             self.assertFalse(policy_path.exists())
 
 

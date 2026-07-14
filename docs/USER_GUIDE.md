@@ -22,22 +22,22 @@ Reads one hook JSON payload from stdin, writes one JSON response to stdout, usin
 ### `scg onboard`
 
 ```
-usage: scg onboard [-h] --list-type {allowlist,trust} --tool TOOL
-                       --jsonpath JSONPATH --pattern PATTERN --target TARGET
-                       [--description DESCRIPTION] [--policy-path POLICY_PATH]
+usage: scg onboard [-h] --target TARGET --tool TOOL --jsonpath JSONPATH
+                   --pattern PATTERN [--description DESCRIPTION]
+                   [--policy-path POLICY_PATH]
 
 options:
   -h, --help            show this help message and exit
-  --list-type {allowlist,trust}
+  --target TARGET       file://<path> (runs a secrets scan) or
+                        http(s)://<host> (runs a reputation check)
   --tool TOOL
   --jsonpath JSONPATH
   --pattern PATTERN
-  --target TARGET       file path (allowlist) or domain (trust)
   --description DESCRIPTION
   --policy-path POLICY_PATH
 ```
 
-Adds one rule to `scalene_policy.yaml`, after running a safety check first (see [Onboarding workflow](#onboarding-workflow-the-fast-path) below — you should almost never need to type this command's flags out by hand).
+Adds one rule to `scalene_policy.yaml`'s single `allowlist`, after running a safety check first (see [Onboarding workflow](#onboarding-workflow-the-fast-path) below — you should almost never need to type this command's flags out by hand). There's no separate `--list-type` flag: `--target`'s URI scheme *is* the list type — `file://` and `http(s)://` targets get verified differently and affect different parts of the decision (see [Policy configuration](#policy-configuration) below), but they live in one list and go through one command.
 
 ### `scg install-hooks`
 
@@ -65,12 +65,12 @@ The same suggestion is also what `scg monitor`'s onboarding action runs when you
 
 Only fall back to hand-writing the flags yourself if you want to pre-emptively allow something *before* it's ever been blocked (there's no prior call to generate a suggestion from). In that case:
 
-- `--list-type trust`: exempts calls from *this exact tool* whose *this exact field* matches your pattern from ever being masked, once the session is already tainted.
-- `--list-type allowlist`: marks matching *read* results as non-sensitive in the first place, so they never taint the session at all.
+- `--target http://<host>` or `--target https://<host>`: exempts calls from *this exact tool* whose *this exact field* matches your pattern from ever being masked, once the session is already tainted.
+- `--target file://<path>`: marks matching *read* results as non-sensitive in the first place, so they never taint the session at all.
 - `--jsonpath`: a [JSONPath](https://github.com/h2non/jsonpath-ng) expression into the tool's argument/response dict (e.g. `$.command` for `Bash`, `$.prompt` for `WebFetch`).
 - `--pattern`: a Python regex matched against the field's string value.
 
-Both onboarding types run a safety check *before* writing anything: allowlist onboarding runs a secrets scan on the target file (via `detect-secrets`); trust-list onboarding runs a reputation check on the target domain. If the check fails, nothing is written — see [Troubleshooting](#troubleshooting) below.
+Both kinds of target run a safety check *before* writing anything: a `file://` target runs a secrets scan on that path (via `detect-secrets`); an `http(s)://` target runs a reputation check on that host. If the check fails, nothing is written — see [Troubleshooting](#troubleshooting) below.
 
 ## Policy configuration
 
@@ -82,18 +82,21 @@ defaults:
   untrusted_by_default: true
   mode: mask   # or "block" — what to do when a real secret is detected (see below)
 
-non_sensitive_allowlist:
+allowlist:
   - tool: "Read"
     jsonpath: "$.file_path"
     pattern: "^/workspace/public/.*"
+    target: "file:///workspace/public"
     description: "Public asset directory — never sensitive"
 
-trusted_sources_list:
   - tool: "WebFetch"
     jsonpath: "$.url"
     pattern: "^https://internal\\.example\\.com/"
+    target: "https://internal.example.com"
     description: "Internal API — always trusted"
 ```
+
+One list, one command (`scg onboard`) — a rule's `target` scheme (`file://` vs `http(s)://`) is what determines whether it counts toward "not sensitive" or "trusted destination"; `tool`/`jsonpath`/`pattern` determine which calls it matches, same as before.
 
 **`mode`** controls what happens when a call is both provenance-risky (tainted-sensitive session, untrusted destination) *and* the specific value actually scans as a real secret:
 

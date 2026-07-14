@@ -1,7 +1,7 @@
 """End-to-end regression test for the mask systemMessage's suggested onboard
 command (Smith UX consult, 2026-07-09): the promise of the feature isn't just
 that the message *looks* like a valid command — running it for real, through
-the actual `scalene` CLI entrypoint, must stop that exact call from being
+the actual `scg` CLI entrypoint, must stop that exact call from being
 masked again. Exercises the real dispatch path (`main_cli.main`), not just
 the underlying library functions, so it catches drift in either side
 (message formatting or CLI argument parsing) that unit tests in isolation
@@ -59,7 +59,7 @@ class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
             suggested_line = message.split("run:\n", 1)[1]
             argv = shlex.split(suggested_line)[1:]  # drop the leading "scg"
             argv = [
-                "reports.internal.example.com" if arg == "<domain-this-call-reaches>" else arg
+                "https://reports.internal.example.com" if arg == "https://<domain-this-call-reaches>" else arg
                 for arg in argv
             ]
             argv += ["--policy-path", str(policy_path)]
@@ -67,7 +67,7 @@ class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
             exit_code = scalene_main(argv)
             self.assertEqual(exit_code, 0)
             self.assertTrue(policy_path.exists())
-            self.assertIn("trusted_sources_list", policy_path.read_text())
+            self.assertIn("allowlist", policy_path.read_text())
 
             # 3. The exact same call must no longer be masked.
             fresh_config = PolicyConfig.from_yaml(policy_path)

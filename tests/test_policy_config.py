@@ -1,4 +1,9 @@
-"""Tests for PolicyConfig YAML loading + JSONPath evaluation (STORY-201, STORY-202)."""
+"""Tests for PolicyConfig YAML loading + JSONPath evaluation (STORY-201, STORY-202).
+
+2026-07-14: schema simplified to one unified `allowlist`, keyed by each
+rule's `target` URI scheme (`file://` -> sensitivity, `http(s)://` -> trust)
+instead of two separate YAML sections.
+"""
 
 import unittest
 from pathlib import Path
@@ -22,24 +27,24 @@ class TestPolicyConfigLoading(unittest.TestCase):
                 defaults:
                   sensitive_by_default: true
                   untrusted_by_default: true
-                non_sensitive_allowlist:
+                allowlist:
                   - tool: Read
                     jsonpath: "$.file_path"
                     pattern: "\\\\.md$"
+                    target: "file:///workspace/docs"
                     description: "Markdown files are non-sensitive"
-                trusted_sources_list:
                   - tool: Bash
                     jsonpath: "$.command"
                     pattern: "^git "
+                    target: "https://github.com"
                     description: "git commands are trusted"
                 """,
             )
             config = PolicyConfig.from_yaml(path)
             self.assertTrue(config.sensitive_by_default)
             self.assertTrue(config.untrusted_by_default)
-            self.assertEqual(len(config.non_sensitive_allowlist), 1)
-            self.assertEqual(len(config.trusted_sources_list), 1)
-            self.assertIsInstance(config.non_sensitive_allowlist[0], PolicyRule)
+            self.assertEqual(len(config.allowlist), 2)
+            self.assertIsInstance(config.allowlist[0], PolicyRule)
 
     def test_from_yaml_applies_defaults_when_sections_missing(self):
         with TemporaryDirectory() as tmp:
@@ -47,8 +52,7 @@ class TestPolicyConfigLoading(unittest.TestCase):
             config = PolicyConfig.from_yaml(path)
             self.assertTrue(config.sensitive_by_default)
             self.assertTrue(config.untrusted_by_default)
-            self.assertEqual(config.non_sensitive_allowlist, [])
-            self.assertEqual(config.trusted_sources_list, [])
+            self.assertEqual(config.allowlist, [])
 
     def test_invalid_yaml_raises_clear_error_not_silent_noop(self):
         with TemporaryDirectory() as tmp:
@@ -61,7 +65,7 @@ class TestPolicyConfigLoading(unittest.TestCase):
             path = write_yaml(
                 Path(tmp),
                 """
-                non_sensitive_allowlist:
+                allowlist:
                   - tool: Read
                     jsonpath: "$.file_path"
                 """,
@@ -69,44 +73,88 @@ class TestPolicyConfigLoading(unittest.TestCase):
             with self.assertRaises(PolicyConfigError):
                 PolicyConfig.from_yaml(path)
 
+    def test_rule_missing_target_raises(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                allowlist:
+                  - tool: Read
+                    jsonpath: "$.file_path"
+                    pattern: "\\\\.md$"
+                """,
+            )
+            with self.assertRaises(PolicyConfigError):
+                PolicyConfig.from_yaml(path)
+
+
+class TestPolicyRuleScheme(unittest.TestCase):
+    def test_file_scheme(self):
+        rule = PolicyRule(tool="Read", jsonpath="$.x", pattern=".*", target="file:///a/b")
+        self.assertEqual(rule.scheme, "file")
+
+    def test_https_scheme(self):
+        rule = PolicyRule(tool="Read", jsonpath="$.x", pattern=".*", target="https://example.com")
+        self.assertEqual(rule.scheme, "https")
+
+    def test_no_scheme_for_malformed_target(self):
+        rule = PolicyRule(tool="Read", jsonpath="$.x", pattern=".*", target="not-a-uri")
+        self.assertEqual(rule.scheme, "")
+
 
 class TestPolicyConfigEvaluate(unittest.TestCase):
-    def test_matches_nested_json_parameters(self):
+    def test_file_scheme_rule_matches_nested_json_parameters(self):
         config = PolicyConfig(
-            non_sensitive_allowlist=[
-                PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.md$")
+            allowlist=[
+                PolicyRule(tool="Read", jsonpath="$.file_path", pattern=r"\.md$", target="file:///workspace/docs")
             ],
         )
         result = config.evaluate("Read", {"file_path": "docs/PRD.md"})
         self.assertIsInstance(result, MatchResult)
         self.assertFalse(result.is_sensitive)
 
-    def test_matches_shell_command_string(self):
+    def test_https_scheme_rule_matches_shell_command_string(self):
         config = PolicyConfig(
-            trusted_sources_list=[
-                PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git ")
+            allowlist=[
+                PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git ", target="https://github.com")
             ],
         )
         result = config.evaluate("Bash", {"command": "git status"})
         self.assertTrue(result.is_trusted)
 
-    def test_matches_url_path(self):
+    def test_https_scheme_rule_matches_url_path(self):
         config = PolicyConfig(
-            trusted_sources_list=[
-                PolicyRule(tool="WebFetch", jsonpath="$.url", pattern=r"^https://internal\.example\.com/")
+            allowlist=[
+                PolicyRule(
+                    tool="WebFetch",
+                    jsonpath="$.url",
+                    pattern=r"^https://internal\.example\.com/",
+                    target="https://internal.example.com",
+                )
             ],
         )
         result = config.evaluate("WebFetch", {"url": "https://internal.example.com/api"})
         self.assertTrue(result.is_trusted)
 
-    def test_matches_db_table_column_target(self):
+    def test_file_scheme_rule_matches_db_table_column_target(self):
         config = PolicyConfig(
-            non_sensitive_allowlist=[
-                PolicyRule(tool="DBQuery", jsonpath="$.table", pattern=r"^public\.")
+            allowlist=[
+                PolicyRule(tool="DBQuery", jsonpath="$.table", pattern=r"^public\.", target="file:///workspace/db")
             ],
         )
         result = config.evaluate("DBQuery", {"table": "public.orders", "column": "id"})
         self.assertFalse(result.is_sensitive)
+
+    def test_a_rule_only_affects_its_own_scheme(self):
+        """A file:// rule must not also count toward trust, and vice versa —
+        the two computations stay independent even in one unified list."""
+        config = PolicyConfig(
+            allowlist=[
+                PolicyRule(tool="Bash", jsonpath="$.command", pattern=r"^git ", target="file:///workspace/docs"),
+            ],
+        )
+        result = config.evaluate("Bash", {"command": "git status"})
+        self.assertFalse(result.is_trusted)  # file:// rule doesn't grant trust
 
     def test_no_match_falls_back_to_defaults(self):
         config = PolicyConfig(sensitive_by_default=True, untrusted_by_default=True)
@@ -124,8 +172,8 @@ class TestPolicyConfigEvaluate(unittest.TestCase):
 
     def test_malformed_jsonpath_fails_safe(self):
         config = PolicyConfig(
-            non_sensitive_allowlist=[
-                PolicyRule(tool="Read", jsonpath="$[invalid(((", pattern=".*")
+            allowlist=[
+                PolicyRule(tool="Read", jsonpath="$[invalid(((", pattern=".*", target="file:///workspace/docs")
             ],
         )
         result = config.evaluate("Read", {"file_path": "docs/PRD.md"})
@@ -136,8 +184,8 @@ class TestPolicyConfigEvaluate(unittest.TestCase):
     def test_fail_safe_path_is_logged_not_silent(self):
         # STORY-202 AC: "Fail-safe path is logged (not silent) for developer visibility."
         config = PolicyConfig(
-            non_sensitive_allowlist=[
-                PolicyRule(tool="Read", jsonpath="$[invalid(((", pattern=".*")
+            allowlist=[
+                PolicyRule(tool="Read", jsonpath="$[invalid(((", pattern=".*", target="file:///workspace/docs")
             ],
         )
         with self.assertLogs("scalene.policy", level="WARNING") as captured:

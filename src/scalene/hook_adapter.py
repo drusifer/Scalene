@@ -70,20 +70,20 @@ def _append_audit_log(entry: dict[str, Any], audit_log_path: Path) -> None:
 
 def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> str:
     """Build a ready-to-run `scg onboard` command for the exact call that
-    was just masked (Smith UX consult, 2026-07-09) — a trust-list rule, since
+    was just masked (Smith UX consult, 2026-07-09) — an https:// target, since
     that's what actually exempts a future identical call from masking
-    (PolicyConfig.evaluate's trusted_sources_list feeds MatchResult.is_trusted,
+    (PolicyConfig.evaluate routes http(s):// rules into MatchResult.is_trusted,
     which MaskingEngine.decide checks). Pattern defaults to an anchored escaped
     literal of the real value — the narrowest possible rule; the developer
     loosens it themselves if they want broader coverage."""
     jsonpath = f"$.{payload_field}"
     pattern = f"^{re.escape(str(value))}$"
     return (
-        "scg onboard --list-type trust "
+        "scg onboard "
+        f"--target {shlex.quote('https://<domain-this-call-reaches>')} "
         f"--tool {shlex.quote(tool_name)} "
         f"--jsonpath {shlex.quote(jsonpath)} "
-        f"--pattern {shlex.quote(pattern)} "
-        f"--target {shlex.quote('<domain-this-call-reaches>')}"
+        f"--pattern {shlex.quote(pattern)}"
     )
 
 

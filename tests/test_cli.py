@@ -98,11 +98,10 @@ class TestScaleneMainCli(unittest.TestCase):
             exit_code = scalene_main(
                 [
                     "onboard",
-                    "--list-type", "allowlist",
+                    "--target", f"file://{target}",
                     "--tool", "Read",
                     "--jsonpath", "$.file_path",
                     "--pattern", r"\.md$",
-                    "--target", str(target),
                     "--policy-path", str(policy_path),
                 ]
             )

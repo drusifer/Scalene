@@ -60,10 +60,10 @@ echo '{"hook_event_name":"PreToolUse","session_id":"demo","tool_name":"WebFetch"
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "permissionDecisionReason": "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. To allow this exact call going forward, run:\nscg onboard --list-type trust --tool WebFetch --jsonpath '$.prompt' --pattern '^AKIAIOSFODNN7EXAMPLE$' --target '<domain-this-call-reaches>'",
+    "permissionDecisionReason": "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. To allow this exact call going forward, run:\nscg onboard --target 'https://<domain-this-call-reaches>' --tool WebFetch --jsonpath '$.prompt' --pattern '^AKIAIOSFODNN7EXAMPLE$'",
     "updatedInput": {"url": "https://example.com", "prompt": "[MASKED_BY_POLICY_PROVENANCE_GUARD]"}
   },
-  "systemMessage": "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. To allow this exact call going forward, run:\nscg onboard --list-type trust --tool WebFetch --jsonpath '$.prompt' --pattern '^AKIAIOSFODNN7EXAMPLE$' --target '<domain-this-call-reaches>'"
+  "systemMessage": "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. To allow this exact call going forward, run:\nscg onboard --target 'https://<domain-this-call-reaches>' --tool WebFetch --jsonpath '$.prompt' --pattern '^AKIAIOSFODNN7EXAMPLE$'"
 }
 ```
 

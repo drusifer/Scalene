@@ -246,8 +246,8 @@ class TestPreToolUse(unittest.TestCase):
     def test_suggested_command_target_placeholder_is_domain_only(self):
         """Regression for Smith's Sprint-1 wording nit, fixed in Phase 3: the
         placeholder previously said 'domain-or-file' but the suggestion is
-        always --list-type trust (domain-only per onboard.py's own help
-        text) — '-or-file' offered a choice that never actually existed."""
+        always an https:// target (domain-only) — '-or-file' offered a
+        choice that never actually existed."""
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             taint = TaintState(

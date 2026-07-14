@@ -18,26 +18,42 @@ class PolicyConfigError(ValueError):
     """Raised when scalene_policy.yaml is malformed or fails schema validation."""
 
 
+#: Rules are keyed by their target URI's scheme, not by which YAML list they
+#: live in (2026-07-14 simplification — one unified list instead of separate
+#: non_sensitive_allowlist/trusted_sources_list sections). `file://` rules
+#: were verified by scanning a local path for secrets and count toward
+#: "not sensitive"; `http(s)://` rules were verified by a domain reputation
+#: check and count toward "trusted destination".
+SENSITIVITY_SCHEMES = ("file",)
+TRUST_SCHEMES = ("http", "https")
+
+
 @dataclass(frozen=True)
 class PolicyRule:
     tool: str
     jsonpath: str
     pattern: str
+    target: str
     description: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "PolicyRule":
         if not isinstance(data, dict):
             raise PolicyConfigError(f"Policy rule must be a mapping, got {data!r}")
-        missing = [k for k in ("tool", "jsonpath", "pattern") if k not in data]
+        missing = [k for k in ("tool", "jsonpath", "pattern", "target") if k not in data]
         if missing:
             raise PolicyConfigError(f"Policy rule missing required field(s) {missing}: {data!r}")
         return cls(
             tool=data["tool"],
             jsonpath=data["jsonpath"],
             pattern=data["pattern"],
+            target=data["target"],
             description=data.get("description", ""),
         )
+
+    @property
+    def scheme(self) -> str:
+        return self.target.split("://", 1)[0] if "://" in self.target else ""
 
 
 @dataclass(frozen=True)
@@ -58,8 +74,7 @@ class PolicyConfig:
     # real secret (masking.MaskingEngine.decide, 2026-07-14): "mask" replaces
     # the value and allows the call; "block" denies the call outright.
     mode: str = "mask"
-    non_sensitive_allowlist: list[PolicyRule] = field(default_factory=list)
-    trusted_sources_list: list[PolicyRule] = field(default_factory=list)
+    allowlist: list[PolicyRule] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -89,17 +104,15 @@ class PolicyConfig:
         if not isinstance(defaults, dict):
             raise PolicyConfigError(f"'defaults' section in {path} must be a mapping")
 
-        non_sensitive_raw = data.get("non_sensitive_allowlist", []) or []
-        trusted_raw = data.get("trusted_sources_list", []) or []
-        if not isinstance(non_sensitive_raw, list) or not isinstance(trusted_raw, list):
-            raise PolicyConfigError(f"Rule lists in {path} must be YAML sequences")
+        allowlist_raw = data.get("allowlist", []) or []
+        if not isinstance(allowlist_raw, list):
+            raise PolicyConfigError(f"'allowlist' in {path} must be a YAML sequence")
 
         return cls(
             sensitive_by_default=bool(defaults.get("sensitive_by_default", True)),
             untrusted_by_default=bool(defaults.get("untrusted_by_default", True)),
             mode=defaults.get("mode", "mask"),
-            non_sensitive_allowlist=[PolicyRule.from_dict(r) for r in non_sensitive_raw],
-            trusted_sources_list=[PolicyRule.from_dict(r) for r in trusted_raw],
+            allowlist=[PolicyRule.from_dict(r) for r in allowlist_raw],
         )
 
     def evaluate(self, tool: str, args: dict[str, Any]) -> MatchResult:
@@ -123,8 +136,10 @@ class PolicyConfig:
                 fail_safe = True
                 return False
 
-        non_sensitive_match = any(rule_matches(r) for r in self.non_sensitive_allowlist)
-        trusted_match = any(rule_matches(r) for r in self.trusted_sources_list)
+        non_sensitive_match = any(
+            rule_matches(r) for r in self.allowlist if r.scheme in SENSITIVITY_SCHEMES
+        )
+        trusted_match = any(rule_matches(r) for r in self.allowlist if r.scheme in TRUST_SCHEMES)
 
         if fail_safe:
             return MatchResult(is_sensitive=True, is_trusted=False, fail_safe_triggered=True)

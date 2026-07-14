@@ -3,18 +3,19 @@ defaults:
   untrusted_by_default: true
   mode: mask
 
-non_sensitive_allowlist:
+allowlist:
   - tool: Read
     jsonpath: "$.file_path"
     pattern: ".*/(tests|docs|demo)/.*"
+    target: "file:///home/drusifer/Projects/Scalene/tests"
     description: "This repo's own test fixtures and docs are dev content, not real sensitive data"
-
-trusted_sources_list:
   - tool: Write
     jsonpath: "$.file_path"
     pattern: ".*/(tests|docs|demo)/.*"
+    target: "https://localhost"
     description: "Local edits to this repo's own test/doc files, not exfiltration to an external destination"
   - tool: Edit
     jsonpath: "$.file_path"
     pattern: ".*/(tests|docs|demo)/.*"
+    target: "https://localhost"
     description: "Local edits to this repo's own test/doc files, not exfiltration to an external destination"

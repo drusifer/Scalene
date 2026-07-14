@@ -78,7 +78,7 @@ class TestAuditTail(unittest.TestCase):
     def test_reads_mask_events_only_not_onboard_events(self):
         # STORY-701 AC: only surface events where masking actually occurred.
         # onboard.py writes {"event": "onboard", ...} to this same file.
-        self._append({"event": "onboard", "list_type": "trust", "rule": {}})
+        self._append({"event": "onboard", "rule": {}})
         self._append(
             {
                 "event": "mask",
@@ -161,11 +161,11 @@ class TestApplyOnboardCommand(unittest.TestCase):
             mock_run.return_value.stdout = "Rule added: {...}"
             mock_run.return_value.stderr = ""
 
-            ok, output = apply_onboard_command("scg onboard --list-type trust --tool Bash --target example.com")
+            ok, output = apply_onboard_command("scg onboard --target https://example.com --tool Bash")
 
         mock_run.assert_called_once()
         called_argv = mock_run.call_args.args[0]
-        self.assertEqual(called_argv, ["scg", "onboard", "--list-type", "trust", "--tool", "Bash", "--target", "example.com"])
+        self.assertEqual(called_argv, ["scg", "onboard", "--target", "https://example.com", "--tool", "Bash"])
         self.assertTrue(ok)
         self.assertIn("Rule added", output)
 
@@ -175,7 +175,7 @@ class TestApplyOnboardCommand(unittest.TestCase):
             mock_run.return_value.stdout = ""
             mock_run.return_value.stderr = "Onboarding blocked: secrets check failed"
 
-            ok, output = apply_onboard_command("scg onboard --list-type allowlist --tool Write --target x")
+            ok, output = apply_onboard_command("scg onboard --target file:///x --tool Write")
 
         self.assertFalse(ok)
         self.assertIn("Onboarding blocked", output)
@@ -189,8 +189,8 @@ class TestApplyOnboardCommand(unittest.TestCase):
             policy_path = Path(tmp) / "scalene_policy.yaml"
 
             command = (
-                f"scg onboard --list-type allowlist --tool Read "
-                f"--jsonpath $.file_path --pattern .* --target {target} "
+                f"scg onboard --target file://{target} --tool Read "
+                f"--jsonpath $.file_path --pattern .* "
                 f"--policy-path {policy_path}"
             )
             ok, output = apply_onboard_command(command)
@@ -206,8 +206,8 @@ class TestApplyOnboardCommand(unittest.TestCase):
             policy_path = Path(tmp) / "scalene_policy.yaml"
 
             command = (
-                f"scg onboard --list-type allowlist --tool Write "
-                f"--jsonpath $.content --pattern .* --target {target} "
+                f"scg onboard --target file://{target} --tool Write "
+                f"--jsonpath $.content --pattern .* "
                 f"--policy-path {policy_path}"
             )
             ok, output = apply_onboard_command(command)

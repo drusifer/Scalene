@@ -54,14 +54,15 @@ classDiagram
         +str tool
         +str jsonpath
         +str pattern
+        +str target
         +str description
+        +scheme str
     }
     class PolicyConfig {
         +bool sensitive_by_default
         +bool untrusted_by_default
         +str mode
-        +list~PolicyRule~ non_sensitive_allowlist
-        +list~PolicyRule~ trusted_sources_list
+        +list~PolicyRule~ allowlist
         +from_yaml(path) PolicyConfig
         +evaluate(tool, args) MatchResult
     }
@@ -87,6 +88,8 @@ classDiagram
     MaskingEngine --> MatchResult
     MaskingEngine --> TaintState
 ```
+
+**Schema simplification (2026-07-14, user direction):** `PolicyConfig` originally had two separate rule lists — `non_sensitive_allowlist` (file-based, fed `is_sensitive`) and `trusted_sources_list` (domain-based, fed `is_trusted`) — mirroring BRD §2.3.2's original two-section schema, with `scg onboard` requiring an explicit `--list-type {allowlist,trust}` flag to pick one. Consolidated into a single `allowlist`, with each `PolicyRule` carrying a `target` URI whose scheme *is* the list type: `file://` targets were secrets-scanned and feed `is_sensitive`; `http(s)://` targets were reputation-checked and feed `is_trusted` (`evaluate()` partitions by `PolicyRule.scheme`, §5's sequence diagram shows the same routing on the onboarding side). One CLI flag (`--target`) replaces two (`--list-type` + `--target`). `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
 
 ## 5. Sequence & Interaction Flows
 
@@ -138,11 +141,13 @@ sequenceDiagram
     participant CLI as scg onboard
     participant Scan as Scanner Subprocess
     participant Cfg as scalene_policy.yaml
-    Dev->>CLI: onboard --tool X --jsonpath Y --pattern Z
+    Dev->>CLI: onboard --target URI --tool X --jsonpath Y --pattern Z
+    CLI->>CLI: resolve scan type from URI scheme
+    Note right of CLI: file:// -> secrets scan<br/>http(s):// -> reputation check
     CLI->>Scan: spawn(SCALENE_BYPASS=1)
     Scan-->>CLI: scan result (secrets? reputation?)
     alt scan clean
-        CLI->>Cfg: append rule
+        CLI->>Cfg: append rule (incl. target) to allowlist
         CLI-->>Dev: "Rule added: <rule>. Diff: ..." (audit.log entry)
     else scan fails
         CLI-->>Dev: "Onboarding blocked: <reason>" (no write)

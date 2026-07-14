@@ -141,7 +141,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         # as a mask event.
         _write_state(self.state_dir, "s1", sensitive=False, untrusted=False)
         with self.audit_log.open("a") as f:
-            f.write(json.dumps({"event": "onboard", "list_type": "trust", "rule": {}}) + "\n")
+            f.write(json.dumps({"event": "onboard", "rule": {}}) + "\n")
 
         app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
         async with app.run_test() as pilot:
@@ -190,11 +190,11 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
 
                 command_input = app.query_one("#command-input", Input)
-                command_input.value = "scg onboard --list-type trust --tool Bash --target example.com"
+                command_input.value = "scg onboard --target https://example.com --tool Bash"
                 await pilot.press("enter")
                 await pilot.pause()
 
-                mock_apply.assert_called_once_with("scg onboard --list-type trust --tool Bash --target example.com")
+                mock_apply.assert_called_once_with("scg onboard --target https://example.com --tool Bash")
                 status = app.query_one("#apply-status")
                 self.assertIn("Rule added", str(status.render()))
 
