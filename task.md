@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. **Sprint 2 CLOSED 2026-07-10** — all 3 phases shipped, all gates passed, end-to-end test clean, retro complete, launched. 124/124 tests.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 planned** — 3 phases, awaiting Morpheus's plan review before `*impl phase-1`.
 
 ---
 
@@ -131,3 +131,57 @@ Every phase below carries a **required** Smith UX gate (`*user test`) after Trin
 - No Tank phase this sprint — see header; Morpheus's architecture decision (§11.1) explicitly avoided introducing anything that would need one.
 - Phase 1 is independent of Phases 2-3; sequenced first here only because it's the smallest/lowest-risk phase, not because of a hard dependency.
 - Two items intentionally **not** phased as their own tasks (`docs/USER_STORIES.md`'s "Deferred / Not Promoted" section): the placeholder-wording fix is folded into task 3.1 instead of a standalone task (too small); relocating `_suggest_onboard_command()` out of `hook_adapter.py` stays deferred until a second harness adapter exists.
+
+---
+
+# Sprint 3
+
+**Owner:** Mouse
+**Status:** Planned, pending Morpheus's plan review.
+**Source:** `docs/USER_STORIES.md` (E9) + `docs/ARCHITECTURE.md` (§12)
+**Scope:** User-directed (2026-07-13) — a `GETTING_STARTED.md`, a `USER_GUIDE.md`, and a runnable/tested demo of Scalene stopping a real exfiltration attempt.
+
+None of these 3 phases share code — sequenced by risk/foundational order, not hard dependency. Only Phase 3 introduces a new user-facing *surface* (a demo people actually run); Phases 1-2 are pure documentation.
+
+## Phase 1 — Getting Started Guide
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: nothing new — describes the existing install/config/onboard flow.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 1.1 | Write `docs/GETTING_STARTED.md`: clean-clone → install → minimal policy → first observed mask/block, every command copy-pasteable and verified to actually run | STORY-901 |
+| 1.2 | Trim `README.md`'s "Getting started" section to a link into the new doc (no duplicated content) | STORY-901 |
+
+**Exit criteria:** Trin UAT passes (every command in the doc actually run on a clean checkout, ends in one concrete observed masked/blocked event). Morpheus reviews. **Smith `*user test` required** — Smith personally times a cold run to verify the sub-5-minute AC (Gate 1 commitment), not just Neo's/Trin's say-so.
+
+---
+
+## Phase 2 — User Guide
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new — reference doc over existing CLI/config surface.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 2.1 | Write `docs/USER_GUIDE.md` covering every `scalene`/`scalene-guard` command and flag, verified against real `--help` output (not memory/source transcription) | STORY-902 |
+| 2.2 | Document `scalene_policy.yaml` schema by example, cross-referencing `ARCHITECTURE.md` §4 rather than duplicating it; add a troubleshooting section (fail-safe behavior on malformed config/missing policy/scan failure) | STORY-902 |
+| 2.3 | Surface the onboard-suggestion workflow (`_suggest_onboard_command()`) as the guide's primary onboarding path, per Smith's Gate 1 note — manual `scalene onboard` flags presented as the fallback; add `USER_GUIDE.md` to `README.md`'s doc table | STORY-902 |
+
+**Exit criteria:** Trin UAT passes, including diffing documented commands/flags against real `--help` output and confirming Smith's Gate 1 note (onboard-suggestion prominence) actually landed. Morpheus reviews. No dedicated Smith gate — no new interactive surface, this is an accuracy/completeness check, not a usability-flow one.
+
+---
+
+## Phase 3 — Demo
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: nothing new — exercises the existing `scalene-guard` CLI as a real subprocess.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 3.1 | `demo/run_demo.py`: temp project + minimal policy, real `scalene-guard` subprocess fed real `PreToolUse`/`PostToolUse` JSON on stdin, scenario = `Read`(fake sensitive file) → `WebFetch`(untrusted domain) → masked response shown, plain-language narration written for a BRD-naive reader (Smith's Gate 2 note) | STORY-903 |
+| 3.2 | `tests/test_demo.py`: run the demo as a subprocess, assert the masking marker appears and the fake secret never appears unmasked in output | STORY-903 |
+| 3.3 | `make demo` Makefile target wired to `demo/run_demo.py` | STORY-903 |
+
+**Exit criteria:** Trin UAT passes (demo runs clean on a checkout, `tests/test_demo.py` passes, confirms no real network egress occurs). Morpheus reviews. **Smith `*user test` required** — Smith runs the demo herself to confirm it reads as genuinely non-mocked and that the narration is understandable without prior BRD/PRD context (Gate 2 commitment).
+
+## Notes
+- No Tank phase this sprint — per Morpheus's architecture (§12.2), `demo/run_demo.py` is a local dev-only script, no new port/service/env var/CI impact.
+- Phase ordering (Getting Started → User Guide → Demo) is foundational-first, not a hard dependency: Getting Started is the smallest and most time-boxed (Smith's <5min AC), User Guide is the largest pure-writing effort, Demo is saved for last since it's the only phase introducing new code (the demo script + its test).

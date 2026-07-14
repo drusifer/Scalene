@@ -1,30 +1,27 @@
 # Current Task
 
-**Status:** `*qa judge session` (revised, real-tool-data version) closed. TES=98.
-**Assigned to:** N/A (loop closed)
-**Started:** 2026-07-10
-**Completed:** 2026-07-10
+**Status:** Sprint 3 Phase 2 (User Guide) UAT: PASSED. Handed to Morpheus.
+**Assigned to:** Trin
+**Started:** 2026-07-14
 
-## `*qa judge session` (revised) — 2026-07-10
-- First pass reconstructed a trace from CHAT.md (TES=100, no bugs) — user correctly rejected this; CHAT.md can't see tool-call-level behavior.
-- Found+wired up `agents/tools/trace_annotate.py` (was orphaned: no jinja2 dep, no make target, unreferenced by any SKILL.md). Added `dev` extra to `pyproject.toml`, `make judge-trace` target to `Makefile`.
-- Real trace: 566 calls, 190 flags. Biggest finding: `make test 2>&1 | tail -N` used ~39 times despite Neo's own SKILL.md already forbidding it verbatim. Also 13 via-mandate bypasses, and 2 real tool bugs in trace_annotate.py itself (AP-MAKE-PIPE false-positived on `make chat`; AP-DUP-READ was offset-blind; also fixed a 3rd latent bug, AP-SKILL-RELOAD not honoring its own exemption list).
-- Neo fixed both script bugs, verified by rerun (190→126 flags, all removed flags confirmed false-positives).
-- Bob wired `make judge-trace` into judge/Trin/Neo SKILL.md as required, added concrete incident anchors, and gave Trin's UAT gate a real checkpoint (run `make judge-trace` before signing off a phase) instead of relying on recall.
-- Durable lesson recorded: `agents/oracle.docs/lessons.md` 2026-07-10 "A Written Rule Nobody Checks Is Not an Enforced Rule".
-- Full trace: `agents/trin.docs/judge_20260710_trace.md`. Score: `agents/smith.docs/trace_eval_20260710.md`. Bugs: `agents/smith.docs/bugs/s20260710_bug_00{1,2,3,4}*.md`.
-
-## Task Description
-UAT on Sprint 2 Phase 3: Guided Onboarding Action (`apply_onboard_command`, `monitor_app.py`'s command-input/apply-status wiring, `hook_adapter.py` placeholder wording fix).
+## Task Description (most recent): `*qa uat phase-2` (Sprint 3, STORY-902)
 
 ## Progress
-- [x] Independently re-ran `make test` (118/118)
-- [x] Independently drove the real UI (not just Neo's isolated function test) with a real fake-secret target — confirmed the console genuinely cannot bypass the secrets-scan gate (blocked, no policy file written)
-- [x] Checked all 4 of STORY-702's AC bullets against real execution
-- [x] Found 1 non-blocking doc staleness: STORY-702's AC still quotes the old placeholder wording — flagged to Cypher
-- [x] Verdict: **UAT PASSES.** Handed to Morpheus (round 1 rejected 2 crash paths, round 2 approved) → Smith's required UX gate found a real focus-loss bug
-- [x] Triaged Smith's `*user bug`: independently confirmed root cause in Textual's own `Widget.watch_disabled()` source (deliberately blurs a focused widget on disable — documented behavior, not a library bug). Our code never refocuses anything after. Routed to Neo, Smith to re-test.
-- [x] Re-verified Neo's fix: reran `make test` 3x clean (no flake recurrence), reran the exact original repro myself — `app.focused` is now the events table after dismiss. Handed to Smith for final re-test.
+- [x] Read `docs/USER_GUIDE.md` in full — confirmed Smith's Gate 1 note (onboard-suggestion workflow presented as the primary path, manual flags as fallback) actually landed, not just mentioned in the handoff
+- [x] Confirmed the policy schema section cross-references `ARCHITECTURE.md`/`BRD.md` rather than duplicating the full schema, and the troubleshooting table accurately reflects Neo's fail-safe fix (didn't re-verify the fix by hand — `tests/test_cli.py::test_malformed_policy_yaml_fails_safe_and_allows` already covers it, and `make test` passing is the check, per this session's correction against redundant manual repros)
+- [x] `make test`: 137/137 passing
+- [x] `make judge-trace DATE=2026-07-14`: 201 calls, 25 flags cumulative this session (11 `AP-MAKE-PIPE`, 9 `AP-RAW-VENV`, 3 `AP-VIA-READ`, 2 `AP-VIA-GREP`) — real, self-inflicted, same categories as Phase 1's UAT finding, not new code/doc defects. Noting that `AP-MAKE-PIPE`'s own documented fix (`make test-q`) doesn't actually exist as a Makefile target yet — flagging to Bob/Mouse as a real tooling gap, not blocking this phase.
+- [x] **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-1` (Sprint 3, STORY-901).
+
+## Progress
+- [x] Independently ran all 3 `scalene-guard` invocations from `docs/GETTING_STARTED.md`, copy-pasted verbatim, in a scratch dir — confirmed real masked output + real `.scalene/audit.log` entry, matching the doc exactly (not just trusting Neo's report)
+- [x] Did the strongest version of the "clean clone" AC: cloned the actual repo fresh into a separate directory and ran `make setup` for real (21s), then ran the doc's 3 commands against *that* clone's own installed binary — confirms the walkthrough genuinely works starting from nothing, not just in an already-set-up dev tree. Total time clone→masked-event: well under 5 minutes (timing AC formally belongs to Smith's gate, but this rules out any functional failure before she times it)
+- [x] Confirmed `README.md` links to the new doc rather than duplicating content (`tests/test_getting_started_docs.py` also checks this)
+- [x] `make test`: 127/127 passing
+- [x] `make judge-trace DATE=2026-07-14`: 125 calls, 11 real flags this session (5x `AP-RAW-VENV`, 4x `AP-MAKE-PIPE`, 1x `AP-VIA-GREP`, 1x `AP-VIA-READ`) — all from my own ad hoc verification commands (direct `.venv/bin/scalene-guard` invocations instead of a make target, piped `make` output, one grep instead of `via`). Real per the documented rules, not false positives; none are code/doc defects, all self-inflicted process nits during verification. Not blocking, noted per protocol.
+- [x] **Verdict: PASS.**
 
 ## Blockers
 None.
@@ -33,4 +30,4 @@ None.
 None yet
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-14*

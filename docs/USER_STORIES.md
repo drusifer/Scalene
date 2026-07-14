@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) — Draft v1, pending Smith gate 1.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) — Draft v1, pending Smith gate 1.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -165,6 +165,42 @@ As a security-conscious engineer, I want the onboarding secrets scan to detect a
 - [ ] All existing secrets-scan test fixtures continue to pass, adjusted for the new detector's actual match set — fixtures are fixed to reflect real detection, not weakened with scanner allowlist exceptions (project policy).
 - [ ] No network egress introduced — `detect-secrets` is pure Python, preserves the offline-scan requirement (`ARCHITECTURE.md` §9).
 - [ ] Category-aware masking of the mask *literal itself* (`MaskingEngine.apply_mask`, `scrubadub`/`presidio` per backlog) is explicitly **out of scope** for this story — backlog defers that until category-aware masking becomes an actual requirement, not just a nice-to-have.
+
+---
+
+---
+
+## E9 — Documentation & Onboarding (Sprint 3)
+
+**Origin:** Direct user request 2026-07-13 — no existing user-facing guide exists; `docs/SETUP.md` is install/reference-oriented, `README.md`'s "Getting started" is a 3-line stub, and there is no runnable demonstration of Scalene actually stopping an exfiltration attempt.
+
+### STORY-901
+As a new user evaluating Scalene, I want a `docs/GETTING_STARTED.md` that takes me from a clean clone to seeing Scalene mask a real tool call in under 5 minutes, so that I can validate the tool works before investing time in full configuration.
+
+**Acceptance Criteria**
+- [ ] Every command in the doc is copy-pasteable and runs successfully on a clean clone (no undocumented prerequisites).
+- [ ] The walkthrough ends with the reader observing one concrete masked/blocked event (e.g. an entry in `.scalene/audit.log`), not just "install succeeded."
+- [ ] A person with no prior Scalene knowledge can complete it start-to-finish in under 5 minutes (Smith to verify by timing a cold run).
+- [ ] `README.md`'s "Getting started" section is updated to link to this doc instead of duplicating/stubbing the content.
+
+### STORY-902
+As a developer operating Scalene day-to-day, I want a `docs/USER_GUIDE.md` covering all CLI commands, policy config options, and common workflows (onboarding a rule, reading the audit log, running the monitor console) in one place, so that I don't have to piece together usage from `SETUP.md`, `ARCHITECTURE.md`, and source code.
+
+**Acceptance Criteria**
+- [ ] Documents every `scalene` and `scalene-guard` CLI command/flag that exists in the current codebase (verified against actual `--help` output, not assumed).
+- [ ] Documents `scalene_policy.yaml`'s schema by example, cross-referencing `ARCHITECTURE.md` §4 rather than duplicating the full schema definition.
+- [ ] Includes a troubleshooting section covering fail-safe behavior (what happens on malformed config, missing policy file, scan failure).
+- [ ] `README.md`'s documentation table is updated to include this doc.
+- [ ] No content forked/duplicated from `SETUP.md` without a clear reason — link instead where the content already lives there.
+
+### STORY-903
+As a prospective user or reviewer, I want a runnable demo that shows Scalene actually stopping a realistic data-exfiltration attempt end-to-end, so that I can see the value in minutes without reading code or setting up my own project.
+
+**Acceptance Criteria**
+- [ ] Demo is a scripted, repeatable flow (e.g. `make demo` or a `demo/` script) — not a one-off manual walkthrough that can drift out of date silently.
+- [ ] Demo scenario matches a real BRD/PRD scenario (tainted-sensitive read followed by an untrusted-destination call) and shows the actual masked output, not a mocked/fake result.
+- [ ] Demo runs offline with no real external network egress (consistent with `ARCHITECTURE.md` §9's offline requirement) — any "untrusted destination" in the demo is simulated locally.
+- [ ] Demo's expected output is checked by `make test` or a dedicated smoke test so it can't silently break/rot as the codebase changes.
 
 ---
 

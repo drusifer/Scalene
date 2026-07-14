@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 2 fully closed and launched (see `task.md`). `*qa judge session` (revised) loop also closed, TES=98. No active Trin task — awaiting next user direction (Sprint 3 scope, or further judge/verification work).
+Phase 2 UAT passed, handed to Morpheus. No Smith gate on Phase 2. Next Trin involvement is Phase 3 UAT once Neo implements the demo.
 
 ## Waiting On
-Nothing right now.
+Morpheus (Phase 2 review) → Neo (Phase 3 impl) → me (Phase 3 UAT).
 
 ## Planned Work
-- [ ] **New, from today's judge loop**: for every future `*qa uat`/`*qa test` phase sign-off, run `make judge-trace DATE=<today>` first and note anything real in the handoff (see `agents/trin.docs/SKILL.md` Test Workflow step 4) — this is now a required gate step, not optional.
-- [ ] Next `*qa judge session` run: check whether that new checkpoint actually reduced real `make test|tail` / via-bypass counts vs. today's baseline (39 and 13 respectively) — this is the real test of whether Bob's 2026-07-10 fix worked, not just whether the mechanism exists.
-- [ ] Sprint 1's old open items (AC-text staleness, Smith retroactive test) are resolved — see `task.md`/CHAT.md 2026-07-10 sprint-close entries.
+- [ ] Phase 3 UAT: run `tests/test_demo.py` (the plan's own repeatable check — per this session's correction, don't also hand-verify the demo with manual bash runs beyond what the test covers), confirm no real network egress occurs via code inspection (`scalene-guard` never issues the HTTP call — structural, per §12.1).
+- [ ] Keep running `make judge-trace` before every UAT signoff per the standing rule. Flags have been climbing this sprint (11 → 25 cumulative) driven mostly by my/Neo's own `AP-MAKE-PIPE`/`AP-RAW-VENV` habits — worth a retro item on whether `make test-q` (the documented fix, which doesn't exist yet) should actually get built.
+- [ ] Stop piping `make` output to `tail` myself going forward — use `tail -n N build/build.out` as a separate command instead (this is literally the flag I keep tripping).
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-14*

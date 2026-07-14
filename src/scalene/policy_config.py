@@ -47,12 +47,23 @@ class MatchResult:
     fail_safe_triggered: bool = False
 
 
+VALID_MODES = ("mask", "block")
+
+
 @dataclass
 class PolicyConfig:
     sensitive_by_default: bool = True
     untrusted_by_default: bool = True
+    # Action taken when a payload is provenance-risky AND actually scans as a
+    # real secret (masking.MaskingEngine.decide, 2026-07-14): "mask" replaces
+    # the value and allows the call; "block" denies the call outright.
+    mode: str = "mask"
     non_sensitive_allowlist: list[PolicyRule] = field(default_factory=list)
     trusted_sources_list: list[PolicyRule] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.mode not in VALID_MODES:
+            raise PolicyConfigError(f"'mode' must be one of {VALID_MODES}, got {self.mode!r}")
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> "PolicyConfig":
@@ -86,6 +97,7 @@ class PolicyConfig:
         return cls(
             sensitive_by_default=bool(defaults.get("sensitive_by_default", True)),
             untrusted_by_default=bool(defaults.get("untrusted_by_default", True)),
+            mode=defaults.get("mode", "mask"),
             non_sensitive_allowlist=[PolicyRule.from_dict(r) for r in non_sensitive_raw],
             trusted_sources_list=[PolicyRule.from_dict(r) for r in trusted_raw],
         )

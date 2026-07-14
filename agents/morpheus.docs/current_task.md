@@ -1,35 +1,29 @@
 # Current Task
 
-**Status:** Sprint 2 Phase 3 fully complete — Smith's UX gate found and closed a real bug. Sprint 2 implementation (all 3 phases) done.
-**Assigned to:** N/A (implementation stage finished; next is sprint close)
-**Started:** 2026-07-10
-**Completed:** 2026-07-10
+**Status:** Sprint 3 Phase 2 review: APPROVED. Phase 2 complete. Handed to Neo for Phase 3.
+**Assigned to:** N/A (Phase 2 done)
+**Started:** 2026-07-14
+**Completed:** 2026-07-14
 
-## Task Description
-`*lead arch sprint` (Sprint 2), per the `*plan sprint` Bloop chain, following Smith's Gate 1 approval-with-notes on Cypher's E7/E8 stories.
+## Task Description (most recent): `*lead review phase-2` (Sprint 3, User Guide)
+- [x] Reviewed the `cli.py` fail-safe fix (out-of-scope bug Neo found while documenting troubleshooting) — correct pattern, matches the existing fail-safe-fallback-with-warning-log convention used elsewhere in the codebase (e.g. `policy_config.py`'s JSONPath fail-safe). Regression test present, real (not a manual repro).
+- [x] Reviewed `docs/USER_GUIDE.md` for accuracy against `ARCHITECTURE.md`/`BRD.md` — no duplication, cross-references correct.
+- [x] **APPROVED.** No Smith gate required on this phase (per plan — accuracy check, not a usability-flow one). Worth flagging to Oracle at groom: this bug fix (fail-safe crash on malformed policy YAML) happened outside any story's stated scope — should be noted in whatever traceability doc gets updated at sprint close, even though it's not tied to a STORY-9xx AC.
+
+## Task Description (prior): `*lead review phase-1` (Sprint 3, Getting Started Guide).
 
 ## Progress
-- [x] Read Cypher's Sprint 2 stories (`docs/USER_STORIES.md` E7/E8) and Smith's Gate 1 notes
-- [x] Resolved the open TUI-vs-web-frontend question → TUI (`textual`), optional pip extra
-- [x] Decided polling (not filesystem-watch) for reading `.scalene/audit.log`/state files
-- [x] Resolved Smith's session-scope note: default multi-session list view + per-session filter + aggregate toggle
-- [x] Resolved Smith's plain-language-errors note: `detect-secrets` output routed through existing `secrets_scan.py` translation layer
-- [x] Decided the onboarding "apply" action is a subprocess call to the existing `scalene onboard` CLI, not a reimplementation
-- [x] Determined **no Tank gate needed** this sprint (no new port/service/env var/CI impact) — recorded explicitly in `docs/ARCHITECTURE.md` §11.1
-- [x] Wrote `docs/ARCHITECTURE.md` §11 (Sprint 2 Architecture) + updated doc status line
-- [x] Smith Gate 2: approved with one note (realtime AC), folded into Phase 2's exit criteria by Mouse
-- [x] Mouse phase breakdown: 3 phases in `task.md`, Smith gates explicitly placed per-phase
-- [x] Reviewed Mouse's sprint plan vs. architecture: **APPROVED**, phase sequencing correct, Smith gate placement correct, no Tank phase confirmed correct. **Sprint 2 plan LOCKED.**
-- [x] `*lead review phase-1`: independently grepped to confirm only `scan_worker.py` imports `secrets_scan`/`detect_secrets` (hot-path `hook_adapter.py`/`cli.py` untouched). **APPROVED.** Phase 1 complete, `task.md` updated.
-- [x] `*lead review phase-2`: independently re-grepped for `textual`/`monitor_app`/`monitor_data` imports in the hot path (clean). **APPROVED** with 2 non-blocking notes (unbounded event list, full-redraw-per-poll — see context.md). Handed to Smith for the required UX gate.
-- [x] `*lead review phase-3`, round 1: ran `apply_onboard_command()` with adversarial inputs (missing binary, malformed quoting) — **found 2 real uncaught crash paths**. **REJECTED.** Handed back to Neo.
-- [x] `*lead review phase-3`, round 2: independently re-ran both original repros + Neo's own new empty-input finding — all 3 now graceful. **APPROVED.** Handed to Smith for the required UX gate.
+- [x] Round 1: found doc hardcodes literal mask output but the test only checked term-presence, never ran the scenario — same AC-vs-implementation drift class as Sprint 2's 2 incidents. **REJECTED.** Full review: `agents/morpheus.docs/phase1_review.md`.
+- [x] Round 2: reviewed Neo's fix — `test_walkthrough_scenario_actually_masks` calls `pre_tool_use`/`post_tool_use` directly, replays the exact 3-call scenario, asserts real `MaskingEngine.MASK_LITERAL` output. Also independently confirmed Neo's self-caught `audit_log_path` near-miss (cwd-relative default) is correctly fixed by grepping the diff. **APPROVED.** 128/128 tests passing.
+
+## Prior: Sprint 3 plan review (2026-07-14)
+- [x] Verified Mouse's 3-phase breakdown matches §12 exactly; Smith gate placement correct; both gate notes folded into named tasks; no Tank phase. **APPROVED. Sprint 3 plan LOCKED.**
 
 ## Blockers
-Waiting on Smith Gate 2 approval before the chain proceeds to Mouse.
+None.
 
 ## Oracle Consultations
 None yet
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-14*

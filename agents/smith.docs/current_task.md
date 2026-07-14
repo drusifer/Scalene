@@ -1,11 +1,19 @@
 # Current Task
 
-**Status:** `*qa judge session` (revised) closed, TES=98. Sprint 2 (all phases + close) also complete — see below.
-**Assigned to:** N/A (no active task)
-**Started:** 2026-07-10
-**Completed:** 2026-07-10
+**Status:** Sprint 3 Phase 1 UX gate: APPROVED (timed run). Phase 1 complete.
+**Assigned to:** Smith
+**Started:** 2026-07-14
 
-## Task Description (most recent): `*qa judge session` (revised)
+## Task Description (most recent): Sprint 3 Phase 1 gate — Getting Started Guide (STORY-901)
+Cloned fresh, ran `make setup`, ran the doc's 3 commands verbatim: 24s machine time, real masked output confirmed. Approved with 1 non-blocking note (placeholder path repeated 3x instead of exported once). Full: `agents/smith.docs/phase1_gate.md`.
+
+## Task Description (prior): Sprint 3 Gate 2 — E9 architecture
+Reviewed `docs/ARCHITECTURE.md` §12. Approved — low UX risk, no new surface, real-subprocess demo decision is right for trust reasons. One non-blocking note: demo narration should target a BRD-naive reader. Full review: `agents/smith.docs/gate2_sprint3_review.md`.
+
+## Task Description (prior): Sprint 3 Gate 1 — E9 Documentation & Onboarding
+Reviewed STORY-901/902/903 (`docs/USER_STORIES.md`). Approved — all testable/user-facing, all require linking not duplicating existing docs. One non-blocking note for whoever implements STORY-902: surface the onboard-suggestion workflow prominently (ties to my 2026-07-09 `*user consult` finding). Full review: `agents/smith.docs/gate1_sprint3_review.md`.
+
+## Task Description (prior): `*qa judge session` (revised)
 Scored the real `make judge-trace` output (superseding a voided CHAT.md-reconstructed score of TES=100/no-bugs). Filed 4 bugs, rescored to TES=98 after fixes verified. See bottom of Progress section.
 
 ## Task Description (prior): Sprint 2 Phase 3 UX Gate

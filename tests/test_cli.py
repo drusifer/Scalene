@@ -32,7 +32,7 @@ class TestGuardCliDispatch(unittest.TestCase):
             exit_code, out = _run_guard(payload, tmp_path / "scalene_policy.yaml", tmp_path / "state")
             self.assertEqual(exit_code, 0)
             result = json.loads(out)
-            self.assertTrue(result["allow"])
+            self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "allow")
 
     def test_post_tool_use_dispatch_updates_state(self):
         with TemporaryDirectory() as tmp:
@@ -47,7 +47,7 @@ class TestGuardCliDispatch(unittest.TestCase):
             }
             exit_code, out = _run_guard(payload, tmp_path / "scalene_policy.yaml", state_dir)
             self.assertEqual(exit_code, 0)
-            self.assertIn("sanitizedOutput", json.loads(out))
+            self.assertEqual(json.loads(out), {})
             self.assertTrue((state_dir / "s1.json").exists())
 
     def test_unknown_hook_event_fails_safe_and_allows(self):
@@ -56,7 +56,23 @@ class TestGuardCliDispatch(unittest.TestCase):
             payload = {"hook_event_name": "SomethingElse", "session_id": "s1"}
             exit_code, out = _run_guard(payload, tmp_path / "scalene_policy.yaml", tmp_path / "state")
             self.assertEqual(exit_code, 0)
-            self.assertTrue(json.loads(out)["allow"])
+            self.assertEqual(json.loads(out), {})
+
+    def test_malformed_policy_yaml_fails_safe_and_allows(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = tmp_path / "scalene_policy.yaml"
+            policy_path.write_text(": not: valid: yaml: [")
+            payload = {
+                "hook_event_name": "PreToolUse",
+                "session_id": "s1",
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+            }
+            exit_code, out = _run_guard(payload, policy_path, tmp_path / "state")
+            self.assertEqual(exit_code, 0)
+            result = json.loads(out)
+            self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "allow")
 
     def test_malformed_stdin_fails_safe_and_allows(self):
         stdin = io.StringIO("not valid json")
@@ -68,7 +84,7 @@ class TestGuardCliDispatch(unittest.TestCase):
                     ["--policy-path", str(tmp_path / "scalene_policy.yaml"), "--state-dir", str(tmp_path / "state")]
                 )
             self.assertEqual(exit_code, 0)
-            self.assertTrue(json.loads(stdout.getvalue())["allow"])
+            self.assertEqual(json.loads(stdout.getvalue()), {})
 
 
 class TestScaleneMainCli(unittest.TestCase):

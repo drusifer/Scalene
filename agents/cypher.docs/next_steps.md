@@ -1,14 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-None. Sprint 2 is fully implemented; AC-text is clean. Waiting for Smith's Stage-3 end-to-end test and the sprint retro before `*pm launch`.
+None from Cypher right now. E9 stories are posted to `docs/USER_STORIES.md`/`docs/PRD.md` and handed to Smith for Gate 1 (`*user review`).
 
 ## Waiting On
-Smith (end-to-end test) → all personas (retro) → then it's my turn to launch.
+Smith (`*user approve` / `*user reject` on E9 stories) → if approved, Morpheus (`*lead arch sprint`) → Smith Gate 2 → Mouse phase breakdown.
 
 ## Planned Work
-- [ ] At retro: incorporate this sprint's findings into the next backlog pass (e.g. the deferred `scrubadub`/`presidio` category-aware masking backlog item, still not promoted)
-- [ ] `*pm launch` once retro completes
+- [ ] If Smith rejects: revise STORY-901/902/903 per feedback and re-submit.
+- [ ] If Smith approves: no further Cypher action until Morpheus's architecture is ready for Gate 2 review.
+- [ ] Sprint 2 retro backlog carry-forward still open: `scrubadub`/`presidio` category-aware masking remains deferred, not yet promoted to a story — revisit at Sprint 3 retro if it becomes relevant.
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-13*

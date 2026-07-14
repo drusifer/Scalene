@@ -1,28 +1,47 @@
 # Current Task
 
-**Status:** `*swe fix judge session` (revised) done — 3 script bugs fixed in `agents/tools/trace_annotate.py`, verified. Sprint 2 implementation (all 3 phases) also done, same day.
-**Assigned to:** N/A (no active task)
-**Started:** 2026-07-10
-**Completed:** 2026-07-10
+**Status:** Sprint 3 Phase 3 (Demo, last phase) implemented. Handed to Trin for UAT.
+**Assigned to:** Neo
+**Started:** 2026-07-14
 
-## Task Description (most recent): `*swe fix judge session` (revised)
-Fix the 2 script bugs Smith filed against `agents/tools/trace_annotate.py` after the real `make judge-trace` tool was wired up for the first time (previously orphaned).
+## Task Description (most recent): `*swe impl phase-3` (Sprint 3, STORY-903): `demo/run_demo.py`
 
 ## Progress
-- [x] Fixed `AP-MAKE-PIPE` false-positiving on `make chat` — regex now checks the piped `make` invocation's target against `MKF_EXCLUDED_TARGETS` (chat/help/install_bob/update_bob/pull_bob/clean_bob aren't mkf-captured, so there's no `build/build.out` for them to tail instead)
-- [x] Fixed `AP-DUP-READ` being offset-blind — now keyed on `(path, offset, limit, edit_generation)` so re-reading different sections of a large file, or re-reading after a real edit, no longer counts as a duplicate
-- [x] Found and fixed a 3rd latent bug while in there (not filed as a separate ticket, zero real instances today): `AP-SKILL-RELOAD` never checked `trace_rules.json`'s own `multi_call_allowed` exemption list (bloop/chat/personas)
-- [x] Verified via Trin's rerun on the same JSONL data: `AP-MAKE-PIPE` 104→53, `AP-DUP-READ` 12→0, no regressions in the real flags that remained
-- [x] `make test`: still green (change is confined to `agents/tools/`, doesn't touch `src/scalene`)
+- [x] `demo/run_demo.py`: real subprocess calls to the installed `scalene-guard` binary (located via `Path(sys.executable).parent`, same interpreter's venv), no policy file (out-of-the-box defaults, matches Phase 1's finding), scenario = Read(fake secret) → PostToolUse → WebFetch(untrusted) → masked. Narration written for a BRD-naive reader per Smith's Gate 2 note (no "taint"/"Triangle-of-Doom" jargon)
+- [x] Added `make demo` as a **bypass target** (else-block only, like `help`/`chat`) per the make-discover skill convention — a normal mkf-wrapped target would silently capture the narration instead of showing it, defeating the whole point of a demo
+- [x] Caught a real Makefile gotcha before it shipped: `make demo` initially did nothing (`'demo' is up to date`) because the `demo/` directory shares its name with the target and make treated it as a file — fixed by adding `demo` to the `else` block's `.PHONY` list
+- [x] Ran `make demo` once directly (the actual deliverable, not a throwaway verification script) to confirm the narration reads correctly
+- [x] `tests/test_demo.py`: runs the demo as a subprocess (same as `make demo` would), asserts the mask marker appears, the fake secret never appears unmasked after "Step 3", and the suggested onboard command is shown
+- [x] `make test`: 140/140 passing (137 + 3 new)
 
-## Task Description (prior): Sprint 2 Phase 3 focus-loss fix
-`*swe fix phase-3 focus bug` — Smith found (real Pilot-driven execution) that dismissing or applying leaves the app with no focused widget at all, stranding the user.
+## Task Description (prior): `*swe impl phase-2` (Sprint 3, STORY-902): `docs/USER_GUIDE.md`
 
 ## Progress
-- [x] Test-first: added 2 Pilot tests, confirmed red, fixed via `_return_focus_to_events_table()` called from both `action_dismiss_edit()` and `on_input_submitted()`, confirmed green
-- [x] Confirmed both tests meaningful (not tautological) by temporarily disabling the fix and watching them fail
-- [x] Found and fixed a real, if rare, test-suite flake along the way (500ms poll timer racing with test teardown → `NoMatches` crash) — reproduced deterministically, fixed with a targeted `try/except NoMatches`, re-ran the full suite 4x to confirm it's gone
-- [x] `make test`: 124/124 passing, stable across repeated runs
+- [x] Wrote `docs/USER_GUIDE.md`: all 4 commands (`scalene-guard`, `scalene onboard`, `scalene install-hooks`, `scalene monitor`) documented against real `--help` output; policy schema by example cross-referencing `ARCHITECTURE.md` §4 and `BRD.md` §2.3.2 rather than duplicating; onboard-suggestion workflow presented as the primary path (Smith's Gate 1 note) with manual flags as fallback; troubleshooting table
+- [x] **Found and fixed a real, pre-existing bug** while writing the troubleshooting section: `cli.py`'s `main()` called `PolicyConfig.from_yaml()` with no exception handling — a malformed `scalene_policy.yaml` crashed `scalene-guard` with an uncaught `PolicyConfigError`, violating the module's own documented fail-safe guarantee. Fixed by catching `PolicyConfigError` and falling back to `PolicyConfig()` defaults (same as a missing file), with a warning logged. Added `test_malformed_policy_yaml_fails_safe_and_allows` (`tests/test_cli.py`) as the regression test — did not verify this via a manual bash repro, wrote it as a real test per user correction this session
+- [x] Added `tests/test_user_guide_docs.py`: existence/term checks + **actually invokes** `scalene-guard --help`/`scalene onboard --help`/`scalene install-hooks --help` via the real `main()` functions and asserts every flag mentioned in the guide is present in real output — not just prose matching
+- [x] README updated: `USER_GUIDE.md` added to doc table
+- [x] `make test`: 137/137 passing (129 + 8 new)
+
+## Task Description (prior): `*swe fix phase-1 doc-drift test`
+Morpheus rejected Phase 1 round 1: `tests/test_getting_started_docs.py` only checked term-presence in prose, never actually ran the scenario, so `docs/GETTING_STARTED.md`'s literal mask output could go stale silently (same drift class as Sprint 2's 2 AC-text incidents).
+
+## Progress (fix)
+- [x] Added `test_walkthrough_scenario_actually_masks`: calls `pre_tool_use`/`post_tool_use` directly (same pattern as `tests/test_hook_adapter.py`), replays the doc's exact 3-call scenario, asserts `updatedInput["prompt"] == MaskingEngine.MASK_LITERAL`
+- [x] Caught my own near-miss while writing it: `pre_tool_use`'s `audit_log_path` defaults to a *relative* `.scalene/audit.log` (cwd-relative, not `state_dir`-relative) — without explicitly overriding it, the test would have written into the real repo's cwd during `make test`. Passed `audit_log_path=state_dir/"audit.log"` explicitly, matching `test_hook_adapter.py`'s existing pattern.
+- [x] `make test`: 128/128 passing (127 + 1 new)
+- [x] Confirmed no stray `.scalene/audit.log` writes leaked into the repo root from the test
+
+## Task Description (prior): `*swe impl phase-1` (Sprint 3, STORY-901): `docs/GETTING_STARTED.md`, README trim.
+
+## Progress
+- [x] Verified real `--help` output for `scalene`, `scalene onboard`, `scalene install-hooks`, `scalene-guard` before writing anything (did not transcribe from memory/source)
+- [x] Read `hook_adapter.py`/`masking.py`/`policy_config.py`/`taint_state.py` to find a genuinely minimal repro: with **no policy file at all**, defaults (`sensitive_by_default`/`untrusted_by_default` both `True`) mean a `Read` then any outbound call (e.g. `WebFetch`) gets masked with zero config — this matches §12.1's "matches the fail-safe defaults new users actually hit first" intent exactly
+- [x] Actually ran the 3-command sequence in a scratch dir against the real installed `scalene-guard` before writing it into the doc — confirmed real masked output, real `systemMessage`, real `.scalene/audit.log` entry (not assumed/fabricated)
+- [x] Wrote `docs/GETTING_STARTED.md`: clone → `make setup` → 3 copy-pasteable `scalene-guard` invocations → observed mask event → links to SETUP.md/USER_GUIDE.md/demo
+- [x] Trimmed `README.md`'s "Getting started" section to link to the new doc (kept `make setup`/`make test` since that's the repo-contributor flow, not a duplicate of the demo walkthrough); added GETTING_STARTED.md to the doc table
+- [x] Added `tests/test_getting_started_docs.py` (existence + key-term checks, same pattern as existing `test_setup_docs.py`) — confirms README links rather than duplicates
+- [x] `make test`: 127/127 passing (124 + 3 new)
 
 ## Blockers
 None.
@@ -31,4 +50,4 @@ None.
 None yet
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-14*

@@ -189,7 +189,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -237,6 +237,10 @@ chat: ## Post a message to CHAT.md (usage: make chat MSG="<msg>" [PERSONA="<name
 		$(if $(PERSONA),--persona "$(PERSONA)") \
 		$(if $(CMD),--cmd "$(CMD)") \
 		$(if $(TO),--to "$(TO)")
+
+demo: ## Run the Scalene demo - watch it mask a real exfiltration attempt (STORY-903)
+	@if [ -x .venv/bin/python ]; then .venv/bin/python demo/run_demo.py; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 test: ## Run unit tests
 	@./agents/tools/mkf.py $(V) $@

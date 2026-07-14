@@ -286,9 +286,211 @@ OK
  Shutdown prep: all persona state files (Trin/Smith/Neo/Bob/Oracle) reconciled to reflect the 2026-07-10 judge-session loop (TES=98, closed). No active tasks, no blockers. Uncommitted work: judge-tool fixes + SKILL.md wiring + 4 bug files + trace/eval docs (see git status). Awaiting user decision on commit.
 
 ---
-[<small>2026-07-12 10:07:06</small>] [**make**]->[**all**] *build*:
+[<small>2026-07-13 20:00:36</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make via_index | /home/drusifer/Projects/Scalene/build/build.out
+Functions:     99
+Classes:       47
+Methods:       161
+Imports:       299
+Globals:       55
+Headers:       825
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-13 20:02:34</small>] [**User**]->[**all**] *resume*:
+ Cold start /bob-protocol init. Reviewed CHAT.md tail + all persona state files (Trin/Neo/Bob/Smith/Oracle) — all last updated 2026-07-10, no active tasks, no blockers. Last handoff (2026-07-12) was shutdown prep awaiting user decision on committing judge-tool fixes + SKILL.md wiring + bug files. Only new activity since is an unrelated make via_index build run. Awaiting user direction.
+
+---
+[<small>2026-07-13 20:05:54</small>] [**User**]->[**all**] *request*:
+ /sprint: create a USER_GUIDE and Getting Started documentation, plus a demo.
+
+---
+[<small>2026-07-13 20:07:16</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ Sprint 3 (E9 - Documentation & Onboarding) stories drafted: STORY-901 GETTING_STARTED.md (<5min clean-clone walkthrough), STORY-902 USER_GUIDE.md (full CLI/config reference), STORY-903 runnable/testable demo of a real masked exfiltration attempt. docs/USER_STORIES.md + docs/PRD.md updated. @Smith *user review sprint 3 stories
+
+---
+[<small>2026-07-13 20:07:39</small>] [**Smith**]->[**Cypher**] *user review*:
+ Reviewing Sprint 3 (E9) stories per Gate 1. Loading context.
+
+---
+[<small>2026-07-13 20:08:04</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user approve. E9 stories testable+user-facing, all avoid doc-duplication (Sprint 2 had drift issues). 1 non-blocking note re: STORY-902 surfacing the onboard-suggestion UX prominently. Full: agents/smith.docs/gate1_sprint3_review.md @Morpheus *lead arch sprint
+
+---
+[<small>2026-07-14 10:46:29</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Sprint 3 architecture done: docs/ARCHITECTURE.md sec12. STORY-901/902 = placement-only (new docs/, README links, CLI ref verified vs real --help). STORY-903 demo = real scalene-guard subprocess w/ real hook JSON, Read(sensitive)->WebFetch(untrusted) scenario, offline by structure not mocking, asserted in tests/test_demo.py + make demo target. No Tank gate. @Smith *user feedback sprint 3 arch
+
+---
+[<small>2026-07-14 10:46:40</small>] [**Smith**]->[**Morpheus**] *user feedback*:
+ Reviewing Sprint 3 architecture (ARCHITECTURE.md sec12) per Gate 2.
+
+---
+[<small>2026-07-14 10:46:56</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user approve. Sprint 3 arch (sec12) approved - low UX risk, no new surface, real-subprocess demo decision is right for trust reasons. 1 note: demo narration should target a reader who hasn't read the BRD (plain language, not 'has_sensitive_data'/'Triangle-of-Doom' jargon). Full: agents/smith.docs/gate2_sprint3_review.md @Mouse *sm plan sprint
+
+---
+[<small>2026-07-14 10:52:02</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ Sprint 3 phase breakdown in task.md: Phase 1 Getting Started Guide (STORY-901, Smith gate - times <5min AC), Phase 2 User Guide (STORY-902, no Smith gate, folds both her notes into 2.3), Phase 3 Demo (STORY-903, Smith gate - runs it herself). No Tank phase. @Morpheus *lead review sprint plan
+
+---
+[<small>2026-07-14 10:52:08</small>] [**Morpheus**]->[**Mouse**] *lead review sprint plan*:
+ Reviewing Sprint 3 phase plan (task.md) against arch sec12.
+
+---
+[<small>2026-07-14 10:53:36</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ Sprint 3 plan approved - phases match sec12 exactly, Smith gate placement correct, both my gate notes folded into tasks 2.3/3.1, no Tank needed. Sprint 3 plan LOCKED. @Neo *swe impl phase-1
+
+---
+[<small>2026-07-14 10:59:35</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Sprint 3 Phase 1 (Getting Started Guide, STORY-901).
+
+---
+[<small>2026-07-14 11:24:59</small>] [**make**]->[**all**] *build*:
  Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  jsonpath: $.command
 +  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-14 11:26:07</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 1 (Getting Started Guide) impl complete: docs/GETTING_STARTED.md - real 3-call scalene-guard sequence (Read then WebFetch, zero policy file needed - default fail-safe already masks), verified against the real binary before writing. README trimmed to link. tests/test_getting_started_docs.py added. 127/127 tests passing. @Trin *qa uat phase-1
+
+---
+[<small>2026-07-14 11:26:19</small>] [**Trin**]->[**Neo**] *qa uat*:
+ Starting Phase 1 UAT (Getting Started Guide).
+
+---
+[<small>2026-07-14 11:31:05</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make judge-trace | /home/drusifer/Projects/Scalene/build/build.out
+Written: agents/trin.docs/judge_tool_trace.md
+125 tool calls · 11 flags · 1 sessions
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-14 11:32:14</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 1 UAT PASSED. Cloned repo fresh, ran make setup for real, ran doc's 3 commands against that clone - real masked event confirmed. README links correctly. 127/127 tests. make judge-trace: 11 real self-inflicted process flags this session (raw venv calls, piped make, 1 grep-not-via) - not blocking, noted. @Morpheus *lead review phase-1
+
+---
+[<small>2026-07-14 11:32:18</small>] [**Morpheus**]->[**Trin**] *lead review*:
+ Reviewing Phase 1 (Getting Started Guide).
+
+---
+[<small>2026-07-14 11:33:04</small>] [**Morpheus**]->[**Neo**] *lead reject*:
+ *lead reject Phase 1. GETTING_STARTED.md hardcodes literal mask output but the test only checks term-presence in prose, not that the scenario actually produces it - same drift class as Sprint 2's 2 AC-text incidents. FIX: add an executable check (pre_tool_use/post_tool_use direct calls, like test_hook_adapter.py) asserting the real masked output. Full: agents/morpheus.docs/phase1_review.md @Neo *swe fix phase-1 doc-drift test
+
+---
+[<small>2026-07-14 11:34:13</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 128 tests in 11.951s
+
+OK
+
+---
+[<small>2026-07-14 11:34:36</small>] [**Neo**]->[**Morpheus**] *swe handoff*:
+ Fixed: added test_walkthrough_scenario_actually_masks (calls pre_tool_use/post_tool_use directly, replays doc's 3-call scenario, asserts real masked output). Caught a near-miss while writing it: audit_log_path defaults cwd-relative not state_dir-relative, would've written into repo root during make test - fixed w/ explicit path like test_hook_adapter.py does. 128/128 passing. @Morpheus *lead review phase-1 round2
+
+---
+[<small>2026-07-14 11:35:07</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Round 2 APPROVED. Neo's fix (test_walkthrough_scenario_actually_masks) closes the doc-drift gap correctly - verified it calls the real hook adapter and asserts real output, confirmed the audit_log_path near-miss fix too. 128/128 tests. Phase 1 complete. @Smith *user test phase-1 (time the <5min AC)
+
+---
+[<small>2026-07-14 11:35:11</small>] [**Smith**]->[**Neo**] *user test*:
+ Timing Phase 1's <5min AC (docs/GETTING_STARTED.md) - a cold, uninstructed run.
+
+---
+[<small>2026-07-14 11:37:58</small>] [**Smith**]->[**all**] *user approve*:
+ *user approve Phase 1. Timed run (fresh clone->setup->3 commands): 24s machine time, comfortably <5min even accounting for human reading/typing. Real masked output confirmed again. 1 non-blocking note: doc repeats the placeholder path 3x instead of exporting it once (Nielsen #7) - cheap, picking it up now rather than deferring. Full: agents/smith.docs/phase1_gate.md. Phase 1 COMPLETE.
+
+---
+[<small>2026-07-14 11:40:14</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-14 11:40:14</small>] [**Neo**]->[**all**] *swe impl*:
+ Applied Smith's Phase 1 note (export GUARD once instead of repeating path 3x). Verified doc still works end-to-end. Starting Phase 2 (User Guide, STORY-902).
+
+---
+[<small>2026-07-14 11:53:31</small>] [**Neo**]->[**all**] *swe fix*:
+ Found a real bug while writing USER_GUIDE.md's troubleshooting section (STORY-902 AC): malformed scalene_policy.yaml crashes scalene-guard with an uncaught PolicyConfigError (exit 1) instead of failing safe to allow:true - violates cli.py's own docstring guarantee and SETUP.md's stated behavior. Repro'd it for real (printf a broken YAML file, piped a real hook payload, got a traceback). Fixing now - can't document fail-safe behavior that doesn't exist.
+
+---
+[<small>2026-07-14 12:00:43</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-14 12:01:01</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 2 (User Guide) impl complete: docs/USER_GUIDE.md - all 4 CLI commands verified against real --help output (test actually invokes them), policy schema by example (cross-ref not duplicate), onboard-suggestion workflow as primary path per Smith's note, troubleshooting table. Also fixed the real fail-safe bug found earlier (malformed policy YAML crash) with a regression test, not a manual repro. 137/137 tests passing. @Trin *qa uat phase-2
+
+---
+[<small>2026-07-14 12:01:27</small>] [**Trin**]->[**Neo**] *qa uat*:
+ Starting Phase 2 UAT (User Guide).
+
+---
+[<small>2026-07-14 12:06:48</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make judge-trace | /home/drusifer/Projects/Scalene/build/build.out
+Written: agents/trin.docs/judge_tool_trace.md
+201 tool calls · 25 flags · 1 sessions
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-14 12:07:56</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 2 UAT PASSED. Confirmed Smith's onboard-suggestion note landed by reading the doc. Did not hand-verify the fail-safe fix by bash repro - make test (137/137) is the check per this session's correction. make judge-trace: 25 flags cumulative (up from 11), mostly AP-MAKE-PIPE/AP-RAW-VENV, self-inflicted, not blocking. @Morpheus *lead review phase-2
+
+---
+[<small>2026-07-14 12:08:22</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ Phase 2 APPROVED. Reviewed the cli.py fail-safe fix - correct pattern, matches existing convention, real regression test. USER_GUIDE.md accurate, no duplication. No Smith gate needed (per plan). Phase 2 complete. @Neo *swe impl phase-3
+
+---
+[<small>2026-07-14 12:08:26</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting Phase 3 (Demo, STORY-903) - last planned phase.
+
+---
+[<small>2026-07-14 12:14:58</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-14 12:15:39</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 3 (Demo, last phase) impl complete: demo/run_demo.py - real subprocess to installed scalene-guard, no policy file, BRD-naive narration. make demo added as a bypass target (else-block only, like help/chat) since mkf would silently swallow the narration otherwise. Caught+fixed a Makefile gotcha: demo/ dir shadowed the target until added to .PHONY. tests/test_demo.py added. 140/140 tests. @Trin *qa uat phase-3
+
+---
+[<small>2026-07-14 12:15:52</small>] [**Trin**]->[**Neo**] *qa uat*:
+ Starting Phase 3 UAT (Demo, last phase).
+
+---
+[<small>2026-07-14 12:16:21</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  jsonpath: $.command
++  pattern: ^curl\ https://reports\.internal\.example\.com/upload$
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-14 12:18:48</small>] [**User**]->[**all**] *request*:
+ /neo *fix: Scalene should not output the 'Scalene masked' message unless it actually contained something recognised as sensitive and masked - message should say what was masked, only when that happens.
+
+---
+[<small>2026-07-14 14:34:58</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  description: ''
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'

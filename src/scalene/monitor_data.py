@@ -33,6 +33,7 @@ class MaskEvent:
     tool_name: str
     payload_field: str
     suggested_onboard_command: str
+    event_type: str = "mask"  # "mask" | "block" (2026-07-14: block was previously silently dropped here)
 
 
 def discover_sessions(state_dir: Path = DEFAULT_STATE_DIR) -> list[SessionInfo]:
@@ -61,9 +62,9 @@ def discover_sessions(state_dir: Path = DEFAULT_STATE_DIR) -> list[SessionInfo]:
 class AuditTail:
     """Incremental reader over `.scalene/audit.log`. Tracks a byte offset so
     repeated `poll()` calls only return newly-appended entries. `onboard.py`
-    writes `{"event": "onboard", ...}` to this same file, so mask events are
-    filtered explicitly rather than assuming every line is one (STORY-701 AC:
-    only surface events where masking actually occurred)."""
+    writes `{"event": "onboard", ...}` to this same file, so mask/block events
+    are filtered explicitly rather than assuming every line is one (STORY-701
+    AC: only surface events where masking or blocking actually occurred)."""
 
     def __init__(self, audit_log_path: Path = DEFAULT_AUDIT_LOG) -> None:
         self._path = audit_log_path
@@ -90,7 +91,8 @@ class AuditTail:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if entry.get("event") != "mask":
+                event_type = entry.get("event")
+                if event_type not in ("mask", "block"):
                     continue
                 events.append(
                     MaskEvent(
@@ -98,6 +100,7 @@ class AuditTail:
                         tool_name=entry.get("tool_name", ""),
                         payload_field=entry.get("payload_field", ""),
                         suggested_onboard_command=entry.get("suggested_onboard_command", ""),
+                        event_type=event_type,
                     )
                 )
             self._offset = f.tell()

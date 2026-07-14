@@ -8,9 +8,11 @@ Scalene is a provenance-based DLP layer for AI coding agents. It tracks where da
 
 | Doc | Purpose |
 |---|---|
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Clean-clone walkthrough — see Scalene mask a real call in under 5 minutes |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Full CLI reference, policy config, onboarding workflow, troubleshooting |
 | [docs/BRD.md](docs/BRD.md) | Business requirements (source of truth for scope) |
 | [docs/PRD.md](docs/PRD.md) | Product requirements |
-| [docs/USER_STORIES.md](docs/USER_STORIES.md) | User stories + acceptance criteria (9 stories) |
+| [docs/USER_STORIES.md](docs/USER_STORIES.md) | User stories + acceptance criteria |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, class/sequence diagrams |
 | [docs/SETUP.md](docs/SETUP.md) | Install + `.claude/settings.json` hook registration |
 | [docs/STORY_TRACEABILITY.md](docs/STORY_TRACEABILITY.md) | AC-to-test traceability (Sprint 1 close) |
@@ -18,6 +20,10 @@ Scalene is a provenance-based DLP layer for AI coding agents. It tracks where da
 | [task.md](task.md) | Sprint task board (current status) |
 
 ## Getting started
+
+New to Scalene? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — a clean-clone walkthrough that ends with you watching a real call get masked.
+
+Working on this repo itself:
 
 ```bash
 make setup   # create venv, install scalene-guard + dev dependencies, install git hooks

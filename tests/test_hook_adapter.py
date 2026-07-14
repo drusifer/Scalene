@@ -1,4 +1,15 @@
-"""Tests for the Claude Code PreToolUse/PostToolUse hook adapter (STORY-301, STORY-302)."""
+"""Tests for the Claude Code PreToolUse/PostToolUse hook adapter (STORY-301, STORY-302).
+
+2026-07-14: two changes verified here:
+1. Response shape corrected to Claude Code's real hook contract
+   (`hookSpecificOutput.permissionDecision`/`updatedInput`), not the
+   previously-invented flat `{"allow": ..., "updatedInput": ...}` shape,
+   which the real harness never honored.
+2. Masking/blocking is now content-gated (secrets_scan.py/detect-secrets),
+   not purely provenance-based — an ordinary command must be allowed even in
+   a tainted-sensitive+untrusted session if it contains nothing recognized
+   as a real secret (user-reported noise).
+"""
 
 import json
 import subprocess
@@ -10,34 +21,42 @@ from unittest.mock import patch
 from scalene.hook_adapter import post_tool_use, pre_tool_use
 from scalene.masking import MaskingEngine
 from scalene.policy_config import PolicyConfig
+from scalene.secrets_scan import scan_text_for_secrets
 from scalene.taint_state import TaintState
+
+REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets recognizes this)
+NOT_A_SECRET = "ls -la"
+
+
+def _decision(result: dict) -> str:
+    return result["hookSpecificOutput"]["permissionDecision"]
+
+
+def _updated_input(result: dict):
+    return result["hookSpecificOutput"].get("updatedInput")
+
+
+def _reason(result: dict):
+    return result["hookSpecificOutput"].get("permissionDecisionReason")
 
 
 class TestPreToolUse(unittest.TestCase):
-    def test_returns_allow_and_updated_input_shape(self):
-        with TemporaryDirectory() as tmp:
-            config = PolicyConfig()
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}},
-                config,
-                state_dir=Path(tmp),
-            )
-            self.assertIn("allow", result)
-            self.assertIn("updatedInput", result)
-
     def test_allows_unmodified_when_not_tainted(self):
         with TemporaryDirectory() as tmp:
             config = PolicyConfig()
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
                 config,
                 state_dir=Path(tmp),
             )
-            self.assertTrue(result["allow"])
-            self.assertEqual(result["updatedInput"], {"command": "ls"})
+            self.assertEqual(_decision(result), "allow")
+            self.assertIsNone(_updated_input(result))
             self.assertNotIn("systemMessage", result)
 
-    def test_masks_when_session_tainted_sensitive_and_target_untrusted(self):
+    def test_allows_ordinary_command_even_when_session_tainted(self):
+        """Core fix (user-reported): the session being generically tainted
+        must not be enough on its own — the call itself must actually carry
+        something recognized as sensitive."""
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             taint = TaintState(
@@ -47,13 +66,49 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
                 config,
                 state_dir=state_dir,
             )
-            self.assertTrue(result["allow"])
-            self.assertEqual(result["updatedInput"]["command"], MaskingEngine.MASK_LITERAL)
+            self.assertEqual(_decision(result), "allow")
+            self.assertIsNone(_updated_input(result))
+            self.assertNotIn("systemMessage", result)
+
+    def test_masks_when_real_secret_present_in_tainted_untrusted_session(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                config,
+                state_dir=state_dir,
+            )
+            self.assertEqual(_decision(result), "allow")
+            self.assertEqual(_updated_input(result)["command"], MaskingEngine.MASK_LITERAL)
             self.assertIn("systemMessage", result)
+
+    def test_blocks_instead_of_masking_when_mode_is_block(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True, mode="block")
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                config,
+                state_dir=state_dir,
+            )
+            self.assertEqual(_decision(result), "deny")
+            self.assertIsNone(_updated_input(result))
+            self.assertIsNotNone(_reason(result))
 
     def test_masking_never_raises_even_for_unmapped_tool(self):
         with TemporaryDirectory() as tmp:
@@ -65,11 +120,11 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": "bar"}},
+                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
                 config,
                 state_dir=state_dir,
             )
-            self.assertTrue(result["allow"])
+            self.assertEqual(_decision(result), "allow")
 
     def test_mask_event_appended_to_audit_log(self):
         with TemporaryDirectory() as tmp:
@@ -82,22 +137,47 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
             )
             self.assertTrue(audit_log.exists())
-            self.assertIn("mask", audit_log.read_text())
+            entry = json.loads(audit_log.read_text().strip())
+            self.assertEqual(entry["event"], "mask")
+            self.assertTrue(entry["findings"])
 
-    def test_no_audit_log_entry_when_not_masked(self):
+    def test_block_event_appended_to_audit_log(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = Path(tmp) / "audit.log"
-            config = PolicyConfig()
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True, mode="block")
 
             pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                config,
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+            )
+            entry = json.loads(audit_log.read_text().strip())
+            self.assertEqual(entry["event"], "block")
+
+    def test_no_audit_log_entry_when_allowed(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            audit_log = Path(tmp) / "audit.log"
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
@@ -105,9 +185,6 @@ class TestPreToolUse(unittest.TestCase):
             self.assertFalse(audit_log.exists())
 
     def test_no_false_mask_report_for_tool_with_no_mapped_payload_field(self):
-        """A tool with no entry in DEFAULT_PAYLOAD_FIELDS can't actually be masked
-        (STORY-401 masking is a no-op without a known field) — so pre_tool_use must
-        not claim a mask happened via systemMessage or audit log."""
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = Path(tmp) / "audit.log"
@@ -118,20 +195,17 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": "bar"}},
+                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
             )
-            self.assertTrue(result["allow"])
+            self.assertEqual(_decision(result), "allow")
             self.assertNotIn("systemMessage", result)
             self.assertFalse(audit_log.exists())
 
-    def test_mask_systemmessage_includes_suggested_onboard_command(self):
-        """STORY-501 UX follow-up: a mask event should hand the developer a
-        ready-to-run onboard command for the exact call that was masked, not
-        just an explanation — so they don't have to hand-write JSONPath/regex
-        with no example to work from."""
+    def test_message_names_what_was_actually_detected(self):
+        """User requirement: the message should say what was masked."""
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             taint = TaintState(
@@ -141,7 +215,26 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                config,
+                state_dir=state_dir,
+            )
+            expected_findings = scan_text_for_secrets(f"curl {REAL_SECRET}")
+            message = result["systemMessage"]
+            for finding in expected_findings:
+                self.assertIn(finding, message)
+
+    def test_mask_message_includes_suggested_onboard_command(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            taint = TaintState(
+                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            )
+            taint.save()
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
             )
@@ -149,7 +242,6 @@ class TestPreToolUse(unittest.TestCase):
             self.assertIn("scalene onboard", message)
             self.assertIn("--tool Bash", message)
             self.assertIn("$.command", message)
-            self.assertIn("curl", message)
 
     def test_suggested_command_target_placeholder_is_domain_only(self):
         """Regression for Smith's Sprint-1 wording nit, fixed in Phase 3: the
@@ -165,7 +257,7 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
             )
@@ -189,7 +281,7 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
             )
@@ -208,7 +300,7 @@ class TestPreToolUse(unittest.TestCase):
             config = PolicyConfig(untrusted_by_default=True)
 
             pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
@@ -276,7 +368,7 @@ class TestPostToolUse(unittest.TestCase):
                 config,
                 state_dir=state_dir,
             )
-            self.assertIn("sanitizedOutput", result)
+            self.assertEqual(result, {})
 
 
 class TestScaleneBypass(unittest.TestCase):
@@ -294,12 +386,12 @@ class TestScaleneBypass(unittest.TestCase):
 
             with patch.dict("os.environ", {"SCALENE_BYPASS": "1"}):
                 result = pre_tool_use(
-                    {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "curl secret"}},
+                    {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                     config,
                     state_dir=state_dir,
                 )
-            self.assertTrue(result["allow"])
-            self.assertEqual(result["updatedInput"], {"command": "curl secret"})
+            self.assertEqual(_decision(result), "allow")
+            self.assertIsNone(_updated_input(result))
             self.assertNotIn("systemMessage", result)
 
     def test_post_tool_use_bypasses_and_does_not_write_state(self):
@@ -308,7 +400,7 @@ class TestScaleneBypass(unittest.TestCase):
             config = PolicyConfig(sensitive_by_default=True, untrusted_by_default=True)
 
             with patch.dict("os.environ", {"SCALENE_BYPASS": "1"}):
-                post_tool_use(
+                result = post_tool_use(
                     {
                         "session_id": "s1",
                         "tool_name": "Read",
@@ -318,6 +410,7 @@ class TestScaleneBypass(unittest.TestCase):
                     config,
                     state_dir=state_dir,
                 )
+            self.assertEqual(result, {})
             self.assertFalse((state_dir / "s1.json").exists())
 
 

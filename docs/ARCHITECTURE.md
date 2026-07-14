@@ -1,6 +1,6 @@
 # Project Architecture (ARCH.md) — Project Scalene
 
-Maintained by **Morpheus**. Status: Sprint 1 (§1-10) shipped 2026-07-09. Sprint 2 (§11) — Draft v1, pending Smith Gate 2.
+Maintained by **Morpheus**. Status: Sprint 1 (§1-10) shipped 2026-07-09. Sprint 2 (§11) shipped 2026-07-10. Sprint 3 (§12) — Draft v1, pending Smith Gate 2.
 
 ## 1. System Overview
 
@@ -59,6 +59,7 @@ classDiagram
     class PolicyConfig {
         +bool sensitive_by_default
         +bool untrusted_by_default
+        +str mode
         +list~PolicyRule~ non_sensitive_allowlist
         +list~PolicyRule~ trusted_sources_list
         +from_yaml(path) PolicyConfig
@@ -70,7 +71,7 @@ classDiagram
         +bool fail_safe_triggered
     }
     class MaskingEngine {
-        +decide(taint, match) Decision
+        +decide(taint, match, value, mode) Decision
         +apply_mask(args, payload_field) dict
     }
     class ReputationChecker {
@@ -89,25 +90,43 @@ classDiagram
 
 ## 5. Sequence & Interaction Flows
 
-### Pre-tool-call (masking path)
+### Pre-tool-call (masking/blocking path)
+
+Response shape uses Claude Code's real `PreToolUse` hook contract
+(`hookSpecificOutput.permissionDecision`/`updatedInput`/`permissionDecisionReason`)
+— corrected 2026-07-14; a prior flat `{"allow": ..., "updatedInput": ...}`
+shape was never part of that contract and was silently ignored by the real
+harness. Masking/blocking is also content-gated (2026-07-14): provenance
+(taint + untrusted destination) only decides whether to scan at all —
+`secrets_scan.py` must actually find something before any action is taken.
 
 ```mermaid
 sequenceDiagram
     participant Agent
     participant Adapter as Hook Adapter
     participant Engine as Policy Engine
+    participant Scan as secrets_scan
     participant State as Taint State
     Agent->>Adapter: PreToolUse(tool, args)
     Adapter->>Engine: evaluate(tool, args)
     Engine->>State: load(session_id)
     Engine-->>Adapter: MatchResult
     alt tainted-sensitive AND target untrusted
-        Adapter->>Engine: apply_mask(args)
-        Engine-->>Adapter: masked_args
-        Adapter->>Adapter: log mask event (audit.log + PreToolUse systemMessage)
-        Adapter-->>Agent: allow, updatedInput=masked_args
-    else safe
-        Adapter-->>Agent: allow, unmodified
+        Adapter->>Scan: scan_text_for_secrets(payload_field value)
+        Scan-->>Adapter: findings
+        alt findings non-empty, mode=mask
+            Adapter->>Engine: apply_mask(args)
+            Engine-->>Adapter: masked_args
+            Adapter->>Adapter: log mask event (audit.log + systemMessage)
+            Adapter-->>Agent: permissionDecision=allow, updatedInput=masked_args
+        else findings non-empty, mode=block
+            Adapter->>Adapter: log block event (audit.log + reason)
+            Adapter-->>Agent: permissionDecision=deny, reason
+        else no findings
+            Adapter-->>Agent: permissionDecision=allow, unmodified
+        end
+    else safe (untainted or trusted destination)
+        Adapter-->>Agent: permissionDecision=allow, unmodified
     end
 ```
 
@@ -194,3 +213,28 @@ The console's "apply" action is a **subprocess call to the existing `scalene onb
 `secrets_scan.py` already produces its own plain-language scan-result messages rather than surfacing regex internals. The `detect-secrets` integration must preserve that: detect-secrets' plugin/detector output is translated into the existing result format inside `secrets_scan.py`, never surfaced as raw library exception text to the onboarding CLI's user-facing output.
 
 **Cypher: please add this as explicit AC on STORY-801.**
+
+## 12. Sprint 3 Architecture — Documentation & Onboarding (E9)
+
+STORY-901/902 are pure documentation — no new architecture decisions, just placement:
+
+- `docs/GETTING_STARTED.md` and `docs/USER_GUIDE.md` are new top-level docs under `docs/`, added to `README.md`'s documentation table (per Smith Gate 1). `README.md`'s existing "Getting started" section is trimmed to a link, not a duplicate.
+- STORY-902's CLI reference must be generated/verified against real `--help` output (`scalene --help`, `scalene onboard --help`, `scalene monitor --help`, `scalene install-hooks --help`, `scalene-guard --help`) at write time — Neo checks this by actually running each command, not transcribing from memory of the source.
+- Per Smith's Gate 1 note: the onboard-suggestion workflow (`_suggest_onboard_command()`, §4/§11.4) must be the guide's primary onboarding path, with the raw manual-flag `scalene onboard` invocation presented as the fallback for cases with no prior blocked call to suggest from.
+
+### 12.1 Decision: demo is a real `scalene-guard` subprocess run, not a mocked walkthrough
+
+STORY-903 requires the demo show a *real* masked call, offline, and be checked by a test so it can't rot silently. Decision: a small script (`demo/run_demo.py`) that:
+
+1. Builds a temp project dir with a minimal `scalene_policy.yaml` (no sensitive allowlist, no trusted sources — matches the fail-safe defaults new users actually hit first).
+2. Invokes the real `scalene-guard` CLI as a subprocess, feeding it real `PreToolUse`/`PostToolUse` JSON payloads on stdin exactly as Claude Code would (same entry point as production, per §1's adapter-isolation principle — this is not a call to internal functions that could drift from the real CLI contract).
+3. Scenario matches the BRD's Triangle-of-Doom case directly: a `Read` of a fake "sensitive" file (sets `has_sensitive_data`), followed by a `WebFetch` to a domain that is not on the trust list (untrusted destination) — the second call's response shows the payload masked.
+4. Prints each step with plain-language narration (what happened and why) so it reads as a demo, not raw JSON — but the underlying JSON is real `scalene-guard` output, not fabricated for display.
+
+**Why this stays offline (STORY-903 AC):** `scalene-guard` never performs the tool call itself — it only returns an allow/mask decision (§1, hook adapter is decision-only). The demo never actually issues the `WebFetch` HTTP request; showing the masked `tool_input`/response *is* the entire demonstration. No mocking is needed to keep this offline — it's a structural property of the architecture, not a demo-specific shortcut.
+
+### 12.2 Decision: demo is tested, not just runnable
+
+`tests/test_demo.py` invokes `demo/run_demo.py` as a subprocess (same as a user would) and asserts the final output contains the expected masking marker and does not contain the fake secret in unmasked form. This runs under ordinary `pytest`/`make test` collection — no separate CI wiring needed. `make demo` (new Makefile target) runs the same script directly for a human to watch, narration included.
+
+**No Tank gate needed:** no new service, port, env var, or deploy/CI impact — `demo/run_demo.py` is a local dev-only script in the same vein as Sprint 1/2's no-Tank precedent.

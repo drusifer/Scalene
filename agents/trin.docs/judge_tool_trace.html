@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool-Use Trace — Scalene 2026-07-14</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --surface2: #263244;
+    --border: #334155; --text: #e2e8f0; --muted: #94a3b8;
+    --clean-row: #1e293b; --flagged-row: #2d1f0e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 'JetBrains Mono', 'Fira Code', monospace; }
+  a { color: #60a5fa; }
+
+  /* Header */
+  .header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .header h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .header .meta { color: var(--muted); font-size: 12px; }
+  .stats { display: flex; gap: 24px; margin-top: 12px; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; }
+  .stat .val { font-size: 22px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+  /* Filters */
+  .filters { padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface2);
+             display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
+  .filter-btn { border: none; border-radius: 4px; padding: 3px 10px; font: inherit;
+                font-size: 11px; cursor: pointer; transition: opacity .15s; }
+  .filter-btn.active { opacity: 1; }
+  .filter-btn.inactive { opacity: 0.35; }
+  .filter-btn.all-btn { background: #334155; color: #e2e8f0; }
+
+  /* Sessions */
+  .sessions { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+  details { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  details[open] summary { border-bottom: 1px solid var(--border); }
+  summary { padding: 10px 16px; cursor: pointer; background: var(--surface2); list-style: none;
+            display: flex; align-items: center; gap: 12px; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .chevron { color: var(--muted); transition: transform .2s; font-size: 10px; }
+  details[open] summary .chevron { transform: rotate(90deg); }
+  summary .sid { font-weight: 700; }
+  summary .smeta { color: var(--muted); font-size: 11px; }
+  summary .sflag { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+  /* Tool call table */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  tr.clean { background: var(--clean-row); }
+  tr.flagged { background: var(--flagged-row); }
+  tr:hover td { filter: brightness(1.12); }
+  td { padding: 4px 8px; border-bottom: 1px solid #1a2535; vertical-align: top; }
+  td.seq { color: var(--muted); width: 44px; text-align: right; white-space: nowrap; padding-right: 12px; }
+  td.tool { width: 160px; white-space: nowrap; }
+  td.summary { word-break: break-all; }
+  td.badges { width: 220px; }
+
+  /* Tool name chip */
+  .tool-chip { display: inline-block; padding: 1px 7px; border-radius: 3px; font-weight: 600;
+               font-size: 11px; color: #fff; }
+
+  /* AP badge */
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px;
+           font-weight: 700; color: #fff; cursor: help; position: relative; margin: 1px 2px 1px 0;
+           white-space: nowrap; }
+  .badge .tooltip { display: none; position: absolute; z-index: 100; bottom: calc(100% + 6px); left: 0;
+                    background: #0f172a; border: 1px solid #475569; border-radius: 6px;
+                    padding: 10px 12px; width: 320px; font-size: 11px; line-height: 1.5;
+                    font-weight: 400; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .badge:hover .tooltip { display: block; }
+  .tooltip .t-code { font-weight: 700; margin-bottom: 4px; }
+  .tooltip .t-desc { color: #94a3b8; margin-bottom: 6px; }
+  .tooltip .t-fix-lbl { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+  .tooltip .t-fix { color: #e2e8f0; margin-top: 2px; }
+
+  /* Summary table */
+  .summary-section { padding: 0 24px 24px; }
+  .summary-section h2 { font-size: 14px; margin-bottom: 12px; color: var(--muted);
+                         text-transform: uppercase; letter-spacing: .06em; }
+  .sum-table { border-collapse: collapse; width: 100%; max-width: 700px; }
+  .sum-table th { text-align: left; padding: 6px 12px; font-size: 11px; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+  .sum-table td { padding: 6px 12px; border-bottom: 1px solid #1e293b; font-size: 12px; }
+  .sum-table .count { font-weight: 700; font-size: 14px; }
+
+  /* Hidden rows for filtering */
+  tr.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Tool-Use Trace — Scalene</h1>
+  <div class="meta">2026-07-14 &nbsp;·&nbsp; 1 sessions &nbsp;·&nbsp;
+    Rules: agents/tools/trace_rules.json</div>
+  <div class="stats">
+    <div class="stat"><span class="val">123</span><span class="lbl">Tool Calls</span></div>
+    <div class="stat"><span class="val">10</span><span class="lbl">Flags</span></div>
+    <div class="stat"><span class="val">8.1%</span><span class="lbl">Flag Rate</span></div>
+    <div class="stat"><span class="val">1</span><span class="lbl">Sessions</span></div>
+  </div>
+</div>
+
+<div class="filters">
+  <span>Filter:</span>
+  <button class="filter-btn all-btn active" onclick="filterAll(this)">Show All</button>
+  
+  <button class="filter-btn active" data-ap="AP-SKILL-RELOAD"
+          style="background:#6366f1; color:#fff;"
+          onclick="filterAP(this, 'AP-SKILL-RELOAD')">AP-SKILL-RELOAD</button>
+  
+  <button class="filter-btn active" data-ap="AP-MAKE-BYPASS"
+          style="background:#ef4444; color:#fff;"
+          onclick="filterAP(this, 'AP-MAKE-BYPASS')">AP-MAKE-BYPASS</button>
+  
+  <button class="filter-btn active" data-ap="AP-RAW-VENV"
+          style="background:#dc2626; color:#fff;"
+          onclick="filterAP(this, 'AP-RAW-VENV')">AP-RAW-VENV</button>
+  
+  <button class="filter-btn active" data-ap="AP-MAKE-PIPE"
+          style="background:#f97316; color:#fff;"
+          onclick="filterAP(this, 'AP-MAKE-PIPE')">AP-MAKE-PIPE</button>
+  
+  <button class="filter-btn active" data-ap="AP-VIA-GREP"
+          style="background:#8b5cf6; color:#fff;"
+          onclick="filterAP(this, 'AP-VIA-GREP')">AP-VIA-GREP</button>
+  
+  <button class="filter-btn active" data-ap="AP-VIA-READ"
+          style="background:#a855f7; color:#fff;"
+          onclick="filterAP(this, 'AP-VIA-READ')">AP-VIA-READ</button>
+  
+  <button class="filter-btn active" data-ap="AP-DUP-READ"
+          style="background:#eab308; color:#fff;"
+          onclick="filterAP(this, 'AP-DUP-READ')">AP-DUP-READ</button>
+  
+</div>
+
+<div class="sessions">
+
+<details open>
+  <summary>
+    <span class="chevron">▶</span>
+    <span class="sid">4051338e</span>
+    <span class="smeta">??:?? &nbsp;·&nbsp; 123 calls &nbsp;·&nbsp; 10 flags</span>
+    <span class="sflag">
+      
+      <span class="badge" style="background:#dc2626">
+        AP-RAW-VENV ×5
+      </span>
+      
+      <span class="badge" style="background:#f97316">
+        AP-MAKE-PIPE ×3
+      </span>
+      
+      <span class="badge" style="background:#8b5cf6">
+        AP-VIA-GREP ×1
+      </span>
+      
+      <span class="badge" style="background:#a855f7">
+        AP-VIA-READ ×1
+      </span>
+      
+    </span>
+  </summary>
+  <table>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">1</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls agents/ 2&gt;/dev/null &amp;&amp; echo &#34;---CHAT---&#34; &amp;&amp; tail -50 agents/CHAT.md 2&gt;/dev/null</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">2</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git status --short &amp;&amp; echo &#34;---DIFF STAT---&#34; &amp;&amp; git diff --stat agents/CHAT.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">3</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git diff agents/CHAT.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">4</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for p in trin neo bob smith oracle; do echo &#34;=== $p current_task.md ===&#34;; tail -15 agents/${p}.docs/current_task.md 2&gt;/dev/null; echo; done</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">5</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Cold start /bob-protocol init. Reviewed CHAT.md tail + all persona state files (Trin/Neo/Bob/Smith/Oracle) — all last updated 2026-07-10, no active tasks, no blockers. Last handoff (...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">6</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat agents/cypher.docs/SKILL.md 2&gt;/dev/null | head -100</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">7</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">echo &#34;=== context.md ===&#34;; cat agents/cypher.docs/context.md 2&gt;/dev/null
+echo; echo &#34;=== current_task.md ===&#34;; cat agents/cypher.docs/current_task.md 2&gt;/dev/null
+echo; echo &#34;=== next_steps.md ===&#34;;...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">8</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;pm launch\|Sprint 2\|retro&#34; agents/CHAT.md | tail -40</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">9</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">wc -l docs/PRD.md docs/USER_STORIES.md docs/SETUP.md README.md 2&gt;/dev/null; echo &#34;---PRD tail---&#34;; tail -60 docs/PRD.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">10</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat README.md; echo &#34;---SETUP---&#34;; cat docs/SETUP.md; echo &#34;---USER_STORIES head---&#34;; head -40 docs/USER_STORIES.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">11</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">find . -iname &#34;*demo*&#34; -not -path &#34;./.git/*&#34; 2&gt;/dev/null; echo &#34;---&#34;; cat docs/PRD.md | head -20; echo &#34;---sprint_log---&#34;; ls agents/mouse.docs/ 2&gt;/dev/null; cat agents/mouse.docs/sprint_log.md 2&gt;/...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">12</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;/sprint: create a USER_GUIDE and Getting Started documentation, plus a demo.&#34; PERSONA=&#34;User&#34; CMD=&#34;request&#34; 2&gt;&amp;1 | tail -10</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">13</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/USER_STORIES.md [offset=150]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">14</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/USER_STORIES.md | &#39;## Sprint 2 — Deferred / Not Promoted to a Story&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">15</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/USER_STORIES.md | &#39;**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) — D&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">16</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/PRD.md | &#39;**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) — Draft v1, pe&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">17</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/PRD.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">18</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/PRD.md | &#39;**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) — Draft v1, pe&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">19</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/PRD.md | &#39;| E8 | Category-Aware Secrets Scan | Upgrade onboarding secrets scan from 3 hand&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">20</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">21</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">22</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">23</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">24</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">25</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">26</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/cypher.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 planning (2026-07-10):**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">27</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint 3 (E9 - Documentation &amp; Onboarding) stories drafted: STORY-901 GETTING_STARTED.md (&lt;5min clean-clone walkthrough), STORY-902 USER_GUIDE.md (full CLI/config reference), STORY-9...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">28</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat agents/smith.docs/SKILL.md 2&gt;/dev/null | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">29</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for f in context current_task next_steps; do echo &#34;=== smith $f ===&#34;; cat agents/smith.docs/$f.md 2&gt;/dev/null; echo; done</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">30</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Reviewing Sprint 3 (E9) stories per Gate 1. Loading context.&#34; PERSONA=&#34;Smith&#34; CMD=&#34;user review&#34; TO=&#34;Cypher&#34; 2&gt;&amp;1 | tail -5</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">31</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. E9 (STORY-901/902/903) reviewed against Nielsen heuristics - all 3 ACs are testable and user-facing, and all explicitly require linking to (not forking) existing docs,...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">32</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/gate1_sprint3_review.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">33</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. E9 stories testable+user-facing, all avoid doc-duplication (Sprint 2 had drift issues). 1 non-blocking note re: STORY-902 surfacing the onboard-suggestion UX prominent...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">34</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/current_task.md | &#39;# Current Task\n\n**Status:** `*qa judge session` (revised) closed, TES=98. Sprint&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">35</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">36</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/current_task.md | &#39;# Current Task\n\n**Status:** `*qa judge session` (revised) closed, TES=98. Sprint&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">37</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">38</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">39</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 Phase 3 `*user test`**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">40</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/context.md [limit=10]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">41</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 Phase 3 `*user test`**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">42</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat agents/morpheus.docs/SKILL.md 2&gt;/dev/null | head -50</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">43</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat Makefile | grep -n &#34;^[a-zA-Z_-]*:&#34; | head -60; echo &#34;---src layout---&#34;; find src -maxdepth 2 -type f | sort; echo &#34;---tests layout---&#34;; find tests -maxdepth 2 -type f 2&gt;/dev/null | sort | head -30</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">44</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat tests/test_setup_docs.py; echo &#34;---cli.py head---&#34;; sed -n &#39;1,40p&#39; src/scalene/cli.py; echo &#34;---main_cli.py head---&#34;; sed -n &#39;1,40p&#39; src/scalene/main_cli.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">45</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^## &#34; docs/ARCHITECTURE.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">46</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;164,260p&#39; docs/ARCHITECTURE.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">47</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md [offset=1] [limit=15]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">48</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;1,60p&#39; src/scalene/hook_adapter.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">49</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^def pre_tool_use\|^def post_tool_use&#34; -A 25 src/scalene/hook_adapter.py</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">50</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md | &#39;Maintained by **Morpheus**. Status: Sprint 1 (§1-10) shipped 2026-07-09. Sprint &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">51</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md [offset=253] [limit=15]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">52</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md [offset=185]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">53</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md | &#39;**Cypher: please add this as explicit AC on STORY-801.**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">54</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for f in context current_task next_steps; do echo &#34;=== morpheus $f ===&#34;; cat agents/morpheus.docs/$f.md 2&gt;/dev/null; echo; done</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">55</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 Phase 3 review (2026-07-10, Guided Onboarding A&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">56</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/context.md [limit=5]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">57</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 Phase 3 review (2026-07-10, Guided Onboarding A&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">58</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">59</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/current_task.md [limit=3]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">60</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">61</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/next_steps.md [limit=3]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">62</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">63</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint 3 architecture done: docs/ARCHITECTURE.md sec12. STORY-901/902 = placement-only (new docs/, README links, CLI ref verified vs real --help). STORY-903 demo = real scalene-guard...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">64</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;164,200p&#39; /home/drusifer/Projects/Scalene/docs/ARCHITECTURE.md &gt; /dev/null; echo ok</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">65</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Reviewing Sprint 3 architecture (ARCHITECTURE.md sec12) per Gate 2.&#34; PERSONA=&#34;Smith&#34; CMD=&#34;user feedback&#34; TO=&#34;Morpheus&#34; 2&gt;&amp;1 | tail -5</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">66</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/gate2_sprint3_review.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">67</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. Sprint 3 arch (sec12) approved - low UX risk, no new surface, real-subprocess demo decision is right for trust reasons. 1 note: demo narration should target a reader w...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">68</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/context.md | &#39;## Recent Decisions\n- **Sprint 3 Gate 1**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">69</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/current_task.md | &#39;**Status:** Sprint 3 Gate 1 (E9 stories) reviewed and approved. Handed to Morphe&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">70</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/smith.docs/next_steps.md | &#39;## Immediate Next Action\nSprint 3 Gate 1 approved and handed to Morpheus. Next S&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">71</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat agents/mouse.docs/SKILL.md 2&gt;/dev/null | head -50; echo &#34;---state---&#34;; for f in context current_task next_steps sprint_log; do echo &#34;=== $f ===&#34;; tail -25 agents/mouse.docs/$f.md 2&gt;/dev/null; done</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">72</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^#\|^##&#34; /home/drusifer/Projects/Scalene/task.md | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">73</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/task.md [offset=76] [limit=70]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">74</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/task.md [offset=1] [limit=8]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">75</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/task.md | &#39;**Status:** Sprint 1 closed 2026-07-09. **Sprint 2 CLOSED 2026-07-10** — all 3 p&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">76</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/task.md [offset=128]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">77</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/task.md | &#34;## Notes\n- No Tank phase this sprint — see header; Morpheus&#39;s architecture decis&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">78</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 phase breakdown (2026-07-10):**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">79</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/context.md [limit=4]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">80</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/context.md | &#39;## Recent Decisions\n- **Sprint 2 phase breakdown (2026-07-10):**&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">81</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">82</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">83</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">84</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/mouse.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">85</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint 3 phase breakdown in task.md: Phase 1 Getting Started Guide (STORY-901, Smith gate - times &lt;5min AC), Phase 2 User Guide (STORY-902, no Smith gate, folds both her notes into 2...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">86</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Reviewing Sprint 3 phase plan (task.md) against arch sec12.&#34; PERSONA=&#34;Morpheus&#34; CMD=&#34;lead review sprint plan&#34; TO=&#34;Mouse&#34; 2&gt;&amp;1 | tail -5</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">87</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">88</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">89</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">90</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">91</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint 3 plan approved - phases match sec12 exactly, Smith gate placement correct, both my gate notes folded into tasks 2.3/3.1, no Tank needed. Sprint 3 plan LOCKED. @Neo *swe impl ...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">92</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for f in context current_task next_steps; do echo &#34;=== neo $f ===&#34;; cat agents/neo.docs/$f.md 2&gt;/dev/null | tail -20; echo; done
+cat agents/neo.docs/SKILL.md 2&gt;/dev/null | head -40</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">93</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Starting Sprint 3 Phase 1 (Getting Started Guide, STORY-901).&#34; PERSONA=&#34;Neo&#34; CMD=&#34;swe impl&#34; TO=&#34;all&#34; 2&gt;&amp;1 | tail -5</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">94</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls .venv/bin/ 2&gt;/dev/null | grep scalene; echo &#34;---&#34;; source .venv/bin/activate 2&gt;/dev/null; .venv/bin/scalene --help 2&gt;&amp;1; echo &#34;---onboard---&#34;; .venv/bin/scalene onboard --help 2&gt;&amp;1; echo &#34;---mon...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">95</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/tasks/bckmpmhcg.output 2&gt;/dev/null</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">96</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat src/scalene/monitor.py; echo &#34;---install_hooks---&#34;; cat src/scalene/install_hooks.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">97</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">.venv/bin/scalene install-hooks --help 2&gt;&amp;1; echo &#34;---guard---&#34;; .venv/bin/scalene-guard --help 2&gt;&amp;1</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">98</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat src/scalene/masking.py; echo &#34;---policy_config head---&#34;; sed -n &#39;1,60p&#39; src/scalene/policy_config.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">99</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;60,160p&#39; src/scalene/hook_adapter.py; echo &#34;---cli.py rest---&#34;; sed -n &#39;1,70p&#39; src/scalene/cli.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">100</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;1,40p&#39; src/scalene/taint_state.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">101</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">rm -rf /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/scratchpad/gs_test
+mkdir -p /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">102</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/docs/GETTING_STARTED.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">103</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/README.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">104</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/README.md | &#39;| Doc | Purpose |\n|---|---|\n| [docs/BRD.md](docs/BRD.md) | Business requirements&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-READ"
+        data-flags="AP-VIA-READ">
+      <td class="seq">105</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/tests/test_setup_docs.py</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#a855f7">
+          AP-VIA-READ
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-READ</div>
+            <div class="t-desc">Read used on a source file that is never subsequently edited in this session — likely symbol hunting rather than pre-edit inspection.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query to locate symbols and trace relationships. Read is only needed when you intend to edit the file or need its full content for review.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">106</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/tests/test_getting_started_docs.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-PIPE"
+        data-flags="AP-MAKE-PIPE">
+      <td class="seq">107</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test 2&gt;&amp;1 | tail -30</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#f97316">
+          AP-MAKE-PIPE
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-PIPE</div>
+            <div class="t-desc">Bash pipes make output (e.g. `make test 2>&1 | tail -30`) — violates the make skill rule. mkf already captures output to build/build.out.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">108</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -i &#34;Ran\|OK\|FAILED&#34; /home/drusifer/Projects/Scalene/build/build.out | tail -10</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">109</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">110</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/current_task.md [limit=3]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">111</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">112</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/next_steps.md [limit=5]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">113</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">114</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/context.md [limit=3]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">115</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/Scalene/agents/neo.docs/context.md | &#39;# Agent Local Context: Neo\n\n## Recent Decisions&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">116</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Phase 1 (Getting Started Guide) impl complete: docs/GETTING_STARTED.md - real 3-call scalene-guard sequence (Read then WebFetch, zero policy file needed - default fail-safe already m...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-PIPE"
+        data-flags="AP-MAKE-PIPE">
+      <td class="seq">117</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;judge-trace\|make judge-trace&#34; agents/trin.docs/SKILL.md | head -10</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#f97316">
+          AP-MAKE-PIPE
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-PIPE</div>
+            <div class="t-desc">Bash pipes make output (e.g. `make test 2>&1 | tail -30`) — violates the make skill rule. mkf already captures output to build/build.out.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">118</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Starting Phase 1 UAT (Getting Started Guide).&#34; PERSONA=&#34;Trin&#34; CMD=&#34;qa uat&#34; TO=&#34;Neo&#34; 2&gt;&amp;1 | tail -5</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">119</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">rm -rf /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/scratchpad/trin_uat_p1
+mkdir -p /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">120</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^setup:&#34; -A 10 /home/drusifer/Projects/Scalene/Makefile | head -15</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-PIPE"
+        data-flags="AP-MAKE-PIPE">
+      <td class="seq">121</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">rm -rf /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/scratchpad/clean_clone
+git clone --quiet /home/drusifer/Projects/Scalene /tmp/claude-1000/-home-drusifer...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#f97316">
+          AP-MAKE-PIPE
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-PIPE</div>
+            <div class="t-desc">Bash pipes make output (e.g. `make test 2>&1 | tail -30`) — violates the make skill rule. mkf already captures output to build/build.out.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">122</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cd /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/scratchpad/clean_clone
+mkdir -p /tmp/scalene-demo-uat &amp;&amp; cd /tmp/scalene-demo-uat
+GUARD=/tmp/claude-1000/-ho...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">123</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">pwd
+rm -rf /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85a4-508c8a4f889b/scratchpad/clean_clone
+rm -rf /tmp/claude-1000/-home-drusifer-Projects-Scalene/4051338e-933e-4851-85...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+  </table>
+</details>
+
+</div>
+
+<div class="summary-section">
+  <h2>Summary</h2>
+  <table class="sum-table">
+    <tr><th>Anti-Pattern</th><th>Count</th><th>Fix</th></tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#dc2626">AP-RAW-VENV</span></td>
+      <td class="count">5</td>
+      <td style="color:#94a3b8">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#f97316">AP-MAKE-PIPE</span></td>
+      <td class="count">3</td>
+      <td style="color:#94a3b8">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#8b5cf6">AP-VIA-GREP</span></td>
+      <td class="count">1</td>
+      <td style="color:#94a3b8">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#a855f7">AP-VIA-READ</span></td>
+      <td class="count">1</td>
+      <td style="color:#94a3b8">Use mcp__via__via_query to locate symbols and trace relationships. Read is only needed when you intend to edit the file or need its full content for review.</td>
+    </tr>
+    
+  </table>
+</div>
+
+<script>
+const ALL_APS = ["AP-SKILL-RELOAD", "AP-MAKE-BYPASS", "AP-RAW-VENV", "AP-MAKE-PIPE", "AP-VIA-GREP", "AP-VIA-READ", "AP-DUP-READ"];
+let activeFilters = new Set(ALL_APS);
+
+function updateRows() {
+  document.querySelectorAll('tr[data-flags]').forEach(row => {
+    const flags = row.dataset.flags ? row.dataset.flags.split(' ').filter(Boolean) : [];
+    if (flags.length === 0) {
+      row.classList.remove('hidden');
+      return;
+    }
+    // Show row if ANY of its flags are active
+    const visible = flags.some(f => activeFilters.has(f));
+    row.classList.toggle('hidden', !visible);
+  });
+}
+
+function filterAP(btn, code) {
+  if (activeFilters.has(code)) {
+    activeFilters.delete(code);
+    btn.classList.remove('active');
+    btn.classList.add('inactive');
+  } else {
+    activeFilters.add(code);
+    btn.classList.remove('inactive');
+    btn.classList.add('active');
+  }
+  updateRows();
+}
+
+function filterAll(btn) {
+  const allActive = activeFilters.size === ALL_APS.length;
+  if (allActive) {
+    activeFilters.clear();
+    document.querySelectorAll('.filter-btn[data-ap]').forEach(b => {
+      b.classList.remove('active'); b.classList.add('inactive');
+    });
+    btn.textContent = 'Show All';
+  } else {
+    activeFilters = new Set(ALL_APS);
+    document.querySelectorAll('.filter-btn[data-ap]').forEach(b => {
+      b.classList.add('active'); b.classList.remove('inactive');
+    });
+    btn.textContent = 'Show All';
+  }
+  updateRows();
+}
+</script>
+</body>
+</html>

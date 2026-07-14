@@ -102,6 +102,24 @@ class TestAuditTail(unittest.TestCase):
             ],
         )
 
+    def test_reads_block_events_too(self):
+        """2026-07-14: mode=block introduced a new audit event type — it must
+        surface in the monitor console too, not be silently dropped like
+        "onboard" events (which genuinely aren't mask/block activity)."""
+        self._append(
+            {
+                "event": "block",
+                "session_id": "s1",
+                "tool_name": "Bash",
+                "payload_field": "command",
+                "suggested_onboard_command": "scalene onboard ...",
+            }
+        )
+        tail = AuditTail(self.audit_log)
+        events = tail.poll()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "block")
+
     def test_second_poll_only_returns_newly_appended_events(self):
         self._append({"event": "mask", "session_id": "s1", "tool_name": "Bash", "payload_field": "command", "suggested_onboard_command": "x"})
         tail = AuditTail(self.audit_log)

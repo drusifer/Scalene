@@ -70,7 +70,7 @@ class MonitorApp(App):
         sessions_table.cursor_type = "row"
 
         events_table = self.query_one("#events", DataTable)
-        events_table.add_columns("Session", "Tool", "Field")
+        events_table.add_columns("Session", "Tool", "Field", "Action")
         events_table.cursor_type = "row"
 
         self.refresh_sessions()
@@ -124,7 +124,7 @@ class MonitorApp(App):
         )
         self._visible_events = list(reversed(visible))  # newest first — same order as the rows below
         for e in self._visible_events:
-            table.add_row(e.session_id, e.tool_name, e.payload_field)
+            table.add_row(e.session_id, e.tool_name, e.payload_field, e.event_type)
 
     def action_toggle_all_sessions(self) -> None:
         self.show_all_sessions = not self.show_all_sessions
