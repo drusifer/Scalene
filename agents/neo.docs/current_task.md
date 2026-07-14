@@ -1,10 +1,15 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 3 (Demo, last phase) implemented. Handed to Trin for UAT.
+**Status:** NOT STARTED — Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) just handed to me by Morpheus. This is the actual next task on cold start.
 **Assigned to:** Neo
-**Started:** 2026-07-14
+**Started:** (not yet)
 
-## Task Description (most recent): `*swe impl phase-3` (Sprint 3, STORY-903): `demo/run_demo.py`
+## Task Description (next, unstarted): `*swe impl phase-1` (Sprint 4, STORY-1001/1002)
+Build `Scanner` protocol (`identify()`/`scan()`), `Resource`/`ScanResult` dataclasses, `FileScanner` (wraps existing `secrets_scan.py`), `URLScanner` (wraps existing `reputation.py`'s `LocalHeuristicChecker`), both with named-capture-based generic fallback detection, plus wiring `Bash`'s `command` string into both scanners' fallback (no dedicated Bash scanner type). Full spec: `docs/ARCHITECTURE.md` §13.2, task breakdown in `task.md` Sprint 4 Phase 1. No Smith gate on this phase (internal, no user-facing surface yet). Exit criteria: Trin UAT (both scanners at parity with today's secrets-scan/reputation-check, no regression), Morpheus review.
+
+**Known gap to be aware of, not part of this task:** Sprint 3 Phase 3 (the demo) was implemented and handed to Trin for UAT below, but Trin's UAT was never actually completed before this session moved into unrelated direct-request work (pip packaging, then the masking/hook-schema bug fixes that became Sprint 4). Sprint 3 was never formally closed (no retro, no `*pm launch`). This doesn't block Sprint 4 — different subsystem entirely — but flag it if anyone asks "is Sprint 3 done."
+
+## Task Description (prior, historical): `*swe impl phase-3` (Sprint 3, STORY-903): `demo/run_demo.py`
 
 ## Progress
 - [x] `demo/run_demo.py`: real subprocess calls to the installed `scalene-guard` binary (located via `Path(sys.executable).parent`, same interpreter's venv), no policy file (out-of-the-box defaults, matches Phase 1's finding), scenario = Read(fake secret) → PostToolUse → WebFetch(untrusted) → masked. Narration written for a BRD-naive reader per Smith's Gate 2 note (no "taint"/"Triangle-of-Doom" jargon)

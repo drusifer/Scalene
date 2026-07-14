@@ -1,8 +1,16 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 1 UX gate: APPROVED (timed run). Phase 1 complete.
+**Status:** Sprint 4 Gate 2 (E10 architecture) reviewed and approved. Handed to Mouse for phase breakdown.
 **Assigned to:** Smith
 **Started:** 2026-07-14
+
+## Task Description (most recent): Sprint 4 Gate 2 — E10 architecture
+Reviewed `docs/ARCHITECTURE.md` §13. Approved — fatal-exit note fully addressed, first-sighting note addressed at behavior level (verified zero-latency design). 2 non-blocking watch-items for implementation: perf NFR must actually re-pass (not be assumed compatible), concurrent-first-sighting scan dedup isn't specified. Full: `agents/smith.docs/gate2_sprint4_review.md`.
+
+## Task Description (prior): Sprint 4 Gate 1 — E10 Extensible Scanner Registry
+Reviewed STORY-1001-1005. Approved, 2 non-blocking notes: (1) first-sighting friction needs a "not yet verified" message, not generic untrusted; (2) fatal-exit path needs a concrete plain-language failure + a deliberately-chosen exit code verified against Claude Code's real hook contract. Full: `agents/smith.docs/gate1_sprint4_review.md`.
+
+## Task Description (prior): Sprint 3 Phase 1 UX gate: APPROVED (timed run). Phase 1 complete.
 
 ## Task Description (most recent): Sprint 3 Phase 1 gate — Getting Started Guide (STORY-901)
 Cloned fresh, ran `make setup`, ran the doc's 3 commands verbatim: 24s machine time, real masked output confirmed. Approved with 1 non-blocking note (placeholder path repeated 3x instead of exported once). Full: `agents/smith.docs/phase1_gate.md`.

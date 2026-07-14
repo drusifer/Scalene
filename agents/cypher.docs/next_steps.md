@@ -1,15 +1,12 @@
 # Next Steps
 
 ## Immediate Next Action
-None from Cypher right now. E9 stories are posted to `docs/USER_STORIES.md`/`docs/PRD.md` and handed to Smith for Gate 1 (`*user review`).
+None from Cypher. Sprint 4 (E10) is fully planned and LOCKED (both gates passed, architected, phased). Implementation is underway with Neo (Phase 1). Next Cypher involvement is Sprint 4 close (retro + `*pm launch`), once all 5 phases are implemented and Smith's end-to-end test passes — same pattern as Sprint 2's close.
 
 ## Waiting On
-Smith (`*user approve` / `*user reject` on E9 stories) → if approved, Morpheus (`*lead arch sprint`) → Smith Gate 2 → Mouse phase breakdown.
+The whole Phase Bloop (Neo → Trin → Morpheus, ×5 phases, with Smith gates on Phases 3-5) to complete before sprint close is relevant.
 
 ## Planned Work
-- [ ] If Smith rejects: revise STORY-901/902/903 per feedback and re-submit.
-- [ ] If Smith approves: no further Cypher action until Morpheus's architecture is ready for Gate 2 review.
-- [ ] Sprint 2 retro backlog carry-forward still open: `scrubadub`/`presidio` category-aware masking remains deferred, not yet promoted to a story — revisit at Sprint 3 retro if it becomes relevant.
-
----
-*Last updated: 2026-07-13*
+- [ ] At Sprint 4 retro: incorporate findings, including whatever Trin/Morpheus/Smith surface across the 5 phases.
+- [ ] Still open, carried from Sprint 2/3: `scrubadub`/`presidio` category-aware masking remains deferred, not yet promoted to a story.
+- [ ] **Sprint 3 was never formally closed** (retro/launch never happened — Phase 3's demo was implemented and handed to Trin for UAT, but that UAT never ran before this session moved to unrelated direct-request work). Decide before Sprint 4 close: combined retro covering both sprints, or close Sprint 3 properly first. Not blocking Sprint 4 implementation.

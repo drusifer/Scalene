@@ -2,7 +2,7 @@
 
 **Owner:** Cypher (PM)
 **Source:** `docs/BRD.md`
-**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) shipped 2026-07-10. Sprint 3 (E9) — Draft v1, pending Smith (UX) gate 1.
+**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) shipped 2026-07-10. Sprint 3 (E9) implemented 2026-07-14 (retro/launch pending). Sprint 4 (E10) — Draft v1, pending Smith (UX) gate 1.
 
 ## Vision
 
@@ -46,8 +46,9 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 | E7 | Live Taint & List Management Console | Realtime dashboard (TUI or web) over `.scalene/audit.log` + taint state, with one-click onboarding of suggested rules |
 | E8 | Category-Aware Secrets Scan | Upgrade onboarding secrets scan from 3 hand-rolled regexes to `detect-secrets` |
 | E9 | Documentation & Onboarding | `USER_GUIDE.md`, `GETTING_STARTED.md`, and a runnable demo of Scalene stopping a real exfiltration attempt |
+| E10 | Extensible Scanner Registry & Resource Verification | Replace one-time onboard-verification with autonomous per-scanner resource identification + a 24h-cached, continuously-refreshed scan-result store |
 
-E7-E8 are Sprint 2. E9 is Sprint 3. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
 
 ## Sprint 2 Goals (added 2026-07-10)
 
@@ -59,3 +60,9 @@ E7-E8 are Sprint 2. E9 is Sprint 3. See `docs/USER_STORIES.md` for the full stor
 8. Give a brand-new user a copy-pasteable path from clean clone to seeing Scalene actually mask a call, in under 5 minutes — no prior source-reading required.
 9. Consolidate day-to-day CLI/config usage into one reference doc instead of requiring readers to piece it together from `SETUP.md` + `ARCHITECTURE.md` + source.
 10. Give prospective users/reviewers a runnable, repeatable demo of the core value proposition (masking a real exfiltration attempt) that can't silently rot, rather than a one-off manual walkthrough.
+
+## Sprint 4 Goals (added 2026-07-14)
+
+11. Close a real verification gap: an onboarded allow/trust rule should not be able to vouch, forever and unrefreshed, for a broader class of future values than what was actually checked at onboarding time.
+12. Make resource identification (file paths, URLs) automatic per scanner type instead of requiring a human to hand-author jsonpath+pattern extraction for every resource shape.
+13. Keep continuous re-verification affordable within the existing <15ms NFR via a per-resource, time-bounded cache with background refresh — not a scan on every call.

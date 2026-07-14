@@ -1,6 +1,6 @@
 # Project Architecture (ARCH.md) — Project Scalene
 
-Maintained by **Morpheus**. Status: Sprint 1 (§1-10) shipped 2026-07-09. Sprint 2 (§11) shipped 2026-07-10. Sprint 3 (§12) — Draft v1, pending Smith Gate 2.
+Maintained by **Morpheus**. Status: Sprint 1 (§1-10) shipped 2026-07-09. Sprint 2 (§11) shipped 2026-07-10. Sprint 3 (§12) implemented 2026-07-14 (retro/launch pending). Sprint 4 (§13) — Draft v1, pending Smith Gate 2. **§4's class diagram predates §13 and will be revised during Sprint 4 implementation** (`PolicyRule`/`PolicyConfig.allowlist` are replaced per §13.1 — not reflected below yet, Neo to update alongside the code change).
 
 ## 1. System Overview
 
@@ -243,3 +243,115 @@ STORY-903 requires the demo show a *real* masked call, offline, and be checked b
 `tests/test_demo.py` invokes `demo/run_demo.py` as a subprocess (same as a user would) and asserts the final output contains the expected masking marker and does not contain the fake secret in unmasked form. This runs under ordinary `pytest`/`make test` collection — no separate CI wiring needed. `make demo` (new Makefile target) runs the same script directly for a human to watch, narration included.
 
 **No Tank gate needed:** no new service, port, env var, or deploy/CI impact — `demo/run_demo.py` is a local dev-only script in the same vein as Sprint 1/2's no-Tank precedent.
+
+## 13. Sprint 4 Architecture — Extensible Scanner Registry & Resource Verification (E10)
+
+### 13.1 Decision: replace the allowlist/PolicyRule matching model, don't bolt scanning on top of it
+
+Cypher's epic left this as an explicit open question. **Decision: full replacement**, not coexistence. `PolicyConfig.allowlist`/`PolicyRule` (tool/jsonpath/pattern/target, shipped one commit before this epic) is removed entirely, not deprecated alongside a new system.
+
+Reasoning: the defect this epic exists to fix — a rule's `pattern` can match an unbounded future set while its `target` was only ever scanned once — is structural to the pattern-matching model itself, not a bug in one implementation of it. Any coexistence would keep the hole open for whichever rules stay on the old path. The new model's resource-identity granularity (a URL scanner's resource is a *host*, not a full URL) already gives broad, reusable coverage — "trust `internal.example.com`" naturally covers every path under it — without needing a hand-written regex to express "broad." The old model's flexibility isn't lost, it's absorbed into resource-identity choice.
+
+`scg onboard` is **not removed** — it's re-scoped from "write a policy rule" to "pre-seed the resource cache" (§13.4): given a target, run the matching scanner against it right now and write the result into the same cache the live hook consults, so a developer can front-load the first-sighting cost for a resource they already know is fine, instead of eating it the first time an agent hits it live.
+
+### 13.1.1 How this fits into the existing `pre_tool_use`/`post_tool_use`/`MaskingEngine` flow
+
+Two *different* checks exist today and stay separate — this epic replaces one of them, not both:
+
+1. **Content-gating (shipped, unrelated to this epic):** `MaskingEngine.decide()` scans the *specific payload value being sent* (e.g. an outbound `prompt`) for embedded secrets via `scan_text_for_secrets()`, gated behind provenance risk. This governs *whether to mask/block this specific call*. **Unchanged by E10.**
+2. **Resource verification (this epic, replaces `PolicyConfig.evaluate()`):** governs the *provenance signals themselves* — `is_sensitive` (does a `Read`'s target count as sensitive) and `is_trusted` (does a call's destination count as trusted). Previously computed by matching `PolicyRule`s; now computed by asking the scanner registry to identify resources in the call's args and checking the resource cache.
+
+Concretely, `hook_adapter.py` changes from `match = config.evaluate(tool, args)` to something like `match = resource_verifier.evaluate(tool, args)`, returning the same `MatchResult(is_sensitive, is_trusted, fail_safe_triggered)` shape both `pre_tool_use` and `post_tool_use` already consume — `MaskingEngine.decide()`'s signature and content-gating logic don't change at all. `fail_safe_triggered` now means "at least one identified resource had no cache entry and fell back to defaults," replacing its old meaning ("a rule's JSONPath failed to evaluate") — same field, same downstream handling (existing tests/log messages), new trigger condition.
+
+### 13.2 Component: Scanner protocol + registry
+
+```python
+class Scanner(Protocol):
+    name: str  # "secrets", "reputation", ... — the label namespace this scanner owns
+
+    def identify(self, tool_name: str, args: dict) -> list[Resource]:
+        """Find candidate resources this scanner cares about within a call's
+        args. No jsonpath/pattern from user config — each scanner owns its
+        own detection logic (STORY-1002)."""
+
+    def scan(self, resource: Resource) -> ScanResult:
+        """Verify one resource. Runs in an isolated subprocess (SCALENE_BYPASS=1,
+        unchanged from today's subprocess_isolation.py) — never raises to the
+        caller; a scanner-internal exception is what makes STORY-1004's fatal
+        path fire, not what gets returned as a ScanResult."""
+
+@dataclass(frozen=True)
+class Resource:
+    kind: str          # "file" | "url" — extensible, not a closed enum
+    identity: str       # cache key material: absolute path, or host
+    scanner_name: str
+
+@dataclass(frozen=True)
+class ScanResult:
+    label: str          # "public" | "sensitive" | "trusted" | "untrusted"
+    reason: str = ""
+```
+
+Registry is a plain `dict[str, Scanner]` populated at import time (`SCANNERS = {"secrets": FileScanner(), "reputation": URLScanner()}`) — adding a scanner is adding an entry, no dispatch code changes (STORY-1002 AC).
+
+**Built-in scanners (STORY-1002):**
+- `FileScanner` — `identify()` checks known per-tool fields first (`Read`/`Write`/`Edit`'s `file_path`/`new_string`/`content`-adjacent path arguments, reusing today's `DEFAULT_PAYLOAD_FIELDS`-style knowledge internally, not exposed to config) plus a generic "does this string look like an absolute/relative path" regex fallback for anything else. `scan()` is today's `secrets_scan.py` unchanged, run against the file's content.
+- `URLScanner` — `identify()` checks known fields (`WebFetch`'s `url`) plus a generic `https?://` regex fallback. Resource identity is the **host**, not the full URL (§13.1). `scan()` is today's `LocalHeuristicChecker` unchanged.
+- **Bash command scanner: not a third scanner type.** Decision: `Bash`'s `command` string is handed to *both* `FileScanner.identify()` and `URLScanner.identify()`'s generic fallback regexes as an additional input source, since a shell command is just a string that may embed either shape. A dedicated `BashScanner` would only duplicate the same shape-detection regexes FileScanner/URLScanner already need for their generic fallback — no new scanner type needed, just wiring `Bash` into both existing scanners' `identify()`.
+- Named regex captures (STORY-1001) are an internal detail of each scanner's own detection regex (e.g. `URLScanner`'s fallback pattern has a `(?P<host>...)` group it extracts and discards the rest of) — not a user-facing config concept. There is no more user-authored `jsonpath`/`pattern` for this purpose at all (§13.1).
+
+### 13.3 Component: Scan cache
+
+`.scalene/scan_cache.json`, project-wide (not per-session — a file's or host's verification status isn't session-scoped), file-locked like `taint_state.py`'s per-session files (`filelock`, same pattern, not a new dependency):
+
+```json
+{
+  "file:///abs/path/to/file.md": {"mtime": 1720000000.0, "label": "public", "reason": "", "scanned_at": 1720000000.0},
+  "reputation:internal.example.com": {"label": "trusted", "reason": "", "scanned_at": 1720000000.0}
+}
+```
+
+Key is `f"{scanner_name}:{resource.identity}"` (file resources additionally carry `mtime` inside the value, not the key, since re-verifying a changed file should overwrite its entry rather than accumulate stale ones per-mtime).
+
+**Lookup/refresh logic (STORY-1003), run for every identified resource on every call:**
+
+| Cache state | Label used for *this* call | Rescan? |
+|---|---|---|
+| No entry | Existing fail-safe default (`sensitive_by_default`/`untrusted_by_default`) — **identical to today's behavior for an unconfigured resource, no new latency** | Fire-and-forget background scan, seeds cache for next time |
+| Fresh (<24h, and for files: `mtime` unchanged) | Cached label, direct | None |
+| Expired (>24h, or file `mtime` changed) | Last-known cached label, immediate, no blocking | Fire-and-forget background scan, refreshes cache |
+
+This is why the "new resource" path is *not* a regression risk: it does exactly what today's code does (fail-safe default, zero added latency) and merely adds a side-effect (seed the cache for later). Only the *previously-scanned* paths get faster than fail-safe defaults, and only once something has actually been verified.
+
+**"Background" mechanism:** `subprocess.Popen` (not `subprocess.run`) with no `.wait()` — the child scanning process (running with `SCALENE_BYPASS=1`, same isolation as today) writes its result into the cache file (via the same `FileLock`) whenever it finishes, independent of the parent `scalene-guard` process having already exited and returned its response. No daemon, no persistent process — consistent with §2's "no daemon required" principle; each background scan is a one-shot detached subprocess, same lifecycle model as everything else in this codebase.
+
+**File staleness uses `mtime`, not a content hash** (Smith/user direction) — `os.stat().st_mtime` is effectively free; hashing file content on every call would reintroduce the exact performance problem this cache exists to solve.
+
+### 13.4 `scg onboard` re-scoped: pre-seed the cache
+
+```
+scg onboard --target file:///path/to/file.md
+scg onboard --target https://internal.example.com
+```
+
+Drops `--tool`/`--jsonpath`/`--pattern`/`--description` entirely (§13.1 — there's no rule to author anymore, just a resource to check now instead of later). Resolves the scanner from the URI scheme exactly as today (`file://` → `FileScanner`, `http(s)://` → `URLScanner`), runs `scan()` synchronously (this is the one deliberately-blocking scan path left in the system, and it's fine — it's a one-off CLI invocation, not the hot hook path), and writes the result into `.scalene/scan_cache.json` directly. No more separate `scalene_policy.yaml` `allowlist` writes, no diff-printing (there's no YAML edit to diff) — prints the resolved label instead.
+
+### 13.5 STORY-1004: fatal exit — exact boundary and mechanism
+
+**Fail-safe-exit-0 (unchanged from today):** malformed hook JSON, unrecognized hook event, a scanner's `identify()`/`scan()` returning an ordinary bad result (secret found, bad reputation) — all ordinary decisions, `scalene-guard` exits 0 exactly as it does today.
+
+**Fatal-exit-nonzero (new, narrow):** the scan **cache store itself** is unreadable/corrupted/unwritable, or a registered scanner's `scan()`/`identify()` raises an unhandled exception (a bug in scanner code, not a scan finding). This is a "the safety mechanism can't do its job" condition, categorically different from "the safety mechanism did its job and found something."
+
+**Exit code:** provisionally **1** (generic failure, matching this codebase's own existing convention for `onboard.py`/`install_hooks.py`'s own error returns) pending Neo verifying — the same way the `hookSpecificOutput` schema had to be verified against real Claude Code docs rather than assumed — exactly what a non-zero `scalene-guard` exit does in a real Claude Code session before this ships. Do not assume exit code 2's "block + stderr to model" semantics from the earlier hook-contract research applies here without checking; that convention was documented for a hook's own deliberate decision output, and a fatal scanner-machinery failure is a different situation (the hook couldn't decide at all).
+
+**Message:** same plain-language standard as `secrets_scan.py`/`onboard.py` — a fatal exit still writes a real reason to stderr, never a raw traceback (Smith Gate 1 note).
+
+**Labels always surfaced regardless of fatal/non-fatal:** whatever labels *did* resolve for other resources in the same call (e.g. one resource's scanner is fine, another's cache store lookup is what failed) are still included in the response — a fatal condition on one resource doesn't blank out information that was actually available.
+
+### 13.6 STORY-1005: recent scans surfaced in `scg monitor`
+
+New panel alongside the existing Sessions/Mask-events tables (`monitor_app.py`), reading `.scalene/scan_cache.json` directly (poll-based, same §11.2 precedent — no filesystem-watch dependency). Columns: resource identity, label, last-scanned time. This is a read of the real cache store, not a parallel summary that could drift from it (STORY-1005 AC).
+
+### 13.7 Devops/Infra impact
+
+No Tank gate: still no daemon, no new port/service/env var. The one new behavior worth Tank's awareness (not a gate) is background subprocess spawning via `Popen` without `wait()` — confirm this doesn't leave zombie/orphaned processes in constrained container environments; Neo to verify during implementation with a real, repeated-invocation test, not just a single-call check.

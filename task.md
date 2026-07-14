@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 planned** — 3 phases, awaiting Morpheus's plan review before `*impl phase-1`.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. Sprint 3's 3 phases all implemented and passing 2026-07-14 (direct user-driven fixes/packaging work followed before formal retro/launch — Sprint 3 close is still pending). **Sprint 4 (E10) planned** — 5 phases, awaiting Morpheus's plan review before `*impl phase-1`.
 
 ---
 
@@ -185,3 +185,86 @@ None of these 3 phases share code — sequenced by risk/foundational order, not 
 ## Notes
 - No Tank phase this sprint — per Morpheus's architecture (§12.2), `demo/run_demo.py` is a local dev-only script, no new port/service/env var/CI impact.
 - Phase ordering (Getting Started → User Guide → Demo) is foundational-first, not a hard dependency: Getting Started is the smallest and most time-boxed (Smith's <5min AC), User Guide is the largest pure-writing effort, Demo is saved for last since it's the only phase introducing new code (the demo script + its test).
+
+---
+
+# Sprint 4
+
+**Owner:** Mouse
+**Status:** Planned, pending Morpheus's plan review.
+**Source:** `docs/USER_STORIES.md` (E10) + `docs/ARCHITECTURE.md` (§13)
+**Scope:** Direct user design session (2026-07-14) — replace the just-shipped `PolicyConfig.allowlist`/`PolicyRule` matching model (a rule's one-time scan can vouch for an unbounded future pattern-match) with an extensible per-scanner resource-identification system backed by a 24h `mtime`-keyed scan cache with background refresh.
+
+Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one commit ago and adds a new cache store + background-process model, not just docs/a demo. Phases are dependency-ordered (each builds on the previous): scanners can't be cached without existing; the hook can't be integrated without both; onboarding/monitor are consumers of the finished system.
+
+## Phase 1 — Scanner Protocol & Built-in Scanners
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 1.1 | `Scanner` protocol (`identify()`/`scan()`), `Resource`/`ScanResult` dataclasses (§13.2) | STORY-1002 |
+| 1.2 | `FileScanner`: built-in per-tool path detection (`Read`/`Write`/`Edit`) + generic path-shaped fallback regex w/ named capture; `scan()` wraps existing `secrets_scan.py` unchanged | STORY-1001, STORY-1002 |
+| 1.3 | `URLScanner`: built-in `WebFetch` URL detection + generic URL-shaped fallback regex w/ named `host` capture (resource identity = host, not full URL); `scan()` wraps existing `LocalHeuristicChecker` unchanged. Wire `Bash`'s `command` string into both scanners' generic fallback (no dedicated Bash scanner type, per §13.2) | STORY-1001, STORY-1002 |
+
+**Exit criteria:** Trin UAT passes (both scanners correctly identify resources across all built-in tool shapes + the generic fallback, at parity with today's secrets-scan/reputation-check behavior — no regression). Morpheus reviews. No Tank, no Smith gate — internal components, nothing user-facing changes yet.
+
+---
+
+## Phase 2 — Scan Cache Store
+*Chain: Neo → Trin → Morpheus*
+*Depends on: Phase 1 (caches `ScanResult`/`Resource` values).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 2.1 | `.scalene/scan_cache.json` read/write, `filelock`-protected (same pattern as `taint_state.py`) | STORY-1003 |
+| 2.2 | 3-state lookup (none/fresh/expired) per §13.3's table; file staleness by `mtime` (not content hash) | STORY-1003 |
+| 2.3 | Background rescan via detached `subprocess.Popen` (no `.wait()`, no daemon); in-flight-scan dedup so concurrent calls to the same never-cached resource don't spawn N redundant background scans (Smith's Gate 2 watch-item) | STORY-1003 |
+
+**Exit criteria:** Trin UAT passes, including a real repeated-invocation test proving no zombie/orphaned background processes accumulate (Morpheus's Gate 2 devops note, §13.7) and that concurrent first-sighting calls don't spawn duplicate scans. Morpheus reviews. No Tank, no Smith gate — still no user-facing surface.
+
+---
+
+## Phase 3 — Hook Integration & First-Sighting Messaging
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: Phase 1 + Phase 2.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 3.1 | Replace `PolicyConfig.evaluate()` call site in `hook_adapter.py` with the new resource-verification path; `MatchResult` shape and `MaskingEngine.decide()`'s content-gating logic stay unchanged (§13.1.1) | STORY-1002, STORY-1003 |
+| 3.2 | Remove `PolicyRule`/`allowlist` from `policy_config.py` entirely (§13.1 full-replacement decision); update `ARCHITECTURE.md` §4's class diagram for real (flagged stale in §13 header) | STORY-1002 |
+| 3.3 | First-sighting mask/block message reads as "not yet verified" distinctly from a known-bad decision (Smith's Gate 1/2 note) | STORY-1003 |
+| 3.4 | Re-verify `tests/test_performance.py`'s <15ms NFR actually still passes with resource identification + cache lookup in the hot path — not assumed compatible (Smith's Gate 2 watch-item) | STORY-1003 |
+
+**Exit criteria:** Trin UAT passes (incl. re-running the perf test for real, confirming the "no cache entry" path is genuinely zero-added-latency vs. today's baseline). Morpheus reviews. **Smith `*user test` required** — this is the phase where a real behavior/copy change becomes user-visible; Smith personally verifies the first-sighting message reads as intended (her Gate 1/2 commitment), not just that it exists.
+
+---
+
+## Phase 4 — `scg onboard` Re-scope & Fatal Exit
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: Phase 2 (writes directly to the scan cache) + Phase 3 (fatal path sits alongside the integrated decision flow).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 4.1 | Rewrite `scg onboard`: drops `--tool`/`--jsonpath`/`--pattern`/`--description`, resolves scanner from `--target`'s URI scheme (unchanged), runs `scan()` synchronously, writes directly into `.scalene/scan_cache.json` (§13.4) | STORY-1004 (re-scope), replaces prior onboarding behavior |
+| 4.2 | Fatal-exit handling in `cli.py`: scanning-machinery failure (cache store broken, scanner crash) exits non-zero with a plain-language stderr message; ordinary scan findings stay exit 0 | STORY-1004 |
+| 4.3 | Verify the actual effect of a non-zero `scalene-guard` exit against Claude Code's real hook contract (same method as the earlier hookSpecificOutput research — don't assume) before finalizing the exit code; adjust from the provisional `1` if the real contract calls for something else | STORY-1004 |
+
+**Exit criteria:** Trin UAT passes (a real cache-store-corruption scenario and a real scanner-crash scenario both produce the documented non-zero exit + plain-language message; a real scan-finding scenario stays exit 0). Morpheus reviews. **Smith `*user test` required** — Smith confirms the fatal-exit message is genuinely plain-language (no raw traceback, her Gate 1 note) and that the verified exit code's real effect matches what's documented.
+
+---
+
+## Phase 5 — `scg monitor` Resource Panel
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: Phase 2 (reads the scan cache).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 5.1 | New panel in `monitor_app.py`/`monitor_data.py` showing recent scan results (resource, label, last-scanned) — reads `.scalene/scan_cache.json` directly, poll-based like existing panels (§11.2 precedent) | STORY-1005 |
+
+**Exit criteria:** Trin UAT passes (panel reflects real cache content, no separate/duplicated bookkeeping — STORY-1005 AC). Morpheus reviews. **Smith `*user test` required** — new UI surface, same precedent as Sprint 2's Console Foundations gate.
+
+## Notes
+- No Tank phase this sprint — no daemon, no new port/service; background scans are one-shot detached subprocesses, not a persistent process (§13.7). Devops-adjacent note (not a gate): confirm background `Popen` spawning doesn't leave orphaned processes in constrained container environments — folded into Phase 2's exit criteria rather than a separate Tank phase.
+- Phases are hard-dependency-ordered, unlike Sprint 3's foundational-but-parallel-capable phases — Phase 3 cannot be built without Phases 1-2 existing, and Phases 4-5 are consumers of the finished cache/scanner system.
+- `.scalene/scan_cache.json` needs the same `.gitignore` treatment as `.scalene/audit.log`/`state/` (Morpheus's Gate 2 follow-up) — folded into Phase 2, not a separate task.

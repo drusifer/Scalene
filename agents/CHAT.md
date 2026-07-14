@@ -495,3 +495,51 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 - setuptools==83.0.0
 * Building wheel...
+
+---
+[<small>2026-07-14 18:50:14</small>] [**User**]->[**all**] *request*:
+ /sprint planning: E10 - Extensible Scanner Registry & Resource Verification. User-driven design session identified a real gap (onboarded allow/trust rules can vouch for a broad pattern based on scanning one representative instance) and specified a replacement: autonomous per-scanner resource identification + a 24h mtime-cached scan-result store + background rescans + fatal-exit-on-scanner-failure. Starting Cypher stories.
+
+---
+[<small>2026-07-14 18:52:58</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ Sprint 4 (E10 - Extensible Scanner Registry) stories drafted: STORY-1001 named captures, STORY-1002 per-scanner autonomous resource ID (extensible registry), STORY-1003 24h mtime-cached scan results w/ background refresh, STORY-1004 fatal-nonzero-exit for scanner-machinery failures only, STORY-1005 queryable recent-scan summary. Full design context (already hashed out w/ user) in the epic's origin note. docs/USER_STORIES.md + docs/PRD.md updated. @Smith *user review sprint 4 stories
+
+---
+[<small>2026-07-14 18:53:18</small>] [**Smith**]->[**Cypher**] *user review*:
+ Reviewing Sprint 4 (E10) stories per Gate 1.
+
+---
+[<small>2026-07-14 18:53:47</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user approve. E10 stories testable+precise (STORY-1003's 3-state cache AC especially clear). 2 notes: (1) first-sighting friction is correct-but-real - message should say 'not yet verified' not generic untrusted, (2) fatal exit needs a concrete plain-language failure mode + verified exit-code choice against Claude Code's real hook contract, same lesson as the schema-fix work. Full: agents/smith.docs/gate1_sprint4_review.md @Morpheus *lead arch sprint
+
+---
+[<small>2026-07-14 18:59:31</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Sprint 4 architecture done: docs/ARCHITECTURE.md sec13. Full replacement of PolicyRule/allowlist (structural defect, not coexist). Scanner protocol+registry, scan_cache.json w/ 3-state lookup (new-resource path is zero-latency), background=detached Popen no daemon, scg onboard re-scoped to pre-seed cache, fatal-exit boundary precise w/ exit code left for Neo to verify. No Tank gate. @Smith *user feedback sprint 4 arch
+
+---
+[<small>2026-07-14 18:59:36</small>] [**Smith**]->[**Morpheus**] *user feedback*:
+ Reviewing Sprint 4 architecture (ARCHITECTURE.md sec13) per Gate 2.
+
+---
+[<small>2026-07-14 19:00:10</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user approve. Sprint 4 arch (sec13) approved. Fatal-exit note fully addressed. First-sighting note addressed at behavior level (verified zero-latency), copy-level wording still needs UAT verification. 2 non-blocking watch-items: perf NFR must actually re-pass not be assumed, and concurrent-first-sighting scan dedup isn't specified. Full: agents/smith.docs/gate2_sprint4_review.md @Mouse *sm plan sprint
+
+---
+[<small>2026-07-14 19:03:04</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ Sprint 4 phase breakdown in task.md: 5 hard-dependency-ordered phases. P1 Scanner Protocol+Built-ins (no gate), P2 Scan Cache (no gate, folds dedup+orphan-process watch-items in), P3 Hook Integration+First-Sighting Msg (Smith gate, folds perf-NFR reverify in), P4 scg onboard Re-scope+Fatal Exit (Smith gate, folds exit-code verification in), P5 scg monitor Resource Panel (Smith gate). No Tank phase. @Morpheus *lead review sprint plan
+
+---
+[<small>2026-07-14 19:03:10</small>] [**Morpheus**]->[**Mouse**] *lead review sprint plan*:
+ Reviewing Sprint 4 phase plan (task.md) against arch sec13.
+
+---
+[<small>2026-07-14 19:03:51</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ Sprint 4 plan approved - phases match sec13 exactly, dependency order correct, both Smith watch-items + my devops note folded into tasks. Sprint 4 plan LOCKED. @Neo *swe impl phase-1
+
+---
+[<small>2026-07-14 19:48:47</small>] [**User**]->[**all**] *request*:
+ State save before context clear. Sprint 4 (E10) fully planned + LOCKED (both gates passed, sec13 architected, 5 phases in task.md). Sprint 4 Phase 1 handed to Neo, NOT yet started. Separately: Sprint 3 Phase 3 demo was implemented but Trin's UAT never ran, Sprint 3 never formally closed - not blocking, just not forgotten. Uncommitted: all Sprint 4 planning docs (PRD/USER_STORIES/ARCHITECTURE sec13/task.md) + persona state files + Smith's 2 gate review docs. No code changes yet. Resume: *swe impl phase-1.
+
+---
+[<small>2026-07-14 19:56:46</small>] [**Neo**]->[**all**] *resume*:
+ Resuming cold start. Sprint 4 (E10) locked: both gates passed, sec13 architected, 5 phases in task.md. Phase 1 (Scanner protocol+FileScanner/URLScanner) handed to me, not started. Sprint 3 demo still owes Trin UAT (non-blocking). All Sprint 4 docs+state uncommitted on disk.

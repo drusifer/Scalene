@@ -1,26 +1,35 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 2 review: APPROVED. Phase 2 complete. Handed to Neo for Phase 3.
-**Assigned to:** N/A (Phase 2 done)
+**Status:** Sprint 4 plan reviewed and LOCKED. Handed Phase 1 to Neo.
+**Assigned to:** N/A (planning finished; next is Phase 1 implementation)
 **Started:** 2026-07-14
 **Completed:** 2026-07-14
 
-## Task Description (most recent): `*lead review phase-2` (Sprint 3, User Guide)
-- [x] Reviewed the `cli.py` fail-safe fix (out-of-scope bug Neo found while documenting troubleshooting) — correct pattern, matches the existing fail-safe-fallback-with-warning-log convention used elsewhere in the codebase (e.g. `policy_config.py`'s JSONPath fail-safe). Regression test present, real (not a manual repro).
-- [x] Reviewed `docs/USER_GUIDE.md` for accuracy against `ARCHITECTURE.md`/`BRD.md` — no duplication, cross-references correct.
-- [x] **APPROVED.** No Smith gate required on this phase (per plan — accuracy check, not a usability-flow one). Worth flagging to Oracle at groom: this bug fix (fail-safe crash on malformed policy YAML) happened outside any story's stated scope — should be noted in whatever traceability doc gets updated at sprint close, even though it's not tied to a STORY-9xx AC.
-
-## Task Description (prior): `*lead review phase-1` (Sprint 3, Getting Started Guide).
+## Task Description
+`*lead arch sprint` (Sprint 4), following Smith's Gate 1 approval on Cypher's E10 stories (STORY-1001 through 1005).
 
 ## Progress
-- [x] Round 1: found doc hardcodes literal mask output but the test only checked term-presence, never ran the scenario — same AC-vs-implementation drift class as Sprint 2's 2 incidents. **REJECTED.** Full review: `agents/morpheus.docs/phase1_review.md`.
-- [x] Round 2: reviewed Neo's fix — `test_walkthrough_scenario_actually_masks` calls `pre_tool_use`/`post_tool_use` directly, replays the exact 3-call scenario, asserts real `MaskingEngine.MASK_LITERAL` output. Also independently confirmed Neo's self-caught `audit_log_path` near-miss (cwd-relative default) is correctly fixed by grepping the diff. **APPROVED.** 128/128 tests passing.
+- [x] Resolved Cypher's explicit open question: **full replacement** of `PolicyConfig.allowlist`/`PolicyRule` (the tool/jsonpath/pattern/target model shipped one commit before this epic), not coexistence — the defect this epic fixes is structural to pattern-matching itself, keeping it around anywhere would leave the hole open on that path.
+- [x] Designed `Scanner` protocol + registry (`identify()`/`scan()`), `Resource`/`ScanResult` types — extensible per STORY-1002, reused existing `FileScanner`≈`secrets_scan.py`/`URLScanner`≈`LocalHeuristicChecker` logic rather than rewriting it
+- [x] Decided Bash gets no dedicated scanner type — its command string is fed into FileScanner's and URLScanner's existing generic-fallback detection instead of duplicating shape-detection regexes in a third scanner
+- [x] Designed the scan cache (`.scalene/scan_cache.json`, `filelock`-protected like `taint_state.py`) and its 3-state lookup table (none/fresh/expired) per STORY-1003 — confirmed the "new resource" path adds zero latency (identical to today's fail-safe-default behavior) since it never blocks on a scan, only seeds the cache in the background
+- [x] Designed "background" as a detached `Popen` (no `.wait()`) subprocess, consistent with the existing SCALENE_BYPASS isolation pattern — no daemon introduced
+- [x] Confirmed `mtime`-only staleness for files (no hashing) per explicit user direction
+- [x] Re-scoped `scg onboard` to pre-seed the cache (drops `--tool`/`--jsonpath`/`--pattern`/`--description` entirely) rather than writing a policy rule
+- [x] Specified the fail-safe-exit-0 vs fatal-exit-nonzero boundary precisely (STORY-1004): ordinary scan findings stay exit 0; only scanning-*machinery* failure (cache store broken, scanner crash) is fatal. Provisional exit code 1, explicitly flagged for Neo to verify against the real Claude Code hook contract before shipping — not assumed, same lesson as the earlier schema fix
+- [x] Documented exactly how this integrates with the unchanged `MaskingEngine.decide()` content-gating path (§13.1.1) — two different checks, only one is being replaced
+- [x] `scg monitor` gets a new resource-cache panel (STORY-1005), same poll-based pattern as existing panels
+- [x] Flagged §4's class diagram as stale-until-implementation (predates §13, will need a real update once Neo's classes exist)
 
-## Prior: Sprint 3 plan review (2026-07-14)
-- [x] Verified Mouse's 3-phase breakdown matches §12 exactly; Smith gate placement correct; both gate notes folded into named tasks; no Tank phase. **APPROVED. Sprint 3 plan LOCKED.**
+## Progress (plan review, 2026-07-14)
+- [x] Verified Mouse's 5-phase breakdown matches §13 exactly: scanners → cache → hook integration → onboard/monitor consumers, correctly hard-dependency-ordered (not foundational-but-parallel like Sprint 3)
+- [x] Verified Smith gate placement (Phases 3-5 gated, Phases 1-2 not) matches expectation — Phases 1-2 are internal, no user-facing surface yet
+- [x] Verified both Smith Gate 2 watch-items (dedup, perf re-verification) and my own devops note (orphaned processes) are folded into named tasks (2.3, 3.4, folded into Phase 2 exit criteria), not left as loose prose
+- [x] Confirmed no Tank phase needed
+- [x] **APPROVED. Sprint 4 plan LOCKED.**
 
 ## Blockers
-None.
+None — handed Phase 1 to Neo.
 
 ## Oracle Consultations
 None yet
