@@ -1,4 +1,4 @@
-"""Tests for `scalene install-hooks` (.claude/settings.json PreToolUse/PostToolUse wiring)."""
+"""Tests for `scg install-hooks` (.claude/settings.json PreToolUse/PostToolUse wiring)."""
 
 import json
 import unittest

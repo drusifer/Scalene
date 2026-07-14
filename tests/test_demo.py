@@ -43,7 +43,7 @@ class TestDemo(unittest.TestCase):
             text=True,
             timeout=30,
         )
-        self.assertIn("scalene onboard", result.stdout)
+        self.assertIn("scg onboard", result.stdout)
 
 
 if __name__ == "__main__":

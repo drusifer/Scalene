@@ -50,14 +50,14 @@ class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
                 "[MASKED_BY_POLICY_PROVENANCE_GUARD]",
             )
             message = blocked["systemMessage"]
-            self.assertIn("scalene onboard", message)
+            self.assertIn("scg onboard", message)
 
             # 2. Extract the suggested command exactly as a developer would
             # copy it out of the transcript, fill in the placeholder target,
-            # and run it through the real `scalene` CLI (not a shortcut call
+            # and run it through the real `scg` CLI (not a shortcut call
             # into onboard() directly).
             suggested_line = message.split("run:\n", 1)[1]
-            argv = shlex.split(suggested_line)[1:]  # drop the leading "scalene"
+            argv = shlex.split(suggested_line)[1:]  # drop the leading "scg"
             argv = [
                 "reports.internal.example.com" if arg == "<domain-this-call-reaches>" else arg
                 for arg in argv

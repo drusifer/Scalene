@@ -490,7 +490,9 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
  /neo *fix: Scalene should not output the 'Scalene masked' message unless it actually contained something recognised as sensitive and masked - message should say what was masked, only when that happens.
 
 ---
-[<small>2026-07-14 14:34:58</small>] [**make**]->[**all**] *build*:
+[<small>2026-07-14 15:28:50</small>] [**make**]->[**all**] *build*:
  Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
 +  description: ''
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK

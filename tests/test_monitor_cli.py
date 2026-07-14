@@ -1,4 +1,4 @@
-"""Tests for `scalene monitor`'s CLI entrypoint (STORY-701) — specifically
+"""Tests for `scg monitor`'s CLI entrypoint (STORY-701) — specifically
 the plain-language fallback when the optional `monitor` extra isn't
 installed, since `textual` must never be a hard dependency of the base
 package (docs/ARCHITECTURE.md sec 11.1)."""

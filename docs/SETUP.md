@@ -9,12 +9,12 @@ pip install scalene-guard
 This installs two commands:
 
 - `scalene-guard` — the hook command Claude Code invokes directly. You do not run this yourself.
-- `scalene` — the developer-facing CLI (`onboard`, `install-hooks`).
+- `scg` — the developer-facing CLI (`onboard`, `install-hooks`).
 
 ## Register the hooks
 
 ```bash
-scalene install-hooks
+scg install-hooks
 ```
 
 This wires `PreToolUse` and `PostToolUse` hooks into your project's `.claude/settings.json` so Claude Code invokes `scalene-guard` before and after every tool call. It merges non-destructively — any existing settings, other tool matchers, and other commands already on the `*` matcher are all preserved — and is idempotent (safe to run again). If you're developing on this repo itself, `make install-scalene-hooks` does the same thing (`TARGET=<path>` to target a different project; defaults to `.`).
@@ -49,10 +49,10 @@ Create `scalene_policy.yaml` at your project root (see `docs/ARCHITECTURE.md` §
 ## Onboarding a false positive
 
 ```bash
-scalene onboard --list-type allowlist --tool Read --jsonpath '$.file_path' \
+scg onboard --list-type allowlist --tool Read --jsonpath '$.file_path' \
   --pattern '\.md$' --target path/to/file.md --description "markdown is fine"
 
-scalene onboard --list-type trust --tool WebFetch --jsonpath '$.url' \
+scg onboard --list-type trust --tool WebFetch --jsonpath '$.url' \
   --pattern '^https://internal\.example\.com/' --target internal.example.com
 ```
 

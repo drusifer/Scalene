@@ -1,4 +1,4 @@
-"""`scalene` — developer-facing CLI. Subcommands: `onboard`, `install-hooks`, `monitor`."""
+"""`scg` — developer-facing CLI. Subcommands: `onboard`, `install-hooks`, `monitor`."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _SUBCOMMANDS = {"onboard": onboard_main, "install-hooks": install_hooks_main, "m
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] not in _SUBCOMMANDS:
-        print(f"usage: scalene <{'|'.join(_SUBCOMMANDS)}> ...", file=sys.stderr)
+        print(f"usage: scg <{'|'.join(_SUBCOMMANDS)}> ...", file=sys.stderr)
         return 2
     subcommand, rest = argv[0], argv[1:]
     return _SUBCOMMANDS[subcommand](rest)

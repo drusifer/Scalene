@@ -1,4 +1,4 @@
-"""`scalene monitor` (STORY-701): live TUI over `.scalene/audit.log` and
+"""`scg monitor` (STORY-701): live TUI over `.scalene/audit.log` and
 taint state. Requires the optional `monitor` extra
 (`pip install scalene-guard[monitor]`) — kept out of the base package so the
 hot-path hook adapter never imports a TUI framework it doesn't use
@@ -16,7 +16,7 @@ def main(argv: list[str]) -> int:
         from .monitor_app import MonitorApp
     except ImportError:
         print(
-            "scalene monitor requires the optional 'monitor' extra: pip install scalene-guard[monitor]",
+            "scg monitor requires the optional 'monitor' extra: pip install scalene-guard[monitor]",
             file=sys.stderr,
         )
         return 1

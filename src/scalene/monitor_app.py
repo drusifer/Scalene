@@ -1,4 +1,4 @@
-"""Textual TUI for `scalene monitor` (STORY-701/702). Thin composition over
+"""Textual TUI for `scg monitor` (STORY-701/702). Thin composition over
 `monitor_data.py` — this module is the only place that imports `textual`, so
 the optional `[monitor]` extra never touches the hot-path hook adapter
 (docs/ARCHITECTURE.md sec 11.1).
@@ -158,7 +158,7 @@ class MonitorApp(App):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "command-input":
             return
-        # STORY-702: a real subprocess call to the actual `scalene` CLI — never
+        # STORY-702: a real subprocess call to the actual `scg` CLI — never
         # a reimplementation, so this can't bypass onboard.py's safety gates.
         ok, output = apply_onboard_command(event.value)
         status = self.query_one("#apply-status", Static)

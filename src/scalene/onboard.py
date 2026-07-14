@@ -1,4 +1,4 @@
-"""`scalene onboard` CLI (STORY-501): unblock a false-positive without hand-editing YAML.
+"""`scg onboard` CLI (STORY-501): unblock a false-positive without hand-editing YAML.
 
 Allowlist onboarding runs a secrets scan on the target file first; trust-list
 onboarding runs a reputation check on the target domain first. Both scans run
@@ -93,7 +93,7 @@ def onboard(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="scalene onboard")
+    parser = argparse.ArgumentParser(prog="scg onboard")
     parser.add_argument("--list-type", required=True, choices=list(_SECTION_BY_LIST_TYPE))
     parser.add_argument("--tool", required=True)
     parser.add_argument("--jsonpath", required=True)

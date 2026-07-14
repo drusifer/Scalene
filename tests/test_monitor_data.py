@@ -1,4 +1,4 @@
-"""Tests for the `scalene monitor` data layer (STORY-701/702)."""
+"""Tests for the `scg monitor` data layer (STORY-701/702)."""
 
 import json
 import tempfile
@@ -85,7 +85,7 @@ class TestAuditTail(unittest.TestCase):
                 "session_id": "s1",
                 "tool_name": "Bash",
                 "payload_field": "command",
-                "suggested_onboard_command": "scalene onboard ...",
+                "suggested_onboard_command": "scg onboard ...",
             }
         )
         tail = AuditTail(self.audit_log)
@@ -97,7 +97,7 @@ class TestAuditTail(unittest.TestCase):
                     session_id="s1",
                     tool_name="Bash",
                     payload_field="command",
-                    suggested_onboard_command="scalene onboard ...",
+                    suggested_onboard_command="scg onboard ...",
                 )
             ],
         )
@@ -112,7 +112,7 @@ class TestAuditTail(unittest.TestCase):
                 "session_id": "s1",
                 "tool_name": "Bash",
                 "payload_field": "command",
-                "suggested_onboard_command": "scalene onboard ...",
+                "suggested_onboard_command": "scg onboard ...",
             }
         )
         tail = AuditTail(self.audit_log)
@@ -155,17 +155,17 @@ class TestAuditTail(unittest.TestCase):
 class TestApplyOnboardCommand(unittest.TestCase):
     def test_splits_command_and_runs_it_as_a_subprocess(self):
         # STORY-702: never a reimplementation — must go through the real
-        # `scalene` CLI as an actual subprocess, not an in-process function call.
+        # `scg` CLI as an actual subprocess, not an in-process function call.
         with patch("scalene.monitor_data.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "Rule added: {...}"
             mock_run.return_value.stderr = ""
 
-            ok, output = apply_onboard_command("scalene onboard --list-type trust --tool Bash --target example.com")
+            ok, output = apply_onboard_command("scg onboard --list-type trust --tool Bash --target example.com")
 
         mock_run.assert_called_once()
         called_argv = mock_run.call_args.args[0]
-        self.assertEqual(called_argv, ["scalene", "onboard", "--list-type", "trust", "--tool", "Bash", "--target", "example.com"])
+        self.assertEqual(called_argv, ["scg", "onboard", "--list-type", "trust", "--tool", "Bash", "--target", "example.com"])
         self.assertTrue(ok)
         self.assertIn("Rule added", output)
 
@@ -175,7 +175,7 @@ class TestApplyOnboardCommand(unittest.TestCase):
             mock_run.return_value.stdout = ""
             mock_run.return_value.stderr = "Onboarding blocked: secrets check failed"
 
-            ok, output = apply_onboard_command("scalene onboard --list-type allowlist --tool Write --target x")
+            ok, output = apply_onboard_command("scg onboard --list-type allowlist --tool Write --target x")
 
         self.assertFalse(ok)
         self.assertIn("Onboarding blocked", output)
@@ -189,7 +189,7 @@ class TestApplyOnboardCommand(unittest.TestCase):
             policy_path = Path(tmp) / "scalene_policy.yaml"
 
             command = (
-                f"scalene onboard --list-type allowlist --tool Read "
+                f"scg onboard --list-type allowlist --tool Read "
                 f"--jsonpath $.file_path --pattern .* --target {target} "
                 f"--policy-path {policy_path}"
             )
@@ -206,7 +206,7 @@ class TestApplyOnboardCommand(unittest.TestCase):
             policy_path = Path(tmp) / "scalene_policy.yaml"
 
             command = (
-                f"scalene onboard --list-type allowlist --tool Write "
+                f"scg onboard --list-type allowlist --tool Write "
                 f"--jsonpath $.content --pattern .* --target {target} "
                 f"--policy-path {policy_path}"
             )
@@ -228,7 +228,7 @@ class TestApplyOnboardCommand(unittest.TestCase):
         # Morpheus's Phase 3 review finding: a real, easy-to-make typo while
         # hand-editing a target inline (an unbalanced quote) must not crash
         # the whole TUI via an uncaught shlex ValueError.
-        ok, output = apply_onboard_command('scalene onboard --target "unbalanced')
+        ok, output = apply_onboard_command('scg onboard --target "unbalanced')
         self.assertFalse(ok)
         self.assertTrue(output)  # some plain-language reason, not empty
 

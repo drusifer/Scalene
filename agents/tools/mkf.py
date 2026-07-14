@@ -21,6 +21,7 @@ TLDR:
 
 import os
 import re
+import shutil
 import sys
 import datetime
 import subprocess
@@ -104,8 +105,13 @@ def post_chat(message):
     if not CHAT_TOOL.exists():
         print(f'[mkf] chat tool not found at {CHAT_TOOL}', file=sys.stderr)
         return
+    # sys.executable can point into a venv that the target we just ran
+    # deleted (e.g. `make clean`) — re-resolve live rather than trusting the
+    # cached path, so posting the status doesn't crash after a successful
+    # clean.
+    python = sys.executable if os.path.exists(sys.executable) else (shutil.which('python3') or 'python3')
     subprocess.run(
-        [sys.executable, str(CHAT_TOOL), message, '--persona', 'make', '--cmd', 'build'],
+        [python, str(CHAT_TOOL), message, '--persona', 'make', '--cmd', 'build'],
         cwd=PROJECT_ROOT,
     )
 

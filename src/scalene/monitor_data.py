@@ -1,4 +1,4 @@
-"""Data layer for `scalene monitor` (STORY-701/702).
+"""Data layer for `scg monitor` (STORY-701/702).
 
 Reads `.scalene/audit.log` and `.scalene/state/*.json` as plain files via
 polling, not a filesystem-watch dependency (docs/ARCHITECTURE.md sec 11.1-
@@ -109,13 +109,13 @@ class AuditTail:
 
 def apply_onboard_command(command: str) -> tuple[bool, str]:
     """Runs an edited `suggested_onboard_command` (STORY-702) as a real
-    subprocess against the actual `scalene` CLI — never a reimplementation of
+    subprocess against the actual `scg` CLI — never a reimplementation of
     `onboard.py`'s logic, so the console can't accidentally bypass its real
     secrets-scan/reputation-check safety gates.
 
     Never raises: a user is expected to hand-edit this string (Morpheus's
     Phase 3 review finding), so malformed quoting (`shlex.split`'s
-    `ValueError`) and a missing/unreachable binary (`OSError`, e.g. `scalene`
+    `ValueError`) and a missing/unreachable binary (`OSError`, e.g. `scg`
     not on PATH) are both real, easy-to-hit cases — every other error
     boundary in this codebase returns a plain-language result instead of
     propagating an exception, and this one must too."""

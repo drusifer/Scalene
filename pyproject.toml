@@ -6,7 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "scalene-guard"
 version = "0.1.0"
 description = "Provenance-based DLP layer for AI coding agents"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [
+    { name = "drusifer" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+]
 dependencies = [
     "pyyaml>=6.0",
     "jsonpath-ng>=1.6",
@@ -14,8 +26,12 @@ dependencies = [
     "detect-secrets>=1.5.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/drusifer/Scalene"
+Repository = "https://github.com/drusifer/Scalene"
+
 [project.optional-dependencies]
-# docs/ARCHITECTURE.md sec 11.1: the `scalene monitor` TUI's dependency, kept
+# docs/ARCHITECTURE.md sec 11.1: the `scg monitor` TUI's dependency, kept
 # out of the hard `dependencies` list so the hot-path hook adapter
 # (`scalene-guard`) never imports a TUI framework it doesn't use.
 monitor = ["textual>=8.0"]
@@ -24,8 +40,14 @@ monitor = ["textual>=8.0"]
 dev = ["jinja2>=3.0"]
 
 [project.scripts]
+# scalene-guard: the hook binary Claude Code invokes automatically.
+# scg ("scalene guard control"): the developer-facing CLI (onboard,
+# install-hooks, monitor). Deliberately not named "scalene" — that name
+# already belongs to the popular CPU/GPU/memory profiler package, which
+# also installs a "scalene" console script; reusing it would silently
+# collide if both packages are ever installed in the same environment.
 scalene-guard = "scalene.cli:main"
-scalene = "scalene.main_cli:main"
+scg = "scalene.main_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

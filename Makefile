@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -29,6 +29,21 @@ setup: ## Create project venv and install dependencies (editable install)
 	@./.venv/bin/pip install -q -e ".[monitor,dev]"
 	@$(MAKE) MKF_ACTIVE=1 install-hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
+
+clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info) — leaves build/ (mkf's own logs) alone
+	@rm -rf .venv dist src/*.egg-info *.egg-info
+	@echo "Removed .venv, dist/, and egg-info."
+
+build: ## Build sdist + wheel into dist/ for distribution (usage: make setup first)
+	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+	@.venv/bin/pip install -q build
+	@rm -rf dist
+	@.venv/bin/python -m build
+
+# publish is defined only in the else block below (bypass target, like demo/
+# help/chat) — it shells out to twine, which prompts for credentials
+# interactively; routing that through mkf's output capture would break the
+# prompt.
 
 judge-trace: ## Annotated tool-use trace from real Claude Code JSONL sessions (usage: make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md])
 	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
@@ -44,8 +59,8 @@ install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-com
 	fi
 
 install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json PreToolUse/PostToolUse hooks (default TARGET=.)
-	@if [ ! -x .venv/bin/scalene ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
-	@.venv/bin/scalene install-hooks --settings-path "$(or $(TARGET),.)/.claude/settings.json"
+	@if [ ! -x .venv/bin/scg ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+	@.venv/bin/scg install-hooks --settings-path "$(or $(TARGET),.)/.claude/settings.json"
 
 test: ## Run unit tests
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests; \
@@ -189,7 +204,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat demo test setup install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -247,6 +262,17 @@ test: ## Run unit tests
 
 setup: ## Create project venv and install dependencies (editable install)
 	@./agents/tools/mkf.py $(V) $@
+
+clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info)
+	@./agents/tools/mkf.py $(V) $@
+
+build: ## Build sdist + wheel into dist/ for distribution (usage: make setup first)
+	@./agents/tools/mkf.py $(V) $@
+
+publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI credentials/token) — interactive, bypasses mkf
+	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
+	@.venv/bin/pip install -q twine
+	@.venv/bin/python -m twine upload dist/*
 
 install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@./agents/tools/mkf.py $(V) $@

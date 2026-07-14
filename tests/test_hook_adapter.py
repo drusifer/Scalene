@@ -239,7 +239,7 @@ class TestPreToolUse(unittest.TestCase):
                 state_dir=state_dir,
             )
             message = result["systemMessage"]
-            self.assertIn("scalene onboard", message)
+            self.assertIn("scg onboard", message)
             self.assertIn("--tool Bash", message)
             self.assertIn("$.command", message)
 
@@ -307,7 +307,7 @@ class TestPreToolUse(unittest.TestCase):
             )
             entry = json.loads(audit_log.read_text().strip().splitlines()[-1])
             self.assertIn("suggested_onboard_command", entry)
-            self.assertIn("scalene onboard", entry["suggested_onboard_command"])
+            self.assertIn("scg onboard", entry["suggested_onboard_command"])
 
 
 class TestPostToolUse(unittest.TestCase):

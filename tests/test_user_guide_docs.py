@@ -30,7 +30,7 @@ class TestUserGuideDocs(unittest.TestCase):
         self.assertTrue(USER_GUIDE_DOC.exists())
 
     def test_documents_all_four_commands(self):
-        for term in ("scalene-guard", "scalene onboard", "scalene install-hooks", "scalene monitor"):
+        for term in ("scalene-guard", "scg onboard", "scg install-hooks", "scg monitor"):
             self.assertIn(term, self.text)
 
     def test_documents_troubleshooting_and_fail_safe(self):

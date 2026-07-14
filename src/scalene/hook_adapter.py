@@ -69,7 +69,7 @@ def _append_audit_log(entry: dict[str, Any], audit_log_path: Path) -> None:
 
 
 def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> str:
-    """Build a ready-to-run `scalene onboard` command for the exact call that
+    """Build a ready-to-run `scg onboard` command for the exact call that
     was just masked (Smith UX consult, 2026-07-09) — a trust-list rule, since
     that's what actually exempts a future identical call from masking
     (PolicyConfig.evaluate's trusted_sources_list feeds MatchResult.is_trusted,
@@ -79,7 +79,7 @@ def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> 
     jsonpath = f"$.{payload_field}"
     pattern = f"^{re.escape(str(value))}$"
     return (
-        "scalene onboard --list-type trust "
+        "scg onboard --list-type trust "
         f"--tool {shlex.quote(tool_name)} "
         f"--jsonpath {shlex.quote(jsonpath)} "
         f"--pattern {shlex.quote(pattern)} "
@@ -147,7 +147,7 @@ def pre_tool_use(
     updated_input = engine.apply_mask(tool_input, payload_field)
 
     # Every mask is recorded here, every time — this is the durable record
-    # `scalene monitor` and onboarding read from, distinct from the
+    # `scg monitor` and onboarding read from, distinct from the
     # transcript notification below.
     _append_audit_log(
         {

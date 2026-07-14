@@ -21,6 +21,7 @@ class TestGettingStartedDocs(unittest.TestCase):
         text = GETTING_STARTED_DOC.read_text()
         for term in (
             "scalene-guard",
+            "pip install scalene-guard",
             "PreToolUse",
             "PostToolUse",
             "MASKED_BY_POLICY_PROVENANCE_GUARD",

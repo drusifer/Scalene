@@ -1,4 +1,4 @@
-"""Tests for the `scalene onboard` CLI/library function (STORY-501)."""
+"""Tests for the `scg onboard` CLI/library function (STORY-501)."""
 
 import unittest
 from pathlib import Path

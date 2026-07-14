@@ -1,4 +1,4 @@
-"""`scalene install-hooks`: wire scalene-guard into a project's
+"""`scg install-hooks`: wire scalene-guard into a project's
 `.claude/settings.json` PreToolUse/PostToolUse hooks (docs/SETUP.md).
 
 Merges non-destructively: existing settings, other tool matchers, and other
@@ -55,7 +55,7 @@ def install_hooks(settings_path: Path = DEFAULT_SETTINGS_PATH) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="scalene install-hooks")
+    parser = argparse.ArgumentParser(prog="scg install-hooks")
     parser.add_argument("--settings-path", default=str(DEFAULT_SETTINGS_PATH))
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 

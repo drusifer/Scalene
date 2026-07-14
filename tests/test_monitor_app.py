@@ -1,4 +1,4 @@
-"""Integration tests for the `scalene monitor` TUI (STORY-701/702), using
+"""Integration tests for the `scg monitor` TUI (STORY-701/702), using
 Textual's built-in headless test harness (`App.run_test()` / `Pilot`) rather
 than a real terminal or hand-rolled mocking."""
 
@@ -28,7 +28,7 @@ def _append_mask_event(audit_log: Path, session_id: str, tool_name: str = "Bash"
                     "session_id": session_id,
                     "tool_name": tool_name,
                     "payload_field": "command",
-                    "suggested_onboard_command": "scalene onboard ...",
+                    "suggested_onboard_command": "scg onboard ...",
                 }
             )
             + "\n"
@@ -169,7 +169,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
 
             command_input = app.query_one("#command-input", Input)
-            self.assertEqual(command_input.value, "scalene onboard ...")
+            self.assertEqual(command_input.value, "scg onboard ...")
             self.assertFalse(command_input.disabled)
 
     async def test_apply_runs_the_edited_command_and_reports_success(self):
@@ -190,11 +190,11 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
 
                 command_input = app.query_one("#command-input", Input)
-                command_input.value = "scalene onboard --list-type trust --tool Bash --target example.com"
+                command_input.value = "scg onboard --list-type trust --tool Bash --target example.com"
                 await pilot.press("enter")
                 await pilot.pause()
 
-                mock_apply.assert_called_once_with("scalene onboard --list-type trust --tool Bash --target example.com")
+                mock_apply.assert_called_once_with("scg onboard --list-type trust --tool Bash --target example.com")
                 status = app.query_one("#apply-status")
                 self.assertIn("Rule added", str(status.render()))
 
