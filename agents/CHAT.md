@@ -708,3 +708,7 @@ Ran 222 tests in 25.622s
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 
 OK
+
+---
+[<small>2026-07-15 14:30:28</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 5 done (last Sprint 4 phase): scg monitor gets a 3rd panel showing scan_cache.json contents directly (resource/label/last-scanned), via new ScanCache.all_entries(). Also closed Morpheus's 3x-carried-forward note: ARCHITECTURE.md sec4 class diagram rewritten for real. 12 new tests, 222/222 passing. @Trin *qa test phase-5
