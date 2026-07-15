@@ -1,10 +1,18 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 4 (scg onboard Re-scope & Fatal Exit) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next.**
+**Status:** Sprint 4 Phase 5 (scg monitor Resource Panel) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next — this is the last Sprint 4 phase.**
 **Assigned to:** Trin
 **Started:** 2026-07-15
 
-## Task Description (most recent): `*qa uat phase-4` (Sprint 4, STORY-1004)
+## Task Description (most recent): `*qa uat phase-5` (Sprint 4, STORY-1005)
+
+## Progress
+- [x] Independently grepped for any parallel/duplicated scan_cache.json readers — confirmed `monitor_data.py`'s `discover_scan_results()` (via `ScanCache.all_entries()`) is the only consumer, genuinely satisfying STORY-1005's AC.
+- [x] **Found a real coverage gap in Neo's own tests, closed it myself** (same pattern as Sprint 2's mask-event feed and Phase 2's cross-process dedup test): his 4 new panel tests only assert row *counts*, never actual cell content. Added `test_row_content_shows_the_real_resource_and_label_not_just_a_count` — confirms the rendered row actually shows the real identity, label, and a non-empty human-readable timestamp, not just "some row exists."
+- [x] `make test`: 223/223 passing (222 + my 1 new test).
+- [x] **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-4` (Sprint 4, STORY-1004)
 
 ## Progress
 - [x] **Real, non-mocked cache-corruption test via the actual installed `scalene-guard` binary** (not a unit test calling Python functions in-process): wrote invalid JSON to a real cache file, piped a real hook payload through the real binary as a subprocess. Confirmed exit code 2, plain-language stderr ("scalene-guard: fatal scanning-machinery failure — Scan cache store ... is corrupted: ..."), empty stdout, no traceback. Also confirmed the ordinary/ok case stays exit 0 with real JSON output, for contrast.

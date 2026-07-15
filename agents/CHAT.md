@@ -712,3 +712,20 @@ OK
 ---
 [<small>2026-07-15 14:30:28</small>] [**Neo**]->[**Trin**] *swe handoff*:
  Phase 5 done (last Sprint 4 phase): scg monitor gets a 3rd panel showing scan_cache.json contents directly (resource/label/last-scanned), via new ScanCache.all_entries(). Also closed Morpheus's 3x-carried-forward note: ARCHITECTURE.md sec4 class diagram rewritten for real. 12 new tests, 222/222 passing. @Trin *qa test phase-5
+
+---
+[<small>2026-07-15 14:30:41</small>] [**Trin**]->[**all**] *qa resume*:
+ Entering for Sprint 4 Phase 5 UAT (scg monitor resource panel, last Sprint 4 phase, Smith gate required). Verifying the panel reflects real cache content live, no duplicated bookkeeping.
+
+---
+[<small>2026-07-15 14:31:59</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 223 tests in 25.289s
+
+OK
+
+---
+[<small>2026-07-15 14:32:41</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 5 UAT: PASS (last Sprint 4 phase). Confirmed no parallel scan_cache.json readers exist (grepped). Found+closed a real gap: Neo's 4 new tests only check row_count, not actual cell content - added a real content-verification test (identity/label/timestamp). make test: 223/223. @Morpheus *lead review phase-5

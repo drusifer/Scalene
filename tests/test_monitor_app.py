@@ -362,6 +362,26 @@ class TestMonitorAppScanResultsPanel(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(table.row_count, 1)
 
+    async def test_row_content_shows_the_real_resource_and_label_not_just_a_count(self):
+        # Trin's UAT addition: Neo's own tests only assert row *counts* for
+        # this panel (same class of gap Trin found+closed for the mask-event
+        # feed back in Sprint 2) -- verifying actual cell content here.
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource, ScanResult
+
+        ScanCache(self.cache_path).put(
+            Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
+            ScanResult(label="trusted"),
+        )
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            table = app.query_one("#scan-results", DataTable)
+            row = table.get_row_at(0)
+            self.assertEqual(row[0], "internal.example.com")
+            self.assertEqual(row[1], "trusted")
+            self.assertTrue(row[2])  # a non-empty, human-readable timestamp string
+
     async def test_in_flight_reservation_does_not_appear_as_a_result(self):
         from scalene.scan_cache import ScanCache
         from scalene.scanner import Resource
