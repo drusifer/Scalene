@@ -1,17 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-Phase 3 gate approved, handed to Neo for Phase 4. My next involvement is Phase 4's mandatory gate (`scg onboard` re-scope + fatal-exit handling).
+Phase 4 gate approved, handed to Neo for Phase 5. My next involvement is Phase 5's mandatory gate (`scg monitor` resource panel).
 
 ## Waiting On
-Neo (Phase 4 impl) → Trin (UAT) → Morpheus (review) → me (gate, required).
+Neo (Phase 5 impl) → Trin (UAT) → Morpheus (review) → me (gate, required).
 
 ## Planned Work
-- [ ] Phase 4 gate: **the onboard-suggestion regression must actually be closed by this phase** — confirm `tests/test_onboard_suggestion_e2e.py` is un-skipped and genuinely passing again, not just that `scg onboard`'s CLI got new flags. This is the direct payoff of accepting the Phase 3 window; if it's not closed here, escalate immediately rather than letting it slide to Phase 5.
-- [ ] Personally verify (not assume) what a non-zero `scalene-guard` exit actually does in a real Claude Code session — same standard as the earlier schema-fix work, this is explicitly flagged as unverified-until-checked in the architecture.
-- [ ] Confirm the fatal-exit message is genuinely plain-language (no raw traceback) for both failure modes (cache-store corruption, scanner crash).
-- [ ] Phase 5 gate: confirm `scg monitor`'s new resource panel reads clearly, no jargon, consistent with the existing Sessions/Mask-events panels' style.
+- [ ] Phase 5 gate: confirm `scg monitor`'s new resource panel reads clearly, no jargon, consistent with the existing Sessions/Mask-events panels' style — same bar as always.
+- [ ] Low-priority, non-blocking, carried from Phase 4: the fatal-exit message's tail embeds a raw JSON-parser error string (not a traceback, but not fully plain-language either); the onboard success message shows the internal `scanner_name:identity` cache-key format. Neither urgent — revisit only if there's a natural polish pass.
 - [ ] Sprint 3's Phase 3 demo gate precedent still applies whenever Sprint 3 is formally closed (retro not yet done) — not urgent, just not forgotten.
+- [ ] Sprint 4 close (once Phase 5 clears): end-to-end user testing across the whole sprint (`*user test` + `*user feedback`), then the all-persona retro.
 
 ---
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-15*

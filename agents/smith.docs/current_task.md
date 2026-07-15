@@ -1,10 +1,17 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 3 gate: APPROVED. Handed to Neo for Phase 4.
+**Status:** Sprint 4 Phase 4 gate: APPROVED. Handed to Neo for Phase 5.
 **Assigned to:** Smith
 **Started:** 2026-07-15
 
-## Task Description (most recent): Sprint 4 Phase 3 gate — Hook Integration & First-Sighting Messaging (`*user test phase-3`)
+## Task Description (most recent): Sprint 4 Phase 4 gate — scg onboard Re-scope & Fatal Exit (`*user test phase-4`)
+My own checklist for this gate (onboard-suggestion loop closed, exit code verified for real, fatal message plain-language) all confirmed by Neo/Trin/Morpheus's real, non-mocked verification — independently re-ran both myself: corrupted a real cache, confirmed exit 2 + the message "scalene-guard: fatal scanning-machinery failure — Scan cache store scan_cache.json is corrupted: ..."; ran `scg onboard --target https://internal-tool.example.com` for real, got "Pre-seeded the scan cache: reputation:internal-tool.example.com -> trusted".
+
+2 non-blocking polish notes, not worth a fix round: (1) the fatal-exit message's tail embeds the raw JSON-parser error string — not a full traceback (satisfies the letter of the AC), and arguably useful diagnostic detail for this rare, developer-only failure path, but not fully "plain language" either; (2) the onboard success message shows the internal `scanner_name:identity` cache-key format rather than a more human phrasing. Neither affects the routine, high-frequency mask/block messages, which is where I've been most protective all sprint — those already read cleanly (confirmed at Phase 3's gate).
+
+**Verdict: APPROVED.** Handed to Neo for Phase 5 (`scg monitor` resource panel).
+
+## Task Description (prior): Sprint 4 Phase 3 gate — Hook Integration & First-Sighting Messaging (`*user test phase-3`)
 My own Gate 1 note ("first-sighting friction needs a 'not yet verified' message, not generic untrusted") lands correctly. Ran a real scenario myself (ordinary file happens to contain something secret-shaped, then a brand-new SaaS destination): the message reads "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. This destination has not yet been verified — Scalene defaults to caution until a background scan completes." — plain-language, names the concrete finding, correctly distinct from a known-bad destination, gives an actionable next step. Friction is tolerable, not overstated.
 
 **The onboard-suggestion regression** (Neo found it, Trin independently reproduced it, Morpheus gave me a recommendation without deciding it himself): the suggested `scg onboard` command no longer actually un-masks a future identical call until Phase 4 re-scopes it — confirmed real by two independent people, not assumed. **User's explicit decision: accept the window, proceed to Phase 4** (Phase 4 was already next in the plan and closes this gap directly — no separate stopgap message needed). Approving on that basis.

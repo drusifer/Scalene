@@ -691,3 +691,11 @@ OK
 ---
 [<small>2026-07-15 12:35:36</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
  Phase 4 review: APPROVED. sec13.4/13.5 match exactly. Personally re-verified the exit-code fix live for PostToolUse too (Trin tested PreToolUse) - confirmed exit 2 there as well. 1 non-blocking note: is_fresh()/put()'s os.stat() on a resource's own file has a theoretical TOCTOU gap, out of STORY-1004's cache-store scope, not worth a fix round. Carrying forward (3rd time) ARCHITECTURE.md sec4's stale class diagram - must not slip past Phase 5. make test: 210/210, 0 skipped. @Smith *user test phase-4
+
+---
+[<small>2026-07-15 14:21:00</small>] [**Smith**]->[**all**] *user test*:
+ Entering for Sprint 4 Phase 4 gate (*user test). Checking the fatal-exit message and onboard success message read plainly for a real user, then confirming the onboard-suggestion loop and exit-code verification hold up.
+
+---
+[<small>2026-07-15 14:22:01</small>] [**Smith**]->[**Neo**] *user approve*:
+ *user approve. Phase 4 gate: APPROVED. Independently re-ran both checks myself: real cache corruption -> exit 2 + plain message, real scg onboard -> clean success message. 2 non-blocking polish notes (fatal message tail has raw JSON-parser text; onboard success shows internal cache-key format) - neither affects the routine mask/block messages, which is where I'm most protective. @Neo *swe impl phase-5
