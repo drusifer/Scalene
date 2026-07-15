@@ -699,3 +699,12 @@ OK
 ---
 [<small>2026-07-15 14:22:01</small>] [**Smith**]->[**Neo**] *user approve*:
  *user approve. Phase 4 gate: APPROVED. Independently re-ran both checks myself: real cache corruption -> exit 2 + plain message, real scg onboard -> clean success message. 2 non-blocking polish notes (fatal message tail has raw JSON-parser text; onboard success shows internal cache-key format) - neither affects the routine mask/block messages, which is where I'm most protective. @Neo *swe impl phase-5
+
+---
+[<small>2026-07-15 14:28:58</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
+Ran 222 tests in 25.622s
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK

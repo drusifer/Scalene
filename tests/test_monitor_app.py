@@ -41,12 +41,13 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         self.state_dir = Path(self._tmp.name) / "state"
         self.state_dir.mkdir()
         self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
 
     def tearDown(self):
         self._tmp.cleanup()
 
     async def test_shows_no_sessions_message_when_none_exist(self):
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test():
             widget = app.query_one("#no-sessions")
             self.assertIn("visible", widget.classes)
@@ -54,7 +55,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
 
     async def test_discovers_sessions_and_hides_empty_message(self):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=False)
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test():
             widget = app.query_one("#no-sessions")
             self.assertNotIn("visible", widget.classes)
@@ -66,7 +67,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
         _append_mask_event(self.audit_log, "other-session", tool_name="Write")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -83,7 +84,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _append_mask_event(self.audit_log, "s1", tool_name="Write")
         _append_mask_event(self.audit_log, "s1", tool_name="Edit")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -97,7 +98,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _append_mask_event(self.audit_log, "s1")
         _append_mask_event(self.audit_log, "other-session")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -119,7 +120,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s2", sensitive=False, untrusted=False)
         _write_state(self.state_dir, "s3", sensitive=False, untrusted=False)
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             table = app.query_one("#sessions", DataTable)
             table.move_cursor(row=2)
@@ -143,7 +144,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         with self.audit_log.open("a") as f:
             f.write(json.dumps({"event": "onboard", "rule": {}}) + "\n")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -156,7 +157,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -176,7 +177,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         with patch("scalene.monitor_app.apply_onboard_command", return_value=(True, "Rule added: {...}")) as mock_apply:
             async with app.run_test() as pilot:
                 app.poll_data()
@@ -202,7 +203,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         with patch("scalene.monitor_app.apply_onboard_command", return_value=(False, "Onboarding blocked: secrets check failed")):
             async with app.run_test() as pilot:
                 app.poll_data()
@@ -224,7 +225,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         with patch("scalene.monitor_app.apply_onboard_command") as mock_apply:
             async with app.run_test() as pilot:
                 app.poll_data()
@@ -256,7 +257,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
@@ -280,7 +281,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         # whole test run. Reproduce deterministically (no real-time race
         # needed) by calling poll_data() after the app context has exited.
         _write_state(self.state_dir, "s1", sensitive=False, untrusted=False)
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test():
             pass
         app.poll_data()  # must not raise NoMatches after teardown
@@ -289,7 +290,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         _write_state(self.state_dir, "s1", sensitive=True, untrusted=True)
         _append_mask_event(self.audit_log, "s1", tool_name="Bash")
 
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log)
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         with patch("scalene.monitor_app.apply_onboard_command", return_value=(True, "ok")):
             async with app.run_test() as pilot:
                 app.poll_data()
@@ -306,6 +307,71 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
 
                 self.assertIsNotNone(app.focused)
                 self.assertIs(app.focused, events_table)
+
+
+class TestMonitorAppScanResultsPanel(unittest.IsolatedAsyncioTestCase):
+    """STORY-1005: the resource cache panel reads .scalene/scan_cache.json
+    directly, no separate/duplicated bookkeeping."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    async def test_empty_cache_shows_no_rows(self):
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            table = app.query_one("#scan-results", DataTable)
+            self.assertEqual(table.row_count, 0)
+
+    async def test_shows_real_cache_entries(self):
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource, ScanResult
+
+        cache = ScanCache(self.cache_path)
+        cache.put(Resource(kind="file", identity="/abs/readme.md", scanner_name="secrets"), ScanResult(label="public"))
+        cache.put(
+            Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
+            ScanResult(label="trusted"),
+        )
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            table = app.query_one("#scan-results", DataTable)
+            self.assertEqual(table.row_count, 2)
+
+    async def test_new_scan_appears_after_a_poll(self):
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource, ScanResult
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            table = app.query_one("#scan-results", DataTable)
+            self.assertEqual(table.row_count, 0)
+
+            ScanCache(self.cache_path).put(
+                Resource(kind="file", identity="/abs/new.md", scanner_name="secrets"), ScanResult(label="public")
+            )
+            app.poll_data()
+            await pilot.pause()
+
+            self.assertEqual(table.row_count, 1)
+
+    async def test_in_flight_reservation_does_not_appear_as_a_result(self):
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource
+
+        ScanCache(self.cache_path).try_reserve(Resource(kind="url", identity="pending.example.com", scanner_name="reputation"))
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            table = app.query_one("#scan-results", DataTable)
+            self.assertEqual(table.row_count, 0)
 
 
 if __name__ == "__main__":

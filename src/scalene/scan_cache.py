@@ -121,6 +121,13 @@ class ScanCache:
             data[_cache_key(resource)] = entry
             self._write(data)
 
+    def all_entries(self) -> dict:
+        """All raw cache entries, keyed by f"{scanner_name}:{identity}"
+        (STORY-1005: `scg monitor`'s resource panel reads this directly, not
+        a parallel summary that could drift from the real store)."""
+        with self._locked():
+            return self._read()
+
     def is_fresh(self, resource: Resource, entry: CacheEntry) -> bool:
         if time.time() - entry.scanned_at >= FRESHNESS_SECONDS:
             return False

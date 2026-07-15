@@ -50,46 +50,80 @@ classDiagram
         +load(session_id) TaintState
         +save()
     }
-    class PolicyRule {
-        +str tool
-        +str jsonpath
-        +str pattern
-        +str target
-        +str description
-        +scheme str
-    }
     class PolicyConfig {
         +bool sensitive_by_default
         +bool untrusted_by_default
         +str mode
-        +list~PolicyRule~ allowlist
         +from_yaml(path) PolicyConfig
-        +evaluate(tool, args) MatchResult
     }
     class MatchResult {
         +bool is_sensitive
         +bool is_trusted
         +bool fail_safe_triggered
     }
+    class ResourceVerifier {
+        +evaluate(tool, args, config, cache) MatchResult
+    }
+    class Scanner {
+        <<interface>>
+        +str name
+        +identify(tool, args) list~Resource~
+        +scan(resource) ScanResult
+    }
+    class FileScanner {
+        +str name = "secrets"
+    }
+    class URLScanner {
+        +str name = "reputation"
+    }
+    class Resource {
+        +str kind
+        +str identity
+        +str scanner_name
+    }
+    class ScanResult {
+        +str label
+        +str reason
+    }
+    class ScannerMachineryError {
+        <<exception>>
+    }
+    class ScanCache {
+        +get(resource) CacheEntry
+        +put(resource, result)
+        +try_reserve(resource) bool
+        +is_fresh(resource, entry) bool
+        +all_entries() dict
+    }
+    class CacheEntry {
+        +str label
+        +str reason
+        +float scanned_at
+        +float mtime
+    }
+    class ScanCacheError {
+        <<exception>>
+    }
     class MaskingEngine {
         +decide(taint, match, value, mode) Decision
         +apply_mask(args, payload_field) dict
     }
-    class ReputationChecker {
-        <<interface>>
-        +check(target) ReputationResult
-    }
-    class LocalHeuristicChecker {
-        +check(target) ReputationResult
-    }
-    ReputationChecker <|.. LocalHeuristicChecker
-    PolicyConfig --> PolicyRule
-    PolicyConfig --> MatchResult
+    Scanner <|.. FileScanner
+    Scanner <|.. URLScanner
+    Scanner --> Resource
+    Scanner --> ScanResult
+    Scanner ..> ScannerMachineryError
+    ResourceVerifier --> Scanner
+    ResourceVerifier --> ScanCache
+    ResourceVerifier --> PolicyConfig
+    ResourceVerifier --> MatchResult
+    ScanCache --> CacheEntry
+    ScanCache ..> ScanCacheError
     MaskingEngine --> MatchResult
     MaskingEngine --> TaintState
 ```
 
-**Schema simplification (2026-07-14, user direction):** `PolicyConfig` originally had two separate rule lists — `non_sensitive_allowlist` (file-based, fed `is_sensitive`) and `trusted_sources_list` (domain-based, fed `is_trusted`) — mirroring BRD §2.3.2's original two-section schema, with `scg onboard` requiring an explicit `--list-type {allowlist,trust}` flag to pick one. Consolidated into a single `allowlist`, with each `PolicyRule` carrying a `target` URI whose scheme *is* the list type: `file://` targets were secrets-scanned and feed `is_sensitive`; `http(s)://` targets were reputation-checked and feed `is_trusted` (`evaluate()` partitions by `PolicyRule.scheme`, §5's sequence diagram shows the same routing on the onboarding side). One CLI flag (`--target`) replaces two (`--list-type` + `--target`). `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
+**Full replacement, not incremental simplification (2026-07-15, Sprint 4 / E10, §13.1):** `PolicyConfig.allowlist`/`PolicyRule` (the "one unified allowlist keyed by target scheme" model, itself only one commit old) is removed entirely — the defect this epic exists to fix (a rule's one-time scan vouching for an unbounded future pattern match) is structural to pattern-matching itself, not something an incremental schema tweak could fix. `PolicyConfig` now only carries the sensitivity/trust defaults and `mode`; resource identification (`Scanner`/`FileScanner`/`URLScanner`) and verification (`ScanCache`, `ResourceVerifier.evaluate()`) replace rule-matching entirely, per §13. `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
 
 ## 5. Sequence & Interaction Flows
 

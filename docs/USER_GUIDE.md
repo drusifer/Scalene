@@ -49,7 +49,7 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 ### `scg monitor`
 
-Launches a live TUI over `.scalene/audit.log` and session taint state — see mask events as they happen and act on suggested rules without leaving the terminal. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
+Launches a live TUI over `.scalene/audit.log`, session taint state, and the resource cache — see mask events as they happen, act on suggested rules, and see what's actually in `.scalene/scan_cache.json` (resource, label, last-scanned time) without leaving the terminal. The resource panel reads the cache file directly — it's not a separate summary that could drift from what the live hook actually consults. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
 
 ## Onboarding workflow: the fast path
 

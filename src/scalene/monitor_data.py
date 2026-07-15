@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .hook_adapter import DEFAULT_AUDIT_LOG
+from .scan_cache import DEFAULT_CACHE_PATH, ScanCache, ScanCacheError
 from .taint_state import DEFAULT_STATE_DIR
 
 
@@ -57,6 +58,46 @@ def discover_sessions(state_dir: Path = DEFAULT_STATE_DIR) -> list[SessionInfo]:
         )
     sessions.sort(key=lambda s: s.updated_at, reverse=True)
     return sessions
+
+
+@dataclass(frozen=True)
+class ScanResultInfo:
+    identity: str
+    scanner_name: str
+    label: str
+    reason: str
+    scanned_at: float
+
+
+def discover_scan_results(cache_path: Path = DEFAULT_CACHE_PATH) -> list[ScanResultInfo]:
+    """Recent-first list of completed scan results (STORY-1005). Reads
+    `.scalene/scan_cache.json` directly via `ScanCache.all_entries()` -- the
+    same store the live hook consults, not a parallel summary that could
+    drift from it. A resource with only an in-flight `pending_since`
+    reservation (no scan finished yet) isn't a real result and is excluded.
+    A corrupted cache store fails safe to an empty list rather than raising
+    -- this is a read-only monitoring view, not the fatal-exit hook path."""
+    try:
+        raw_entries = ScanCache(cache_path).all_entries()
+    except ScanCacheError:
+        return []
+
+    results = []
+    for key, entry in raw_entries.items():
+        if "label" not in entry:
+            continue
+        scanner_name, _, identity = key.partition(":")
+        results.append(
+            ScanResultInfo(
+                identity=identity,
+                scanner_name=scanner_name,
+                label=entry["label"],
+                reason=entry.get("reason", ""),
+                scanned_at=entry.get("scanned_at", 0.0),
+            )
+        )
+    results.sort(key=lambda r: r.scanned_at, reverse=True)
+    return results
 
 
 class AuditTail:

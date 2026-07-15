@@ -78,6 +78,25 @@ class TestScanCacheGetPut(unittest.TestCase):
             self.assertEqual(cache.get(file_resource).label, "public")
             self.assertEqual(cache.get(url_resource).label, "untrusted")
 
+    def test_all_entries_returns_every_raw_entry(self):
+        # STORY-1005: scg monitor's resource panel reads this directly.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            file_resource = Resource(kind="file", identity="/abs/a.txt", scanner_name="secrets")
+            url_resource = Resource(kind="url", identity="internal.example.com", scanner_name="reputation")
+            cache.put(file_resource, ScanResult(label="public"))
+            cache.put(url_resource, ScanResult(label="trusted"))
+
+            entries = cache.all_entries()
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(entries["secrets:/abs/a.txt"]["label"], "public")
+            self.assertEqual(entries["reputation:internal.example.com"]["label"], "trusted")
+
+    def test_all_entries_on_empty_cache_returns_empty_dict(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            self.assertEqual(cache.all_entries(), {})
+
     def test_cache_survives_reload_from_disk(self):
         with TemporaryDirectory() as tmp:
             cache_path = Path(tmp) / "scan_cache.json"

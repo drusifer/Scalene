@@ -6,7 +6,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scalene.monitor_data import AuditTail, MaskEvent, SessionInfo, apply_onboard_command, discover_sessions
+from scalene.monitor_data import (
+    AuditTail,
+    MaskEvent,
+    ScanResultInfo,
+    SessionInfo,
+    apply_onboard_command,
+    discover_scan_results,
+    discover_sessions,
+)
+from scalene.scan_cache import ScanCache
+from scalene.scanner import Resource, ScanResult
 
 
 class TestDiscoverSessions(unittest.TestCase):
@@ -57,6 +67,73 @@ class TestDiscoverSessions(unittest.TestCase):
         )
         sessions = discover_sessions(self.state_dir)
         self.assertEqual([s.session_id for s in sessions], ["good"])
+
+
+class TestDiscoverScanResults(unittest.TestCase):
+    """STORY-1005: scg monitor's resource panel reads .scalene/scan_cache.json
+    directly (via ScanCache.all_entries()), not a parallel summary that
+    could drift from the real store."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_no_cache_file_returns_empty(self):
+        self.assertEqual(discover_scan_results(self.cache_path), [])
+
+    def test_completed_scans_are_listed(self):
+        cache = ScanCache(self.cache_path)
+        cache.put(Resource(kind="file", identity="/abs/a.md", scanner_name="secrets"), ScanResult(label="public"))
+        cache.put(
+            Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
+            ScanResult(label="trusted"),
+        )
+
+        results = discover_scan_results(self.cache_path)
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(isinstance(r, ScanResultInfo) for r in results))
+        identities = {r.identity for r in results}
+        self.assertEqual(identities, {"/abs/a.md", "internal.example.com"})
+
+    def test_results_are_newest_first(self):
+        cache = ScanCache(self.cache_path)
+        cache.put(Resource(kind="file", identity="/abs/older.md", scanner_name="secrets"), ScanResult(label="public"))
+        import time
+
+        time.sleep(0.01)
+        cache.put(Resource(kind="file", identity="/abs/newer.md", scanner_name="secrets"), ScanResult(label="public"))
+
+        results = discover_scan_results(self.cache_path)
+        self.assertEqual([r.identity for r in results], ["/abs/newer.md", "/abs/older.md"])
+
+    def test_in_flight_reservations_without_a_completed_scan_are_excluded(self):
+        # A resource with only a pending_since reservation (no scan finished
+        # yet) isn't a real result -- must not show up as if it were one.
+        cache = ScanCache(self.cache_path)
+        resource = Resource(kind="url", identity="never-finished.example.com", scanner_name="reputation")
+        cache.try_reserve(resource)
+
+        results = discover_scan_results(self.cache_path)
+        self.assertEqual(results, [])
+
+    def test_corrupted_cache_returns_empty_not_raised(self):
+        # A live TUI must not crash on a broken cache store -- this is a
+        # read-only monitoring view, not the fatal-exit hook path.
+        self.cache_path.write_text("{not valid json")
+        self.assertEqual(discover_scan_results(self.cache_path), [])
+
+    def test_result_includes_reason_and_scanner_name(self):
+        cache = ScanCache(self.cache_path)
+        cache.put(
+            Resource(kind="url", identity="203.0.113.42", scanner_name="reputation"),
+            ScanResult(label="untrusted", reason="IP-literal targets are untrusted by default"),
+        )
+        results = discover_scan_results(self.cache_path)
+        self.assertEqual(results[0].scanner_name, "reputation")
+        self.assertIn("IP-literal", results[0].reason)
 
 
 class TestAuditTail(unittest.TestCase):

@@ -6,6 +6,7 @@ the optional `[monitor]` extra never touches the hot-path hook adapter
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -15,7 +16,8 @@ from textual.widgets import DataTable, Footer, Header, Input, Static
 from textual.widgets.data_table import RowDoesNotExist
 
 from .hook_adapter import DEFAULT_AUDIT_LOG
-from .monitor_data import AuditTail, MaskEvent, apply_onboard_command, discover_sessions
+from .monitor_data import AuditTail, MaskEvent, apply_onboard_command, discover_scan_results, discover_sessions
+from .scan_cache import DEFAULT_CACHE_PATH
 from .taint_state import DEFAULT_STATE_DIR
 
 # docs/ARCHITECTURE.md sec 11.2: poll, don't filesystem-watch.
@@ -41,10 +43,12 @@ class MonitorApp(App):
         self,
         state_dir: Path = DEFAULT_STATE_DIR,
         audit_log_path: Path = DEFAULT_AUDIT_LOG,
+        cache_path: Path = DEFAULT_CACHE_PATH,
     ) -> None:
         super().__init__()
         self._state_dir = state_dir
         self._tail = AuditTail(audit_log_path)
+        self._cache_path = cache_path
         self._events: list[MaskEvent] = []
         self._visible_events: list[MaskEvent] = []
         self.selected_session_id: str | None = None
@@ -60,6 +64,9 @@ class MonitorApp(App):
             with Vertical():
                 yield Static("Mask events (press 'a' to toggle all-sessions, Enter to edit+apply, Escape to dismiss)")
                 yield DataTable(id="events")
+            with Vertical():
+                yield Static("Resource cache (recently scanned files/hosts)")
+                yield DataTable(id="scan-results")
         yield Input(placeholder="Select a mask event to edit its onboard command...", id="command-input", disabled=True)
         yield Static("", id="apply-status")
         yield Footer()
@@ -73,7 +80,12 @@ class MonitorApp(App):
         events_table.add_columns("Session", "Tool", "Field", "Action")
         events_table.cursor_type = "row"
 
+        scan_results_table = self.query_one("#scan-results", DataTable)
+        scan_results_table.add_columns("Resource", "Label", "Last Scanned")
+        scan_results_table.cursor_type = "row"
+
         self.refresh_sessions()
+        self.refresh_scan_results()
         self.set_interval(POLL_INTERVAL_SECONDS, self.poll_data)
 
     def refresh_sessions(self) -> None:
@@ -111,8 +123,20 @@ class MonitorApp(App):
                 self._events.extend(new_events)
                 self.refresh_events()
             self.refresh_sessions()
+            self.refresh_scan_results()
         except NoMatches:
             pass
+
+    def refresh_scan_results(self) -> None:
+        # STORY-1005: reads .scalene/scan_cache.json directly (via
+        # discover_scan_results -> ScanCache.all_entries()) on every poll --
+        # no separate bookkeeping of its own to drift from the real store.
+        results = discover_scan_results(self._cache_path)
+        table = self.query_one("#scan-results", DataTable)
+        table.clear()
+        for r in results:
+            last_scanned = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.scanned_at))
+            table.add_row(r.identity, r.label, last_scanned)
 
     def refresh_events(self) -> None:
         table = self.query_one("#events", DataTable)
