@@ -1,10 +1,18 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 2 (Scan Cache Store) UAT: PASSED. Handed to Morpheus.
+**Status:** Sprint 4 Phase 3 (Hook Integration & First-Sighting Messaging) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next after Morpheus — must be told explicitly about the onboard-suggestion regression, not given a generic "Phase 3 done."**
 **Assigned to:** Trin
 **Started:** 2026-07-14
 
-## Task Description (most recent): `*qa uat phase-2` (Sprint 4, STORY-1003)
+## Task Description (most recent): `*qa uat phase-3` (Sprint 4, STORY-1002/1003)
+
+## Progress
+- [x] Independently grepped `src/scalene/` for `PolicyRule`/`allowlist` — confirmed the class and YAML rule-matching are genuinely gone from `policy_config.py`; remaining hits are `onboard.py` (still legitimately writes the YAML `allowlist` list — expected, unchanged until Phase 4) plus historical/explanatory docstring mentions, not live matching code.
+- [x] Verified the first-sighting message wording live (not just read the code): a never-before-seen destination produces "This destination has not yet been verified — Scalene defaults to caution..."; a cached, actually-verified-untrusted destination produces "This destination is known to be untrusted." — correctly distinct, matching Smith's Gate 1/2 note.
+- [x] Independently re-ran `tests/test_performance.py`'s both NFR tests myself: `NFR-Perf-Steady-State` (<15ms) and `NFR-Perf-FirstSighting` (<25ms/resource) both pass for real.
+- [x] **Independently confirmed the onboard-suggestion regression Neo flagged, rather than trusting the skip reason's claim**: bypassed the `@unittest.skip` decorator and ran the test body directly — reproduced the exact failure (rule written to `scalene_policy.yaml`, identical call still masked afterward with the correct "not yet verified" wording). Not exaggerated, not a false positive.
+- [x] `make test`: 200/200 passing, 1 documented skip (the confirmed regression above).
+- [x] **Verdict: PASS.** Carrying Neo's Smith-gate flag forward explicitly, independently verified as real — this must not become a generic "Phase 3 done, all green" handoff to Smith.
 
 ## Progress
 - [x] Read `scan_cache.py` + `cache_refresh_worker.py` in full against §13.3 and task.md's explicit Phase 2 exit-criteria addition (real repeated-invocation test proving no orphaned processes)
