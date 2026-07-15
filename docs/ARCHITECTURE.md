@@ -62,6 +62,7 @@ classDiagram
         +bool fail_safe_triggered
     }
     class ResourceVerifier {
+        <<module: resource_verifier.py>>
         +evaluate(tool, args, config, cache) MatchResult
     }
     class Scanner {

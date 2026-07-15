@@ -1,9 +1,19 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 4 review: APPROVED. Handing to Smith for the mandatory gate.
+**Status:** Sprint 4 Phase 5 review: APPROVED. Handing to Smith for the mandatory gate — **last Sprint 4 phase**, clears into Stage 3 close after this.
 **Assigned to:** N/A
 **Started:** 2026-07-15
 **Completed:** 2026-07-15
+
+## Task Description (most recent): `*lead review phase-5` (Sprint 4, STORY-1005)
+
+## Progress
+- [x] Read `monitor_data.discover_scan_results()`/`monitor_app.py`'s new panel against §13.6 — matches exactly, reads the real cache store via `ScanCache.all_entries()`, no parallel bookkeeping
+- [x] Reviewed my own §4 class-diagram rewrite (Neo closed my 3x-carried-forward note this phase) for accuracy before considering it done: caught that I'd represented `resource_verifier.evaluate()` — a free function, not a class — as a plain pseudo-class box, which could mislead a reader into thinking a literal `class ResourceVerifier` exists. Fixed with a `<<module: resource_verifier.py>>` stereotype, consistent with the diagram's existing `<<interface>>`/`<<exception>>` stereotype usage.
+- [x] `make test`: 223/223 passing (unaffected by the doc fix, confirmed).
+- [x] **APPROVED.** Handing to Smith for the mandatory gate.
+
+## Task Description (prior): `*lead review phase-4`
 
 ## Task Description (most recent): `*lead review phase-4` (Sprint 4, STORY-1004)
 
