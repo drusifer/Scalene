@@ -1,13 +1,13 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 5 gate: BLOCKED pending fix. Filed `*user bug` to Trin.
+**Status:** Sprint 4 Phase 5 gate: APPROVED (after 1 fix round). Sprint 4 (E10) implementation is now complete — all 5 phases done. Moving to Stage 3 close.
 **Assigned to:** Smith
 **Started:** 2026-07-15
 
-## Task Description (most recent): Sprint 4 Phase 5 gate — scg monitor Resource Panel (`*user test phase-5`)
-Drove the real `MonitorApp` (not just Pilot row-count checks — a real rendered screenshot via `app.export_screenshot()` at a realistic 120-column width, with 3 real cache entries populated) to check the new panel's actual visual legibility, not just its structural correctness. **Found a real bug**: the "Last Scanned" column header truncates to " La" and its timestamp values render as an unreadable " 20" — the absolute `YYYY-MM-DD HH:MM:SS` format is too wide once a 3rd panel divides the same horizontal space the previous 2 panels had. This is real and reproducible at a common terminal width, not a narrow edge case. Filed as `*user bug`, routed to Trin for triage. Full: `agents/smith.docs/phase5_bug_last_scanned_truncation.md`.
+## Task Description (most recent): Sprint 4 Phase 5 gate — scg monitor Resource Panel (`*user test phase-5`), re-tested after fix
+Drove the real `MonitorApp` (not just Pilot row-count checks — a real rendered screenshot via `app.export_screenshot()` at a realistic 120-column width, with 3 real cache entries populated) to check the new panel's actual visual legibility, not just its structural correctness. **Found a real bug**: the "Last Scanned" column truncated to unreadable text once a 3rd panel divided the same horizontal space the previous 2 panels had. Filed as `*user bug`, routed to Trin for triage — the fix loop (Neo's first attempt failed, second succeeded, Trin/Morpheus both independently re-verified) resolved it correctly: re-ran the exact same real-screenshot check myself, "Last Scanned" and its values now render fully, no truncation. Full history: `agents/smith.docs/phase5_bug_last_scanned_truncation.md`.
 
-**Gate withheld pending fix** — this is the same "found a real bug during the gate, don't approve yet" pattern as Sprint 2 Phase 3's focus-loss bug.
+**Verdict: APPROVED.** This was the last Sprint 4 phase — Sprint 4 (E10) implementation is complete. Handing to Cypher/Mouse for Stage 3 close (Oracle groom → Smith end-to-end test → all-persona retro → Cypher launch).
 
 ## Task Description (prior): Sprint 4 Phase 4 gate — scg onboard Re-scope & Fatal Exit (`*user test phase-4`)
 My own checklist for this gate (onboard-suggestion loop closed, exit code verified for real, fatal message plain-language) all confirmed by Neo/Trin/Morpheus's real, non-mocked verification — independently re-ran both myself: corrupted a real cache, confirmed exit 2 + the message "scalene-guard: fatal scanning-machinery failure — Scan cache store scan_cache.json is corrupted: ..."; ran `scg onboard --target https://internal-tool.example.com` for real, got "Pre-seeded the scan cache: reputation:internal-tool.example.com -> trusted".
