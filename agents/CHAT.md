@@ -547,3 +547,22 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-14 20:01:55</small>] [**Neo**]->[**Trin**] *swe handoff*:
  Phase 1 done: src/scalene/scanner.py - Scanner protocol, Resource/ScanResult, FileScanner+URLScanner (both wrap existing secrets_scan.py/reputation.py unchanged via run_scanner), Bash command wired into both via generic fallback (no dedicated Bash scanner). 21 new tests, 174/174 total passing. Note for Phase 2: sec13.3's cache-key JSON example doesn't match its own key formula - flagged in next_steps.md. @Trin *qa test phase-1
+
+---
+[<small>2026-07-14 20:02:43</small>] [**Trin**]->[**all**] *qa resume*:
+ Entering for Sprint 4 Phase 1 UAT (Scanner protocol/FileScanner/URLScanner). Reading scanner.py + test_scanner.py, independently re-running suite via make test, checking against task.md's exit criteria before signoff.
+
+---
+[<small>2026-07-14 20:04:14</small>] [**Trin**]->[**Neo**] *qa finding*:
+ Phase 1 UAT found a real bug before running the suite: FileScanner's path fallback regex has no URL exclusion - it matches inside https:// URLs (e.g. WebFetch url='https://internal.example.com/reports' produces a bogus file Resource '//internal.example.com/reports'). Happens on EVERY WebFetch call, not just an edge case. @Neo *swe fix phase-1 url-path-collision
+
+---
+[<small>2026-07-14 20:05:32</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  target: https://reports.internal.example.com
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-14 20:06:18</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 1 UAT: PASS after 1 fix round. Verified Neo's fix live (repro now returns [], mixed real-path+URL case still resolves both correctly). make test: PASSED exit 0, 176/176 (23 in test_scanner.py, covers all built-in tool shapes + the URL/path collision regression). @Morpheus *lead review phase-1

@@ -1,9 +1,9 @@
 # Current Task
 
-**Status:** DONE — Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) implemented, awaiting Trin UAT + Morpheus review.
+**Status:** DONE — Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) implemented, Trin UAT PASSED (after 1 fix round), handed to Morpheus for review.
 **Assigned to:** Neo
 **Started:** 2026-07-14
-**Finished:** 2026-07-14
+**Finished:** 2026-07-14 (incl. 1 post-UAT fix round)
 
 ## Task Description: `*swe impl phase-1` (Sprint 4, STORY-1001/1002)
 Build `Scanner` protocol (`identify()`/`scan()`), `Resource`/`ScanResult` dataclasses, `FileScanner` (wraps existing `secrets_scan.py`), `URLScanner` (wraps existing `reputation.py`'s `LocalHeuristicChecker`), both with named-capture-based generic fallback detection, plus wiring `Bash`'s `command` string into both scanners' fallback (no dedicated Bash scanner type). Full spec: `docs/ARCHITECTURE.md` §13.2, task breakdown in `task.md` Sprint 4 Phase 1.
@@ -15,6 +15,7 @@ Build `Scanner` protocol (`identify()`/`scan()`), `Resource`/`ScanResult` datacl
 - [x] `SCANNERS` registry (`{"secrets": FileScanner(), "reputation": URLScanner()}`)
 - [x] `tests/test_scanner.py`: 21 new tests, TDD (confirmed red via `ModuleNotFoundError` before writing `scanner.py`)
 - [x] `make test` equivalent (`python -m unittest discover -s tests`): 174/174 passing, no regressions
+- [x] **Fix round (post-Trin-UAT)**: Trin found `FileScanner`'s path fallback matched inside URLs (bogus resource on every `WebFetch` call) — fixed via `_find_paths_excluding_urls` (span-exclusion, not lookbehind), 2 new regression tests, 176/176 total. Trin re-verified live, PASS, handed to Morpheus.
 
 ## Known gap to be aware of, not part of this task
 Sprint 3 Phase 3 (the demo) was implemented and handed to Trin for UAT, but Trin's UAT was never actually completed before this session moved into unrelated direct-request work (pip packaging, then the masking/hook-schema bug fixes that became Sprint 4). Sprint 3 was never formally closed (no retro, no `*pm launch`). Doesn't block Sprint 4 — different subsystem — but flag it if anyone asks "is Sprint 3 done."
