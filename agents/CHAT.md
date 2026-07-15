@@ -666,3 +666,20 @@ OK
 ---
 [<small>2026-07-15 12:30:05</small>] [**Neo**]->[**Trin**] *swe handoff*:
  Phase 4 done: scg onboard re-scoped (--target only), closes Phase 3 regression (e2e test un-skipped, passing). STORY-1004 fatal exit built for real. Exit code VERIFIED EMPIRICALLY via this repo's own live dogfooded hook + real Claude Code docs: only exit 2 blocks PreToolUse, changed from 1. 210/210, 0 skipped. Full: agents/neo.docs/phase4_handoff.md @Trin *qa test phase-4
+
+---
+[<small>2026-07-15 12:30:28</small>] [**Trin**]->[**all**] *qa resume*:
+ Entering for Sprint 4 Phase 4 UAT (scg onboard re-scope + fatal exit, largest remaining phase). Independently triggering real cache-corruption and real scanner-crash scenarios (not mocks), confirming the onboard-suggestion loop genuinely closes, and independently checking the exit-code claim.
+
+---
+[<small>2026-07-15 12:33:04</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 210 tests in 23.089s
+
+OK
+
+---
+[<small>2026-07-15 12:33:51</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 4 UAT: PASS. Real (non-mocked) verification via actual installed binaries: cache-corruption -> exit 2 + plain-language stderr + empty stdout, ordinary case stays exit 0. Independently confirmed ScannerMachineryError is genuinely unreachable today (grepped, not trusted). Ran the FULL onboard-suggestion loop end-to-end through real scg/scalene-guard binaries - genuinely closes. make test: 210/210, 0 skipped. @Morpheus *lead review phase-4

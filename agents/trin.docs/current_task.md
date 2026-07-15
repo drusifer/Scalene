@@ -1,10 +1,19 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 3 (Hook Integration & First-Sighting Messaging) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next after Morpheus — must be told explicitly about the onboard-suggestion regression, not given a generic "Phase 3 done."**
+**Status:** Sprint 4 Phase 4 (scg onboard Re-scope & Fatal Exit) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next.**
 **Assigned to:** Trin
-**Started:** 2026-07-14
+**Started:** 2026-07-15
 
-## Task Description (most recent): `*qa uat phase-3` (Sprint 4, STORY-1002/1003)
+## Task Description (most recent): `*qa uat phase-4` (Sprint 4, STORY-1004)
+
+## Progress
+- [x] **Real, non-mocked cache-corruption test via the actual installed `scalene-guard` binary** (not a unit test calling Python functions in-process): wrote invalid JSON to a real cache file, piped a real hook payload through the real binary as a subprocess. Confirmed exit code 2, plain-language stderr ("scalene-guard: fatal scanning-machinery failure — Scan cache store ... is corrupted: ..."), empty stdout, no traceback. Also confirmed the ordinary/ok case stays exit 0 with real JSON output, for contrast.
+- [x] Independently verified Neo's claim that `ScannerMachineryError` is genuinely unreachable via a real (non-mocked) `scalene-guard` invocation, rather than trusting the code comment — grepped `resource_verifier.py`/`scan_cache.py`/`identify()` myself and confirmed none of them ever call `.scan()`. Confirmed honest framing, not overclaimed.
+- [x] **Real, end-to-end onboard-suggestion loop test via the actual installed `scg`/`scalene-guard` binaries** (strongest possible verification — real subprocesses, not function calls): tainted a session, got a real masked response with a real suggested command, ran that exact command through the real `scg` binary, confirmed the cache was written, then confirmed the identical call is now genuinely `allow` with no `updatedInput`/`systemMessage`. The loop Neo and I both confirmed broken in Phase 3 is genuinely closed.
+- [x] `make test`: 210/210 passing, 0 skipped.
+- [x] **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-3` (Sprint 4, STORY-1002/1003)
 
 ## Progress
 - [x] Independently grepped `src/scalene/` for `PolicyRule`/`allowlist` — confirmed the class and YAML rule-matching are genuinely gone from `policy_config.py`; remaining hits are `onboard.py` (still legitimately writes the YAML `allowlist` list — expected, unchanged until Phase 4) plus historical/explanatory docstring mentions, not live matching code.
