@@ -1,9 +1,15 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 2 review: APPROVED, with a major flag for Phase 3. Paused for user visibility before Phase 3 starts (not a formal Smith gate, but a real architecture-premise risk).
+**Status:** Sprint 4 Phase 2 review: APPROVED. Latency finding resolved by user decision: accept the cost, revise the NFR (not redesign the spawn mechanism). Docs updated, handed Phase 3 to Neo.
 **Assigned to:** N/A
 **Started:** 2026-07-14
 **Completed:** 2026-07-14
+
+## Resolution (2026-07-14)
+User chose "accept the cost, revise the NFR" over the other two options (batch spawns, decouple from sync hot path). Updated both docs to be honest about the real cost rather than let Phase 3's perf test discover it as a surprise:
+- `docs/ARCHITECTURE.md` §13.3: split the NFR into `NFR-Perf-Steady-State` (<15ms, unchanged, cached/fresh path) and `NFR-Perf-FirstSighting` (new, provisional **<25ms added latency per newly-identified resource**, headroom over the measured ~16ms worst case) — explicitly flagged for Phase 3 task 3.4 to verify with a real test, not assume.
+- `docs/PRD.md`: Sprint 4 Goal 13 and the top-level <15ms success metric both annotated with the 2026-07-14 exception and a pointer to §13.3.
+- Deliberately did **not** redesign `refresh_if_needed()`'s spawn mechanism (batching/decoupling) — the added cost is one-time-per-resource and self-amortizing (every subsequent call on that resource falls back to the free steady-state path), judged not worth the added design complexity given the user's choice.
 
 ## Task Description (most recent): `*lead review phase-2` (Sprint 4, STORY-1003)
 

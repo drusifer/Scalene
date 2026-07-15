@@ -29,7 +29,7 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 
 ## Success Metrics
 
-- Pre-tool-call rule evaluation completes in <15ms (NFR).
+- Pre-tool-call rule evaluation completes in <15ms (NFR). **Sprint 4 exception (2026-07-14):** a resource's first sighting under E10's scan cache pays a separate, larger one-time budget — see Sprint 4 Goal 13 and `docs/ARCHITECTURE.md` §13.3's `NFR-Perf-FirstSighting`. Steady-state (cached) calls remain under the original <15ms.
 - Zero unhandled exceptions from malformed agent arguments (fail-safe path always triggers instead).
 - Onboarding a new trust/allow rule requires no manual YAML hand-editing outside the guarded flow.
 
@@ -65,4 +65,4 @@ E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. See `docs/USER_STORIES.md` 
 
 11. Close a real verification gap: an onboarded allow/trust rule should not be able to vouch, forever and unrefreshed, for a broader class of future values than what was actually checked at onboarding time.
 12. Make resource identification (file paths, URLs) automatic per scanner type instead of requiring a human to hand-author jsonpath+pattern extraction for every resource shape.
-13. Keep continuous re-verification affordable within the existing <15ms NFR via a per-resource, time-bounded cache with background refresh — not a scan on every call.
+13. Keep continuous re-verification affordable via a per-resource, time-bounded cache with background refresh — not a scan on every call. **Revised 2026-07-14** (Morpheus's Phase 2 review measured the real cost of the background-refresh spawn): the existing <15ms NFR holds unchanged for the steady-state (cached/fresh) path, since that's pure JSON-cache reads with no subprocess spawn. It does **not** hold for a resource's first sighting — spawning the background scan costs real, measured latency (~6.6ms avg / ~16ms max in testing) that a from-scratch <15ms budget can't absorb on top of the existing hook cost. Accepted as a one-time, per-newly-seen-resource cost rather than redesigning the spawn mechanism — see `docs/ARCHITECTURE.md` §13.3's `NFR-Perf-FirstSighting`.

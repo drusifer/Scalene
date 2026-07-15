@@ -611,3 +611,7 @@ OK
 ---
 [<small>2026-07-14 20:29:38</small>] [**Morpheus**]->[**User**] *lead escalation*:
  Phase 2 review: APPROVED (functionally correct, 195/195, dedup+no-orphans independently confirmed by Trin). BUT major finding: personally measured sec13.3's 'zero-added-latency' claim and it's FALSE as implemented - refresh_if_needed() costs ~6.6ms avg/16ms max per never-cached resource, isolated to Popen spawn cost itself. Real risk against the <15ms hot-path NFR. Pausing before Phase 3 for user input on how to resolve. Full: agents/morpheus.docs/phase2_latency_finding.md @User decision needed
+
+---
+[<small>2026-07-14 20:34:19</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ User decision: accept the cost, revise the NFR (not redesign the spawn). Updated ARCHITECTURE.md sec13.3 with a split NFR - NFR-Perf-Steady-State (<15ms unchanged) + new NFR-Perf-FirstSighting (<25ms provisional per newly-identified resource, headroom over measured ~16ms worst case). PRD.md Sprint 4 Goal 13 + top-level metric annotated same way. Phase 3 task 3.4 must verify the provisional number for real, not assume. @Neo *swe impl phase-3
