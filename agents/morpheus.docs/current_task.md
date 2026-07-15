@@ -1,12 +1,23 @@
 # Current Task
 
-**Status:** Sprint 4 plan reviewed and LOCKED. Handed Phase 1 to Neo.
-**Assigned to:** N/A (planning finished; next is Phase 1 implementation)
+**Status:** Sprint 4 Phase 1 review: APPROVED. Handed Phase 2 to Neo.
+**Assigned to:** N/A (Phase 1 review finished; next is Phase 2 implementation)
 **Started:** 2026-07-14
 **Completed:** 2026-07-14
 
-## Task Description
-`*lead arch sprint` (Sprint 4), following Smith's Gate 1 approval on Cypher's E10 stories (STORY-1001 through 1005).
+## Task Description (most recent): `*lead review phase-1` (Sprint 4, STORY-1001/1002)
+
+## Progress
+- [x] Read `src/scalene/scanner.py` in full against §13.2's spec — `Scanner` Protocol, `Resource`/`ScanResult` dataclasses, `SCANNERS` registry all match the architecture literally (field names, registry shape)
+- [x] Confirmed extensibility AC (STORY-1002): adding a 3rd scanner is only a `SCANNERS` dict entry, no dispatch code elsewhere references `FileScanner`/`URLScanner` by name
+- [x] Independently adversarially probed `identify()`/`scan()` myself before approving (my own standing habit, not just trusting Trin's UAT): mixed non-string arg values (int/None/bool alongside strings), empty args dicts, empty-string known-field values — all degrade cleanly, no crash, no spurious resource
+- [x] Reviewed Trin's finding + Neo's fix (URL/path collision — every `WebFetch` call was producing a bogus file resource) — the fix (span-exclusion against a full-URL regex) is structurally sound, not a patch that just moves the bug; confirmed it handles the general case (arbitrarily many `/segments` in a URL path), not just the one repro string
+- [x] **Confirmed a design note Neo already self-flagged holds up under review, not a fresh finding**: `FileScanner.scan()`/`URLScanner.scan()` never raise — any `run_scanner` failure (real finding *or* scanner-machinery breakage) collapses into a `ScanResult` label. §13.2's docstring implies scan() raising is *one* of STORY-1004's two fatal triggers (the other being cache-store corruption, unrelated to scan()). Since `run_scanner`'s existing `{"ok": bool, "reason": str}` contract (Sprint 1, unchanged) doesn't distinguish "finding" from "infra failure" either, this isn't a Phase 1 regression — it's a pre-existing ambiguity Neo faithfully preserved and correctly deferred to Phase 4, not silently swallowed. Confirmed it's captured in Neo's `next_steps.md` so Phase 4 doesn't rediscover it from scratch.
+- [x] Confirmed no `hook_adapter.py`/`policy_config.py` changes leaked into this phase — `scanner.py` is genuinely standalone, matches Phase 1's scope exactly
+- [x] `make test`: 176/176 passing
+- [x] **APPROVED.** No Tank/Smith gate needed (internal component, correct per task.md).
+
+## Task Description (prior): `*lead arch sprint` (Sprint 4), following Smith's Gate 1 approval on Cypher's E10 stories (STORY-1001 through 1005).
 
 ## Progress
 - [x] Resolved Cypher's explicit open question: **full replacement** of `PolicyConfig.allowlist`/`PolicyRule` (the tool/jsonpath/pattern/target model shipped one commit before this epic), not coexistence — the defect this epic fixes is structural to pattern-matching itself, keeping it around anywhere would leave the hole open on that path.

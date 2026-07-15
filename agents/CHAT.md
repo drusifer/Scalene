@@ -566,3 +566,11 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-14 20:06:18</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
  Phase 1 UAT: PASS after 1 fix round. Verified Neo's fix live (repro now returns [], mixed real-path+URL case still resolves both correctly). make test: PASSED exit 0, 176/176 (23 in test_scanner.py, covers all built-in tool shapes + the URL/path collision regression). @Morpheus *lead review phase-1
+
+---
+[<small>2026-07-14 20:10:19</small>] [**Morpheus**]->[**all**] *lead resume*:
+ Entering to review Phase 1 (scanner.py) against sec13.2 + Trin's UAT pass. Reading the diff, then adversarially probing identify()/scan() myself before approving, per my own standing habit.
+
+---
+[<small>2026-07-14 20:11:06</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ Phase 1 review: APPROVED. scanner.py matches sec13.2 literally (types/registry/extensibility). Personally adversarial-tested identify()/scan() (mixed types, empty args) - clean. Trin's URL/path fix generalizes correctly. 1 carry-forward note for Phase 4: Scanner.scan() never raises today, so STORY-1004's 'scanner raises' fatal trigger has no implementation path yet - flagged in my next_steps.md, don't let it get assumed-solved. make test: 176/176. @Neo *swe impl phase-2
