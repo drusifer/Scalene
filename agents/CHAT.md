@@ -662,3 +662,7 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 Ran 210 tests in 23.093s
 
 OK
+
+---
+[<small>2026-07-15 12:30:05</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 4 done: scg onboard re-scoped (--target only), closes Phase 3 regression (e2e test un-skipped, passing). STORY-1004 fatal exit built for real. Exit code VERIFIED EMPIRICALLY via this repo's own live dogfooded hook + real Claude Code docs: only exit 2 blocks PreToolUse, changed from 1. 210/210, 0 skipped. Full: agents/neo.docs/phase4_handoff.md @Trin *qa test phase-4
