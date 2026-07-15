@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from textual.widgets import DataTable, Input
 
-from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE
+from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE, _format_relative_time
 
 
 def _write_state(state_dir: Path, session_id: str, sensitive: bool, untrusted: bool) -> None:
@@ -33,6 +33,44 @@ def _append_mask_event(audit_log: Path, session_id: str, tool_name: str = "Bash"
             )
             + "\n"
         )
+
+
+class TestFormatRelativeTime(unittest.TestCase):
+    """Smith's Phase 5 gate finding: the absolute 'YYYY-MM-DD HH:MM:SS'
+    format was too wide once a 3rd panel divided the same horizontal space
+    2 panels used to have, truncating to an unreadable string in a real
+    rendered screenshot at a common 120-column width. Relative format is
+    both shorter and arguably more useful for a live monitoring view."""
+
+    def test_seconds_ago(self):
+        now = 1000.0
+        self.assertEqual(_format_relative_time(now - 5, now=now), "5s ago")
+
+    def test_minutes_ago(self):
+        now = 1000.0
+        self.assertEqual(_format_relative_time(now - 125, now=now), "2m ago")
+
+    def test_hours_ago(self):
+        now = 100000.0
+        self.assertEqual(_format_relative_time(now - 7300, now=now), "2h ago")
+
+    def test_days_ago(self):
+        now = 1000000.0
+        self.assertEqual(_format_relative_time(now - 172800, now=now), "2d ago")
+
+    def test_clock_skew_does_not_produce_a_negative_time(self):
+        # scanned_at slightly in the future (real-world clock skew between
+        # a worker process and the monitor process reading it) must not
+        # render as "-1s ago".
+        now = 1000.0
+        self.assertEqual(_format_relative_time(now + 5, now=now), "0s ago")
+
+    def test_result_is_short_enough_to_fit_a_narrow_column(self):
+        # The whole point of this fix -- must be comfortably shorter than
+        # the old 19-char absolute timestamp that caused the truncation.
+        now = 1000000.0
+        for delta in (5, 125, 7300, 172800):
+            self.assertLess(len(_format_relative_time(now - delta, now=now)), 10)
 
 
 class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
@@ -380,7 +418,7 @@ class TestMonitorAppScanResultsPanel(unittest.IsolatedAsyncioTestCase):
             row = table.get_row_at(0)
             self.assertEqual(row[0], "internal.example.com")
             self.assertEqual(row[1], "trusted")
-            self.assertTrue(row[2])  # a non-empty, human-readable timestamp string
+            self.assertIn("ago", str(row[2]))  # relative format, not the old truncation-prone absolute timestamp
 
     async def test_in_flight_reservation_does_not_appear_as_a_result(self):
         from scalene.scan_cache import ScanCache
@@ -392,6 +430,36 @@ class TestMonitorAppScanResultsPanel(unittest.IsolatedAsyncioTestCase):
         async with app.run_test():
             table = app.query_one("#scan-results", DataTable)
             self.assertEqual(table.row_count, 0)
+
+    async def test_last_scanned_column_is_not_truncated_at_a_common_terminal_width(self):
+        # Regression test for Smith's Phase 5 gate finding: a real rendered
+        # screenshot at a common 120-column width showed the "Last Scanned"
+        # header truncated to " La" and values truncated to " 0s" when this
+        # panel was a 3rd side-by-side column -- neither a row-count check
+        # nor a stored-cell-value check would catch this, since the
+        # underlying data was correct; only the *rendered* text was cut off.
+        # Fixed by giving the panel its own full-width row. Checks the
+        # actual rendered SVG text, not the DataTable's stored data.
+        import re
+
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource, ScanResult
+
+        ScanCache(self.cache_path).put(
+            Resource(kind="file", identity="/workspace/some/deeply/nested/path/README.md", scanner_name="secrets"),
+            ScanResult(label="public"),
+        )
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            svg = app.export_screenshot()
+            rendered_text = " ".join(re.findall(r"<text[^>]*>([^<]*)</text>", svg))
+            rendered_text = rendered_text.replace("&#160;", " ")
+
+            self.assertIn("Last Scanned", rendered_text)
+            self.assertIn("0s ago", rendered_text)
+            self.assertIn("/workspace/some/deeply/nested/path/README.md", rendered_text)
 
 
 if __name__ == "__main__":

@@ -745,3 +745,20 @@ OK
 ---
 [<small>2026-07-15 15:11:47</small>] [**Smith**]->[**Trin**] *user bug*:
  *user bug: real screenshot at 120-col width shows 'Last Scanned' column header truncates to ' La' and timestamps render as unreadable ' 20' - the absolute YYYY-MM-DD HH:MM:SS format doesn't fit once a 3rd panel halves-to-thirds the available width. Not a narrow-edge-case, 120 cols is common. Full: agents/smith.docs/phase5_bug_last_scanned_truncation.md @Trin triage
+
+---
+[<small>2026-07-15 15:12:32</small>] [**Trin**]->[**Neo**] *qa triage*:
+ Triaging Smith's Last Scanned truncation bug. Confirmed real and reproducible. Recommend her suggested direction (relative 'X ago' format, shorter + avoids date-loss ambiguity a bare time-of-day format would have). @Neo *swe fix phase-5 last-scanned-truncation
+
+---
+[<small>2026-07-15 15:16:22</small>] [**Neo**]->[**Trin**] *swe retry*:
+ First fix (shorten timestamp) INSUFFICIENT - re-rendered real screenshot, still truncates (' La'/' 0s'). Root cause deeper: 3 side-by-side panels lack combined width for Resource(long paths/hosts)+Label+LastScanned. Per anti-loop protocol: stopping this approach, trying a structurally different fix (full-width row below, not a 3rd squeezed column).
+
+---
+[<small>2026-07-15 15:19:19</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+----------------------------------------------------------------------
+Ran 230 tests in 25.929s
+
+OK

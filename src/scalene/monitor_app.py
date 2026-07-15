@@ -26,6 +26,24 @@ POLL_INTERVAL_SECONDS = 0.5
 _NO_SESSIONS_MESSAGE = "No sessions found yet. Run an agent session with scalene-guard installed, then reopen the monitor."
 
 
+def _format_relative_time(scanned_at: float, now: float | None = None) -> str:
+    """Short 'X ago' formatting for the resource-cache panel's Last Scanned
+    column (Smith's Phase 5 gate finding: an absolute 'YYYY-MM-DD HH:MM:SS'
+    timestamp -- 19 characters -- truncated to an unreadable string once a
+    3rd panel divided the same horizontal space 2 panels used to have, at a
+    real, common 120-column terminal width). Clamped at 0 so real-world
+    clock skew between a worker process and the monitor process reading its
+    result never renders as a confusing negative duration."""
+    delta = max(0.0, (now if now is not None else time.time()) - scanned_at)
+    if delta < 60:
+        return f"{int(delta)}s ago"
+    if delta < 3600:
+        return f"{int(delta // 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h ago"
+    return f"{int(delta // 86400)}d ago"
+
+
 class MonitorApp(App):
     """Live view of session taint status and mask events (STORY-701), with an
     editable-and-applyable suggested onboard command per mask event (STORY-702)."""
@@ -33,6 +51,8 @@ class MonitorApp(App):
     CSS = """
     #no-sessions { padding: 1 2; color: $text-muted; display: none; }
     #no-sessions.visible { display: block; }
+    #top-row { height: 60%; }
+    #scan-results-panel { height: 40%; }
     """
     BINDINGS = [
         ("a", "toggle_all_sessions", "Toggle all-sessions feed"),
@@ -57,16 +77,23 @@ class MonitorApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static(_NO_SESSIONS_MESSAGE, id="no-sessions")
-        with Horizontal():
+        with Horizontal(id="top-row"):
             with Vertical():
                 yield Static("Sessions")
                 yield DataTable(id="sessions")
             with Vertical():
                 yield Static("Mask events (press 'a' to toggle all-sessions, Enter to edit+apply, Escape to dismiss)")
                 yield DataTable(id="events")
-            with Vertical():
-                yield Static("Resource cache (recently scanned files/hosts)")
-                yield DataTable(id="scan-results")
+        # STORY-1005 / Smith's Phase 5 gate finding: a resource identity can be
+        # a long file path or hostname -- squeezed into a 3rd side-by-side
+        # column (alongside Sessions/Mask-events) it doesn't have enough
+        # combined width to stay readable at a common terminal size (real
+        # screenshot confirmed truncation even after shortening the
+        # timestamp format). Full-width row below instead, so it gets the
+        # entire terminal width rather than a third of it.
+        with Vertical(id="scan-results-panel"):
+            yield Static("Resource cache (recently scanned files/hosts)")
+            yield DataTable(id="scan-results")
         yield Input(placeholder="Select a mask event to edit its onboard command...", id="command-input", disabled=True)
         yield Static("", id="apply-status")
         yield Footer()
@@ -135,8 +162,7 @@ class MonitorApp(App):
         table = self.query_one("#scan-results", DataTable)
         table.clear()
         for r in results:
-            last_scanned = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.scanned_at))
-            table.add_row(r.identity, r.label, last_scanned)
+            table.add_row(r.identity, r.label, _format_relative_time(r.scanned_at))
 
     def refresh_events(self) -> None:
         table = self.query_one("#events", DataTable)
