@@ -1,24 +1,23 @@
 # Current Task
 
-**Status:** DONE — Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) implemented, Trin UAT PASSED (after 1 fix round), handed to Morpheus for review.
+**Status:** DONE — Sprint 4 Phase 2 (Scan Cache Store) implemented, awaiting Trin UAT + Morpheus review.
 **Assigned to:** Neo
 **Started:** 2026-07-14
-**Finished:** 2026-07-14 (incl. 1 post-UAT fix round)
+**Finished:** 2026-07-14
 
-## Task Description: `*swe impl phase-1` (Sprint 4, STORY-1001/1002)
-Build `Scanner` protocol (`identify()`/`scan()`), `Resource`/`ScanResult` dataclasses, `FileScanner` (wraps existing `secrets_scan.py`), `URLScanner` (wraps existing `reputation.py`'s `LocalHeuristicChecker`), both with named-capture-based generic fallback detection, plus wiring `Bash`'s `command` string into both scanners' fallback (no dedicated Bash scanner type). Full spec: `docs/ARCHITECTURE.md` §13.2, task breakdown in `task.md` Sprint 4 Phase 1.
+## Task Description: `*swe impl phase-2` (Sprint 4, STORY-1003)
+Build `.scalene/scan_cache.json` read/write (`filelock`-protected, same pattern as `taint_state.py`), 3-state lookup (none/fresh/expired), background `Popen` refresh with dedup for concurrent first-sighting scans. Full spec: `docs/ARCHITECTURE.md` §13.3, task breakdown in `task.md` Sprint 4 Phase 2.
 
 ## Progress
-- [x] Task 1.1: `Scanner` Protocol + frozen `Resource`/`ScanResult` dataclasses (`src/scalene/scanner.py`)
-- [x] Task 1.2: `FileScanner` — known-field detection (`Read`/`Write`/`Edit`'s `file_path`) + generic path-shaped fallback regex (prefix-anchored `/`, `./`, `../`); `scan()` wraps `subprocess_isolation.run_scanner("secrets", ...)` unchanged
-- [x] Task 1.3: `URLScanner` — known-field detection (`WebFetch`'s `url`, host-only identity) + generic URL-shaped fallback regex w/ named `host` capture; `scan()` wraps `subprocess_isolation.run_scanner("reputation", ...)` unchanged; `Bash`'s `command` reaches both scanners via the generic fallback applying to all string args (no dedicated Bash scanner type, per §13.2)
-- [x] `SCANNERS` registry (`{"secrets": FileScanner(), "reputation": URLScanner()}`)
-- [x] `tests/test_scanner.py`: 21 new tests, TDD (confirmed red via `ModuleNotFoundError` before writing `scanner.py`)
-- [x] `make test` equivalent (`python -m unittest discover -s tests`): 174/174 passing, no regressions
-- [x] **Fix round (post-Trin-UAT)**: Trin found `FileScanner`'s path fallback matched inside URLs (bogus resource on every `WebFetch` call) — fixed via `_find_paths_excluding_urls` (span-exclusion, not lookbehind), 2 new regression tests, 176/176 total. Trin re-verified live, PASS, handed to Morpheus.
-
-## Known gap to be aware of, not part of this task
-Sprint 3 Phase 3 (the demo) was implemented and handed to Trin for UAT, but Trin's UAT was never actually completed before this session moved into unrelated direct-request work (pip packaging, then the masking/hook-schema bug fixes that became Sprint 4). Sprint 3 was never formally closed (no retro, no `*pm launch`). Doesn't block Sprint 4 — different subsystem — but flag it if anyone asks "is Sprint 3 done."
+- [x] `src/scalene/scan_cache.py`: `CacheEntry`, `ScanCache` (`get`/`put`/`is_fresh`/`try_reserve`), `refresh_if_needed` (the 3-state lookup + dedup entry point)
+- [x] `src/scalene/cache_refresh_worker.py`: detached-subprocess entrypoint, writes the scan result into the cache when it finishes
+- [x] Freshness: 24h window + (for files) unchanged `mtime`; missing file or changed `mtime` = not fresh
+- [x] Dedup: `pending_since` reservation stored in the cache entry itself, `FileLock`-protected, 5-minute expiry so a crashed worker doesn't wedge a resource
+- [x] **Found and fixed my own bug before Trin saw it**: `cache_refresh_worker.py` originally always wrote to `DEFAULT_CACHE_PATH`, ignoring the caller's actual cache path — caught via my own real end-to-end test, fixed by threading the cache path through as a CLI arg
+- [x] Real (non-mocked) repeated-invocation test proving dedup (5 lookups → 1 spawn) and clean process exit (task.md's explicit Phase 2 exit-criteria addition)
+- [x] `.gitignore`: confirmed no new entry needed, `.scalene/` already covers it
+- [x] `tests/test_scan_cache.py`: 18 new tests, TDD (confirmed red via `ModuleNotFoundError` before writing `scan_cache.py`)
+- [x] `make test`: 194/194 passing, no regressions
 
 ## Blockers
 None.

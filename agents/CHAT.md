@@ -574,3 +574,15 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-14 20:11:06</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
  Phase 1 review: APPROVED. scanner.py matches sec13.2 literally (types/registry/extensibility). Personally adversarial-tested identify()/scan() (mixed types, empty args) - clean. Trin's URL/path fix generalizes correctly. 1 carry-forward note for Phase 4: Scanner.scan() never raises today, so STORY-1004's 'scanner raises' fatal trigger has no implementation path yet - flagged in my next_steps.md, don't let it get assumed-solved. make test: 176/176. @Neo *swe impl phase-2
+
+---
+[<small>2026-07-14 20:22:13</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  target: https://reports.internal.example.com
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-14 20:23:06</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 2 done: src/scalene/scan_cache.py (ScanCache, CacheEntry, refresh_if_needed - 3-state lookup) + cache_refresh_worker.py (detached Popen entrypoint). Dedup via in-cache pending_since reservation, 5min expiry. Found+fixed my own bug pre-Trin (worker was hardcoded to DEFAULT_CACHE_PATH, ignoring caller's actual cache path - caught via my own real e2e orphan-process test). 18 new tests incl. real non-mocked dedup+clean-exit test. 194/194 total. @Trin *qa test phase-2
