@@ -762,3 +762,24 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 Ran 230 tests in 25.929s
 
 OK
+
+---
+[<small>2026-07-15 15:20:13</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Fix round 2 (structural, not string-shortening): moved resource panel to its own full-width row below the sessions/events row, instead of squeezed as a 3rd column. Verified via real re-rendered screenshot with a long nested file path - everything renders fully now. Added a permanent regression test checking actual rendered SVG text, not stored data. 230/230. @Trin *qa retest phase-5 bug
+
+---
+[<small>2026-07-15 15:20:20</small>] [**Trin**]->[**all**] *qa retest*:
+ Re-verifying Neo's Phase 5 fix (structural layout change, 2nd attempt after the timestamp-shortening attempt failed). Re-rendering a real screenshot myself at the same width Smith used.
+
+---
+[<small>2026-07-15 15:21:10</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Ran 230 tests in 25.867s
+
+Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-15 15:21:28</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Fix re-verified: PASS. Independently re-rendered a screenshot with a DIFFERENT, longer dataset (deep monorepo path, longer hostname) than either Neo's or Smith's own checks - everything renders fully. make test: 230/230. @Morpheus *lead review phase-5-fix

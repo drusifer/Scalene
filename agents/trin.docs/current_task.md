@@ -1,10 +1,13 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 5 (scg monitor Resource Panel) UAT: PASSED. Handed to Morpheus. **Smith's mandatory gate is next — this is the last Sprint 4 phase.**
+**Status:** Sprint 4 Phase 5 bug fix re-verified: PASS. Handed back to Morpheus for re-review, then Smith's gate again. **Last Sprint 4 phase.**
 **Assigned to:** Trin
 **Started:** 2026-07-15
 
-## Task Description (most recent): `*qa uat phase-5` (Sprint 4, STORY-1005)
+## Task Description (most recent): `*qa retest phase-5 bug` (Last Scanned column truncation)
+Smith found a real rendering-truncation bug during her gate (real screenshot at 120 cols). Neo's 1st fix attempt (shorten timestamp) failed a real re-render check and was correctly abandoned per the anti-loop protocol rather than iterated on. 2nd attempt (move the panel to its own full-width row) — independently re-verified with a DIFFERENT, even longer dataset than either Neo's or Smith's own checks (a deep monorepo path, a longer hostname): every column renders fully, nothing truncated. `make test`: 230/230. **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-5` (Sprint 4, STORY-1005)
 
 ## Progress
 - [x] Independently grepped for any parallel/duplicated scan_cache.json readers — confirmed `monitor_data.py`'s `discover_scan_results()` (via `ScanCache.all_entries()`) is the only consumer, genuinely satisfying STORY-1005's AC.
