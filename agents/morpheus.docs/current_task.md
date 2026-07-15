@@ -1,9 +1,25 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 3 review: APPROVED. Handing to Smith for the mandatory gate — this is a pause point per user instruction ("full run, pause only at Smith gates"), not proceeding further until the real user has weighed in.
+**Status:** Sprint 4 Phase 4 review: APPROVED. Handing to Smith for the mandatory gate.
 **Assigned to:** N/A
-**Started:** 2026-07-14
-**Completed:** 2026-07-14
+**Started:** 2026-07-15
+**Completed:** 2026-07-15
+
+## Task Description (most recent): `*lead review phase-4` (Sprint 4, STORY-1004)
+
+## Progress
+- [x] Read `onboard.py`, `scan_cache.py`, `cli.py`, `cache_refresh_worker.py` against §13.4/§13.5 — matches exactly, including the file-identity normalization that keeps onboarding and live evaluation using the same cache key
+- [x] Personally re-verified the exit-code fix myself (not just trusting Trin's PreToolUse-only test): confirmed live that `PostToolUse` also correctly returns exit 2 on cache corruption — consistent with the real contract's "exit 2 is non-blocking for PostToolUse but still surfaces stderr" semantics
+- [x] Traced `refresh_if_needed()` → `cache.get()`/`try_reserve()` call ordering: confirmed no partial-state issue if `ScanCacheError` fires on the first call (never reaches the second)
+- [x] **Non-blocking observation**: `is_fresh()`/`put()`'s direct `os.stat()` calls on a *resource's own file* (not the cache store) aren't wrapped in error handling — a theoretical TOCTOU gap (file vanishes between `os.path.exists()` and `os.stat()`) could raise uncaught. Extremely low likelihood/impact, and out of STORY-1004's specific scope (that's about the cache *store*, not a scanned resource's own filesystem entry) — not worth a fix round.
+- [x] Confirmed `scg onboard`'s own CLI exit codes are correctly NOT conflated with `scalene-guard`'s hook-specific exit-2 semantics — `onboard.py` is a normal dev CLI, no Claude Code hook contract governs it, plain `return 1` on any `OnboardError` is the right, boring Unix convention there.
+- [x] `make test`: 210/210 passing, 0 skipped.
+- [x] **APPROVED.** Handing to Smith for the mandatory gate.
+
+## Carry-forward (not new, flagged again)
+`ARCHITECTURE.md` §4's class diagram is still stale (still shows `PolicyRule`/`allowlist`) — flagged at Phase 3 review, flagged again at Phase 4 handoff by Neo, still not done. Third flag. Should happen at Phase 5 or as its own small cleanup — I'll personally check this doesn't slip a fourth time.
+
+## Task Description (prior): `*lead review phase-3`
 
 ## Task Description (most recent): `*lead review phase-3` (Sprint 4, STORY-1002/1003)
 

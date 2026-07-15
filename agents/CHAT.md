@@ -683,3 +683,11 @@ OK
 ---
 [<small>2026-07-15 12:33:51</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
  Phase 4 UAT: PASS. Real (non-mocked) verification via actual installed binaries: cache-corruption -> exit 2 + plain-language stderr + empty stdout, ordinary case stays exit 0. Independently confirmed ScannerMachineryError is genuinely unreachable today (grepped, not trusted). Ran the FULL onboard-suggestion loop end-to-end through real scg/scalene-guard binaries - genuinely closes. make test: 210/210, 0 skipped. @Morpheus *lead review phase-4
+
+---
+[<small>2026-07-15 12:34:08</small>] [**Morpheus**]->[**all**] *lead resume*:
+ Entering to review Phase 4 (onboard re-scope + STORY-1004 fatal exit) against sec13.4/13.5 + Trin's UAT pass, incl. the empirically-verified exit code.
+
+---
+[<small>2026-07-15 12:35:36</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Phase 4 review: APPROVED. sec13.4/13.5 match exactly. Personally re-verified the exit-code fix live for PostToolUse too (Trin tested PreToolUse) - confirmed exit 2 there as well. 1 non-blocking note: is_fresh()/put()'s os.stat() on a resource's own file has a theoretical TOCTOU gap, out of STORY-1004's cache-store scope, not worth a fix round. Carrying forward (3rd time) ARCHITECTURE.md sec4's stale class diagram - must not slip past Phase 5. make test: 210/210, 0 skipped. @Smith *user test phase-4
