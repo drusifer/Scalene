@@ -1,10 +1,17 @@
 # Current Task
 
-**Status:** Sprint 4 Gate 2 (E10 architecture) reviewed and approved. Handed to Mouse for phase breakdown.
+**Status:** Sprint 4 Phase 3 gate: APPROVED. Handed to Neo for Phase 4.
 **Assigned to:** Smith
-**Started:** 2026-07-14
+**Started:** 2026-07-15
 
-## Task Description (most recent): Sprint 4 Gate 2 — E10 architecture
+## Task Description (most recent): Sprint 4 Phase 3 gate — Hook Integration & First-Sighting Messaging (`*user test phase-3`)
+My own Gate 1 note ("first-sighting friction needs a 'not yet verified' message, not generic untrusted") lands correctly. Ran a real scenario myself (ordinary file happens to contain something secret-shaped, then a brand-new SaaS destination): the message reads "Scalene masked the 'prompt' argument to WebFetch: Possible AWS Access Key detected. This destination has not yet been verified — Scalene defaults to caution until a background scan completes." — plain-language, names the concrete finding, correctly distinct from a known-bad destination, gives an actionable next step. Friction is tolerable, not overstated.
+
+**The onboard-suggestion regression** (Neo found it, Trin independently reproduced it, Morpheus gave me a recommendation without deciding it himself): the suggested `scg onboard` command no longer actually un-masks a future identical call until Phase 4 re-scopes it — confirmed real by two independent people, not assumed. **User's explicit decision: accept the window, proceed to Phase 4** (Phase 4 was already next in the plan and closes this gap directly — no separate stopgap message needed). Approving on that basis.
+
+**Verdict: APPROVED.** Handed to Neo for Phase 4 (`*swe impl phase-4` — re-scope `scg onboard`, fatal-exit handling, verify the real exit-code effect against Claude Code's hook contract).
+
+## Task Description (prior): Sprint 4 Gate 2 — E10 architecture
 Reviewed `docs/ARCHITECTURE.md` §13. Approved — fatal-exit note fully addressed, first-sighting note addressed at behavior level (verified zero-latency design). 2 non-blocking watch-items for implementation: perf NFR must actually re-pass (not be assumed compatible), concurrent-first-sighting scan dedup isn't specified. Full: `agents/smith.docs/gate2_sprint4_review.md`.
 
 ## Task Description (prior): Sprint 4 Gate 1 — E10 Extensible Scanner Registry

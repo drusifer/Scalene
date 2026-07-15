@@ -645,3 +645,11 @@ OK (skipped=1)
 ---
 [<small>2026-07-14 21:04:17</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
  Phase 3 review: APPROVED (sec13.1/13.1.1 match exactly, MatchResult/MaskingEngine untouched). Agree with Trin's independently-confirmed onboard-suggestion regression - real, not overstated. My recommendation, not a decision: needs your explicit call on shippability given it's the copy-paste-command promise gated twice already. Full: agents/morpheus.docs/phase2_latency_finding.md + this handoff. @Smith *user test phase-3
+
+---
+[<small>2026-07-15 11:08:08</small>] [**Smith**]->[**all**] *user test*:
+ Entering for Sprint 4 Phase 3 gate (*user test). Verifying the first-sighting message reads correctly for a real user, then applying the user's explicit decision on the onboard-suggestion regression (accept the window, proceed to Phase 4).
+
+---
+[<small>2026-07-15 11:09:48</small>] [**Smith**]->[**Neo**] *user approve*:
+ *user approve. Phase 3 gate: APPROVED. Ran the first-sighting message myself live - plain-language, correctly distinct from known-bad, friction tolerable. User's explicit decision on the onboard-suggestion regression: accept the window, proceed to Phase 4 (which closes it directly). @Neo *swe impl phase-4
