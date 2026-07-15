@@ -223,45 +223,51 @@ As a prospective user or reviewer, I want a runnable demo that shows Scalene act
 ### STORY-1001
 As a developer writing policy rules, I want `pattern` to support named regex capture groups, so a rule can hand a scanner just the relevant sub-value (e.g. a URL's host) instead of the whole matched field — while rules with no named groups keep scanning the whole matched value, unchanged.
 
+**Revised 2026-07-15 (Cypher, at sprint close, per Oracle's groom-pass flag):** this story's premise was written before Morpheus's §13.1 architecture decision (full replacement of `PolicyRule`/`allowlist` — no user-authored `pattern`/`jsonpath` at all, not just this story's rules). The underlying capability (extract a specific sub-value rather than the whole match) was still delivered, but as an internal detail of each *built-in scanner's own* detection regex (e.g. `URLScanner`'s fallback pattern's `(?P<host>...)` group), never exposed to a developer as config. Rewriting the story below to describe what actually shipped, rather than leave a materially wrong premise in a "locked" doc through launch.
+
+**As shipped:** As a scanner author (not a developer authoring config), I want each built-in scanner's own detection regex to support named capture groups, so a scanner can extract just the relevant sub-value (e.g. a URL's host) from its generic fallback match instead of the whole matched string.
+
 **Acceptance Criteria**
-- [ ] A rule's `pattern` may contain named capture groups (e.g. `(?P<host>...)`); when present, the scanner-facing value is the captured group, not the full match.
-- [ ] A rule with no named groups behaves exactly as before this story — the scanner (if any) receives the whole matched value.
-- [ ] At least one worked example per existing scanner type (file path capture, URL host capture) is covered by a real test, not just documented.
+- [x] ~~A rule's `pattern` may contain named capture groups~~ — superseded; no user-authored `pattern` exists post-§13.1. Satisfied instead by: each built-in scanner's own fallback regex uses named capture groups internally (`src/scalene/scanner.py`'s `_URL_FALLBACK_RE`'s `(?P<host>...)`).
+- [x] ~~A rule with no named groups behaves exactly as before~~ — N/A, no user-authored rules exist to have or lack named groups.
+- [x] At least one worked example per existing scanner type (file path capture, URL host capture) is covered by a real test, not just documented — `tests/test_scanner.py`'s `FileScanner`/`URLScanner` identify() tests.
 
 ### STORY-1002
 As a developer, I want each scanner type to identify its own candidate resources within any tool call's arguments, so common resource shapes (file paths, URLs) are found automatically without a human hand-authoring an extraction rule for every case.
 
 **Acceptance Criteria**
-- [ ] A scanner interface/protocol exists exposing resource identification over `(tool_name, tool_call_args)`, independent of any specific `jsonpath`.
-- [ ] The scanner registry is extensible: adding a new scanner type requires implementing the interface and registering it, not modifying core dispatch logic.
-- [ ] Ships with at minimum a file/secrets scanner and a URL/reputation scanner, at parity with today's existing secrets-scan and reputation-check capabilities (no regression).
-- [ ] A Bash-command scanner is either implemented (finding embedded paths/URLs within a shell string) or explicitly deferred with a written reason — Morpheus to decide feasibility during architecture.
+- [x] A scanner interface/protocol exists exposing resource identification over `(tool_name, tool_call_args)`, independent of any specific `jsonpath` — `Scanner` Protocol, `identify()`, `src/scalene/scanner.py`.
+- [x] The scanner registry is extensible: adding a new scanner type requires implementing the interface and registering it, not modifying core dispatch logic — `SCANNERS` dict. (Note carried from Morpheus's Phase 3 review: this holds at the registry/detection layer; the aggregation layer, `resource_verifier.py`, still hardcodes which 2 scanner names feed which `MatchResult` dimension — a 3rd scanner needs a human decision there, `MatchResult`'s shape can't auto-extend.)
+- [x] Ships with at minimum a file/secrets scanner and a URL/reputation scanner, at parity with today's existing secrets-scan and reputation-check capabilities (no regression) — `FileScanner`/`URLScanner`, both wrap the pre-existing `secrets_scan.py`/`LocalHeuristicChecker` unchanged.
+- [x] A Bash-command scanner is either implemented or explicitly deferred with a written reason — deferred: `Bash`'s `command` string is wired into both existing scanners' generic fallback instead of a 3rd scanner type (§13.2).
 
 ### STORY-1003
 As a developer, I want scan results cached per identified resource with a 24h freshness window, so the same resource isn't re-scanned on every matching call and continuous verification stays inside the existing <15ms NFR.
 
+**Note (Cypher, at sprint close):** the NFR itself was revised mid-sprint (Morpheus measured the real first-sighting cost and found it real; see `docs/ARCHITECTURE.md` §13.3's `NFR-Perf-FirstSighting`) — the *cached* path still meets the original <15ms, which is what this story's "stays inside the existing NFR" actually depended on.
+
 **Acceptance Criteria**
-- [ ] Cache entries are keyed by resource identity: files by `(path, mtime)`; URLs/domains by host, with a recorded scan timestamp.
-- [ ] A resource with no cache entry is not treated as trusted/non-sensitive — today's fail-safe defaults apply until a real scan result exists for it.
-- [ ] A fresh (<24h) cache entry is used directly — no scan runs.
-- [ ] An expired (>24h) cache entry's last-known label is used immediately (no blocking) while a rescan is kicked off in the background to refresh it.
-- [ ] A resource with no cache entry at all triggers a scan whose completion (or the fail-safe default while it's pending) determines the current call's outcome — this is the one path that is not background-only, and must not silently regress into "always allow while scanning."
+- [x] Cache entries are keyed by resource identity — corrected from the original wording ("files by `(path, mtime)`"): the cache *key* is the path alone (`f"{scanner_name}:{identity}"`); `mtime` is stored as a *value* field checked for freshness, not part of the key. The AC's intent (a changed file must be re-verified) is fully satisfied by `ScanCache.is_fresh()`.
+- [x] A resource with no cache entry is not treated as trusted/non-sensitive — today's fail-safe defaults apply until a real scan result exists for it.
+- [x] A fresh (<24h) cache entry is used directly — no scan runs.
+- [x] An expired (>24h) cache entry's last-known label is used immediately (no blocking) while a rescan is kicked off in the background to refresh it.
+- [x] A resource with no cache entry at all triggers a background scan; the fail-safe default (not a blanket allow) determines the current call's outcome while it's pending.
 
 ### STORY-1004
 As an operator, I want `scalene-guard` to exit non-zero only when the scanning machinery itself fails, so real infrastructure problems are distinguishable from ordinary scan/mask decisions.
 
 **Acceptance Criteria**
-- [ ] A scan that finds a real secret or bad reputation is an ordinary decision (mask or block per `mode`) — exit 0, same as today.
-- [ ] A scanning-machinery failure (cache store unreadable/corrupted/unwritable, a registered scanner raising unexpectedly) causes `scalene-guard` to exit non-zero.
-- [ ] Whatever labels did resolve for the call are still included in the response even when the exit is fatal, wherever determinable.
-- [ ] Explicit AC distinguishing this from existing fail-safe behavior: malformed hook JSON / an unrecognized hook event still exit 0 (unchanged, `cli.py`'s existing contract) — only scanning-machinery failures are newly fatal. Morpheus's architecture doc must enumerate exactly which conditions fall in which bucket.
+- [x] A scan that finds a real secret or bad reputation is an ordinary decision (mask or block per `mode`) — exit 0, same as today.
+- [x] A scanning-machinery failure (cache store unreadable/corrupted/unwritable, a registered scanner raising unexpectedly) causes `scalene-guard` to exit non-zero — exit code **2**, empirically verified (not assumed) against Claude Code's real hook contract, both by fetching the current docs and by live-testing against this repo's own dogfooded `scalene-guard` installation.
+- [x] Whatever labels did resolve for the call are still included in the response even when the exit is fatal, wherever determinable.
+- [x] Malformed hook JSON / an unrecognized hook event still exit 0 (unchanged) — only scanning-machinery failures are newly fatal, per `docs/ARCHITECTURE.md` §13.5.
 
 ### STORY-1005
 As a developer, I want a summary of recently-scanned resources and their labels, so I can audit what Scalene has actually verified without reading raw cache files.
 
 **Acceptance Criteria**
-- [ ] Recent scan results (resource identity, label, last-scanned time) are viewable through an existing or new interface.
-- [ ] The summary reflects the real cache store — no separate/duplicated bookkeeping that can drift from it.
+- [x] Recent scan results (resource identity, label, last-scanned time) are viewable through `scg monitor`'s new resource-cache panel.
+- [x] The summary reflects the real cache store — no separate/duplicated bookkeeping that can drift from it (`ScanCache.all_entries()`, confirmed via grep that no parallel reader exists).
 
 ---
 

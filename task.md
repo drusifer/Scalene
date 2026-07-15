@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. Sprint 3's 3 phases all implemented and passing 2026-07-14 (direct user-driven fixes/packaging work followed before formal retro/launch — Sprint 3 close is still pending). **Sprint 4 (E10) planned** — 5 phases, awaiting Morpheus's plan review before `*impl phase-1`.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. Sprint 3's 3 phases all implemented and passing 2026-07-14 (direct user-driven fixes/packaging work followed before formal retro/launch — Sprint 3 close is still pending). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher.
 
 ---
 
@@ -191,7 +191,7 @@ None of these 3 phases share code — sequenced by risk/foundational order, not 
 # Sprint 4
 
 **Owner:** Mouse
-**Status:** Planned, pending Morpheus's plan review.
+**Status:** ✅ **SPRINT CLOSED 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5). Full end-to-end test passed with no new bugs. 230/230 tests passing. Retro complete, launched by Cypher.
 **Source:** `docs/USER_STORIES.md` (E10) + `docs/ARCHITECTURE.md` (§13)
 **Scope:** Direct user design session (2026-07-14) — replace the just-shipped `PolicyConfig.allowlist`/`PolicyRule` matching model (a rule's one-time scan can vouch for an unbounded future pattern-match) with an extensible per-scanner resource-identification system backed by a 24h `mtime`-keyed scan cache with background refresh.
 

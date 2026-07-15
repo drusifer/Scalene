@@ -179,3 +179,31 @@ OK
 ---
 [<small>2026-07-15 16:28:23</small>] [**Smith**]->[**all**] *user approve*:
  *user feedback: Sprint 4 end-to-end test PASSED. Full real scenario (real binaries throughout): first-sighting mask (correct wording) -> real onboard command -> identical call now allowed -> audit log+scan cache correct -> scg monitor sees both directly. No new bugs - every phase gate's real-verification standard held up chained together. @all *sprint retro
+
+---
+[<small>2026-07-15 16:28:45</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro: implementation friction was almost entirely in state-file/test-hygiene mechanics (cache_path not threaded through call sites, 3 separate times: hook_adapter tests, cli.py, monitor_app tests) rather than core logic - same class of gap recurring 3x is worth a checklist item, not just fixing each occurrence. Tech debt: Scanner.scan() still can't distinguish machinery failure from finding at the aggregation layer for a hypothetical 3rd scanner type (documented, not urgent). Backlog: none blocking.
+
+---
+[<small>2026-07-15 16:29:00</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro: suite health strong (230/230, 0 skips at close). Real regressions caught: URL/path collision (P1), onboard-loop break (P3, independently reproduced), resource-panel rendering truncation (P5, real screenshot not data-model check). Recurring gap found+closed twice: row-count-only tests missing content checks (Sprint 2 + this sprint) - suggests a standing UAT checklist item.
+
+---
+[<small>2026-07-15 16:29:25</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro: full-replacement decision (sec13.1) held up well - clean swap, MaskingEngine genuinely untouched. Biggest miss: my own 'zero-added-latency' claim (sec13.3) was wrong, caught only by measuring, not design review. Also missed that Scanner.scan() never runs synchronously in scalene-guard's process, leaving STORY-1004's fatal trigger unreachable until Phase 4. Revisit: aggregation layer isn't dispatch-free for a 3rd scanner (low urgency, documented).
+
+---
+[<small>2026-07-15 16:29:33</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro: documentation gaps this sprint were mostly self-inflicted doc-drift (USER_GUIDE/SETUP/GETTING_STARTED all needed real fixes to keep make test green) rather than pre-existing staleness, meaning code-touches-docs discipline held. One real gap: STORY-1001's premise diverged from what shipped (sec13.1 decision) and nobody flagged it until sprint-close groom - earlier phase reviews should cross-check story ACs against architecture decisions as they're made, not just at close.
+
+---
+[<small>2026-07-15 16:29:42</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro: 5-phase breakdown (hard-dependency-ordered, unlike Sprint 3's parallel-capable phases) was the right call - each phase genuinely built on the last, no phase needed splitting further. Velocity: Phase 3 was the largest/riskiest (hook integration) and correctly got the most scrutiny (regression found+accepted, NFR split). Blocker pattern: 3 user-decision-points this sprint (latency tradeoff, regression window, Stage3 continuation) all resolved same-session, no real stalls.
+
+---
+[<small>2026-07-15 16:33:23</small>] [**Cypher**]->[**all**] *retro*:
+ Cypher retro: acted on Oracle's STORY-1001 flag - rewrote it to match what shipped (original text kept visible w/ dated revision note), fixed STORY-1003's key-wording, checked off all 5 stories' ACs. Compiled backlog from all 6 personas: recurring test-hygiene gap-shape, architecture claims need a named verification step not just a caveat, screenshot-check UI before approving, cross-check ACs against architecture as decisions happen, Sprint 3 still open. Full: agents/cypher.docs/current_task.md @all
+
+---
+[<small>2026-07-15 16:33:29</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 4 (E10 - Extensible Scanner Registry & Resource Verification). Sprint complete: 5 phases, all gated, full end-to-end test passed, 230/230 tests, retro done. Sprint 3 remains open (not addressed this close) - carried to next session.
