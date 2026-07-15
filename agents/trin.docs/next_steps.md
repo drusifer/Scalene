@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 4 Phase 1 UAT passed (after 1 fix round), handed to Morpheus. No Smith gate on Phase 1. Next Trin involvement is Phase 2 UAT (scan cache store) once Neo implements it.
+Sprint 4 Phase 2 UAT passed, handed to Morpheus. No Smith gate on Phase 2. Next Trin involvement is Phase 3 UAT (hook integration, Smith gate required) once Neo implements it — this is the largest/riskiest phase so far.
 
 ## Waiting On
-Morpheus (Phase 1 review) → Neo (Phase 2 impl: `.scalene/scan_cache.json`) → me (Phase 2 UAT).
+Morpheus (Phase 2 review) → Neo (Phase 3 impl: hook_adapter.py integration, PolicyRule removal, first-sighting messaging) → me (Phase 3 UAT) → Smith (UX gate).
 
 ## Planned Work (Sprint 4)
-- [ ] Phase 2 UAT: real repeated-invocation test proving no orphaned `Popen` processes (task.md's explicit exit-criteria addition for Phase 2) — don't accept a code-read claim on this one, actually spawn and check process state.
-- [ ] Phase 3 UAT (Smith gate required): re-run `tests/test_performance.py`'s <15ms NFR for real once resource identification + cache lookup are in the hot path — Smith's Gate 2 watch-item, don't assume compatible.
-- [ ] Standing lesson reconfirmed this phase: verify behavioral claims by actually running the code (`python -c` repro), not just reading it — that's exactly how Phase 1's WebFetch/FileScanner collision bug was caught before it shipped, code-reading alone would likely have missed it since the regex looked reasonable in isolation.
+- [ ] Phase 3 UAT (Smith gate required): re-run `tests/test_performance.py`'s <15ms NFR for real once resource identification + cache lookup are in the hot path — Smith's Gate 2 watch-item, don't assume compatible. Also confirm `PolicyRule`/`allowlist` is genuinely fully removed (grep, don't trust), and that the first-sighting message reads as "not yet verified" distinctly from a known-bad decision (Smith's own note, but worth an independent read before it even reaches her).
+- [ ] Phase 4 UAT (Smith gate required): a real cache-store-corruption scenario and a real scanner-crash scenario both need to actually produce the documented non-zero exit — don't accept "the code looks like it would" without triggering both for real.
+- [ ] Standing lesson reconfirmed twice now: verify behavioral/concurrency claims by actually running the code, not just reading it. Phase 1: WebFetch/FileScanner URL collision, code-reading alone would likely have missed it. Phase 2: added a real cross-process concurrency test (`ProcessPoolExecutor`, 8 real OS processes) for the dedup claim rather than accepting Neo's same-process sequential test as sufficient — ran it 5x to rule out a lucky pass on a genuine race, not just once.
 
 ## Loose end (not blocking, from Sprint 3)
 - [ ] Phase 3 UAT: run `tests/test_demo.py`, confirm no real network egress occurs via code inspection. Sprint 3 was never formally closed — revisit whenever convenient, doesn't block Sprint 4.

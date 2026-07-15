@@ -7,6 +7,7 @@ storm of repeated first-sighting lookups from spawning redundant/orphaned
 subprocesses (task.md Phase 2 exit criteria).
 """
 
+import concurrent.futures
 import subprocess
 import time
 import unittest
@@ -16,6 +17,15 @@ from unittest.mock import patch
 
 from scalene.scan_cache import FRESHNESS_SECONDS, CacheEntry, ScanCache, refresh_if_needed
 from scalene.scanner import Resource, ScanResult
+
+
+def _try_reserve_in_a_real_separate_process(args: tuple[str, Resource]) -> bool:
+    # Module-level (not a closure) so it's picklable for ProcessPoolExecutor
+    # -- each call runs in a genuinely separate OS process, no shared
+    # interpreter state, exercising the same cross-process race a real
+    # scalene-guard invocation (a fresh process per hook call) would hit.
+    cache_path, resource = args
+    return ScanCache(cache_path).try_reserve(resource)
 
 
 class TestScanCacheGetPut(unittest.TestCase):
@@ -259,6 +269,22 @@ class TestRefreshDedupAndNoOrphanedProcesses(unittest.TestCase):
             cache.cache_path.write_text(json.dumps(data))
 
             self.assertTrue(cache.try_reserve(resource))
+
+    def test_dedup_holds_under_real_cross_process_concurrency(self):
+        # Trin's UAT addition: Neo's dedup test calls try_reserve() 5x
+        # sequentially within one process, which FileLock trivially
+        # serializes. The claim that actually matters is dedup across
+        # SEPARATE scalene-guard invocations (separate OS processes, no
+        # shared memory) racing on the exact same never-cached resource --
+        # verified here with real OS processes, not simulated.
+        with TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "scan_cache.json"
+            resource = Resource(kind="url", identity="internal.example.com", scanner_name="reputation")
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(_try_reserve_in_a_real_separate_process, [(cache_path, resource)] * 8))
+
+            self.assertEqual(sum(results), 1)
 
 
 if __name__ == "__main__":

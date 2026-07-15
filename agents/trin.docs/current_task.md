@@ -1,10 +1,20 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 1 (Scanner Protocol & Built-in Scanners) UAT: PASSED (after 1 fix round). Handed to Morpheus.
+**Status:** Sprint 4 Phase 2 (Scan Cache Store) UAT: PASSED. Handed to Morpheus.
 **Assigned to:** Trin
 **Started:** 2026-07-14
 
-## Task Description (most recent): `*qa uat phase-1` (Sprint 4, STORY-1001/1002)
+## Task Description (most recent): `*qa uat phase-2` (Sprint 4, STORY-1003)
+
+## Progress
+- [x] Read `scan_cache.py` + `cache_refresh_worker.py` in full against §13.3 and task.md's explicit Phase 2 exit-criteria addition (real repeated-invocation test proving no orphaned processes)
+- [x] **Found a real gap in Neo's coverage, closed it myself** (my own standing SDET remit): Neo's dedup test calls `try_reserve()` 5x sequentially in one process — trivially serialized by `FileLock`, doesn't exercise the case that actually matters for a real Claude Code session: two *separate* `scalene-guard` invocations (separate OS processes, no shared memory) racing on the same never-cached resource. Added `test_dedup_holds_under_real_cross_process_concurrency` using a real `ProcessPoolExecutor` (8 genuinely separate OS processes hammering `try_reserve()` on the same resource) — confirmed exactly 1 of 8 wins, every time across 5 repeated runs (checked for a lucky-pass race, not just one green run).
+- [x] Independently re-verified the "no orphaned processes" claim myself rather than trusting Neo's test alone: ran the real repeated-invocation test, then checked `ps -eo pid,ppid,stat,cmd | grep defunct` immediately after — no zombies.
+- [x] Independently verified the `.gitignore` claim (Neo said "`.scalene/` already covers it," didn't just trust it): created a real `.scalene/scan_cache.json` and ran `git check-ignore -v` — confirmed matched by `.gitignore:199:.scalene/`.
+- [x] `make test`: 195/195 passing (194 + my 1 new test)
+- [x] **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-1` (Sprint 4, STORY-1001/1002)
 
 ## Progress
 - [x] Read `src/scalene/scanner.py` in full against `docs/ARCHITECTURE.md` §13.2 and `task.md`'s Phase 1 task table

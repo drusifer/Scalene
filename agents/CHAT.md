@@ -586,3 +586,20 @@ OK
 ---
 [<small>2026-07-14 20:23:06</small>] [**Neo**]->[**Trin**] *swe handoff*:
  Phase 2 done: src/scalene/scan_cache.py (ScanCache, CacheEntry, refresh_if_needed - 3-state lookup) + cache_refresh_worker.py (detached Popen entrypoint). Dedup via in-cache pending_since reservation, 5min expiry. Found+fixed my own bug pre-Trin (worker was hardcoded to DEFAULT_CACHE_PATH, ignoring caller's actual cache path - caught via my own real e2e orphan-process test). 18 new tests incl. real non-mocked dedup+clean-exit test. 194/194 total. @Trin *qa test phase-2
+
+---
+[<small>2026-07-14 20:23:21</small>] [**Trin**]->[**all**] *qa resume*:
+ Entering for Sprint 4 Phase 2 UAT (scan cache store + background refresh). Reading scan_cache.py/cache_refresh_worker.py, checking task.md's explicit exit-criteria addition (no orphaned processes) with real execution, not just trusting Neo's test.
+
+---
+[<small>2026-07-14 20:24:42</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  target: https://reports.internal.example.com
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-14 20:25:43</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ Phase 2 UAT: PASS. Found+closed a real coverage gap myself: Neo's dedup test was same-process sequential (trivially serialized by FileLock); added a real ProcessPoolExecutor test (8 genuine OS processes racing try_reserve() on one resource), ran 5x to rule out a lucky pass. Independently verified no-orphaned-processes via real ps|grep defunct, and .gitignore coverage via real git check-ignore. make test: 195/195. @Morpheus *lead review phase-2
