@@ -737,3 +737,11 @@ OK
 ---
 [<small>2026-07-15 14:34:42</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
  Phase 5 review: APPROVED (last Sprint 4 phase). sec13.6 matches exactly, no parallel bookkeeping. Caught+fixed my own doc slip in the sec4 diagram I asked Neo to fix - represented a free function as a class, added a module stereotype for accuracy. 223/223. @Smith *user test phase-5
+
+---
+[<small>2026-07-15 15:10:00</small>] [**Smith**]->[**all**] *user test*:
+ Entering for Sprint 4 Phase 5 gate (*user test) - last Sprint 4 phase. Driving the real monitor TUI via Pilot to check the new resource panel reads clearly and is consistent with the existing panels' style.
+
+---
+[<small>2026-07-15 15:11:47</small>] [**Smith**]->[**Trin**] *user bug*:
+ *user bug: real screenshot at 120-col width shows 'Last Scanned' column header truncates to ' La' and timestamps render as unreadable ' 20' - the absolute YYYY-MM-DD HH:MM:SS format doesn't fit once a 3rd panel halves-to-thirds the available width. Not a narrow-edge-case, 120 cols is common. Full: agents/smith.docs/phase5_bug_last_scanned_truncation.md @Trin triage

@@ -1,10 +1,15 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 4 gate: APPROVED. Handed to Neo for Phase 5.
+**Status:** Sprint 4 Phase 5 gate: BLOCKED pending fix. Filed `*user bug` to Trin.
 **Assigned to:** Smith
 **Started:** 2026-07-15
 
-## Task Description (most recent): Sprint 4 Phase 4 gate — scg onboard Re-scope & Fatal Exit (`*user test phase-4`)
+## Task Description (most recent): Sprint 4 Phase 5 gate — scg monitor Resource Panel (`*user test phase-5`)
+Drove the real `MonitorApp` (not just Pilot row-count checks — a real rendered screenshot via `app.export_screenshot()` at a realistic 120-column width, with 3 real cache entries populated) to check the new panel's actual visual legibility, not just its structural correctness. **Found a real bug**: the "Last Scanned" column header truncates to " La" and its timestamp values render as an unreadable " 20" — the absolute `YYYY-MM-DD HH:MM:SS` format is too wide once a 3rd panel divides the same horizontal space the previous 2 panels had. This is real and reproducible at a common terminal width, not a narrow edge case. Filed as `*user bug`, routed to Trin for triage. Full: `agents/smith.docs/phase5_bug_last_scanned_truncation.md`.
+
+**Gate withheld pending fix** — this is the same "found a real bug during the gate, don't approve yet" pattern as Sprint 2 Phase 3's focus-loss bug.
+
+## Task Description (prior): Sprint 4 Phase 4 gate — scg onboard Re-scope & Fatal Exit (`*user test phase-4`)
 My own checklist for this gate (onboard-suggestion loop closed, exit code verified for real, fatal message plain-language) all confirmed by Neo/Trin/Morpheus's real, non-mocked verification — independently re-ran both myself: corrupted a real cache, confirmed exit 2 + the message "scalene-guard: fatal scanning-machinery failure — Scan cache store scan_cache.json is corrupted: ..."; ran `scg onboard --target https://internal-tool.example.com` for real, got "Pre-seeded the scan cache: reputation:internal-tool.example.com -> trusted".
 
 2 non-blocking polish notes, not worth a fix round: (1) the fatal-exit message's tail embeds the raw JSON-parser error string — not a full traceback (satisfies the letter of the AC), and arguably useful diagnostic detail for this rare, developer-only failure path, but not fully "plain language" either; (2) the onboard success message shows the internal `scanner_name:identity` cache-key format rather than a more human phrasing. Neither affects the routine, high-frequency mask/block messages, which is where I've been most protective all sprint — those already read cleanly (confirmed at Phase 3's gate).
