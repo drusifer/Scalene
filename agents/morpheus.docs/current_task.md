@@ -1,9 +1,12 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 5 review: APPROVED. Handing to Smith for the mandatory gate — **last Sprint 4 phase**, clears into Stage 3 close after this.
+**Status:** Sprint 4 Phase 5 bug-fix review: APPROVED. Handing back to Smith to re-run her gate. **Last Sprint 4 phase.**
 **Assigned to:** N/A
 **Started:** 2026-07-15
 **Completed:** 2026-07-15
+
+## Task Description (most recent): `*lead review phase-5-fix` (Last Scanned truncation fix)
+Reviewed Neo's structural fix (full-width row instead of a 3rd squeezed column) against Trin's independent re-verification (different, longer dataset than either Neo's or Smith's own checks). Clean, correctly-scoped change — CSS height percentages (60%/40%) could theoretically clash with the other auto-sized siblings (Header/Input/Footer) in Textual's layout model, but both my own and Trin's real rendered screenshots confirm everything displays without clipping, which is the authoritative check here, not CSS-semantics reasoning in the abstract. 230/230 passing. **APPROVED.** Back to Smith to re-run her gate.
 
 ## Task Description (most recent): `*lead review phase-5` (Sprint 4, STORY-1005)
 
