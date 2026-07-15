@@ -43,6 +43,7 @@ class TestGettingStartedDocs(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = state_dir / "audit.log"
+            cache_path = state_dir / "scan_cache.json"
             config = PolicyConfig()
 
             first = pre_tool_use(
@@ -50,6 +51,7 @@ class TestGettingStartedDocs(unittest.TestCase):
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
+                cache_path=cache_path,
             )
             self.assertEqual(first["hookSpecificOutput"]["permissionDecision"], "allow")
             self.assertNotIn("systemMessage", first)
@@ -62,6 +64,7 @@ class TestGettingStartedDocs(unittest.TestCase):
                 },
                 config,
                 state_dir=state_dir,
+                cache_path=cache_path,
             )
 
             second = pre_tool_use(
@@ -73,6 +76,7 @@ class TestGettingStartedDocs(unittest.TestCase):
                 config,
                 state_dir=state_dir,
                 audit_log_path=audit_log,
+                cache_path=cache_path,
             )
             self.assertEqual(
                 second["hookSpecificOutput"]["updatedInput"]["prompt"], MaskingEngine.MASK_LITERAL

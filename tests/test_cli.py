@@ -14,8 +14,11 @@ from scalene.main_cli import main as scalene_main
 def _run_guard(payload, policy_path, state_dir):
     stdin = io.StringIO(json.dumps(payload))
     stdout = io.StringIO()
+    cache_path = Path(state_dir).parent / "scan_cache.json"
     with patch("sys.stdin", stdin), patch("sys.stdout", stdout):
-        exit_code = guard_main(["--policy-path", str(policy_path), "--state-dir", str(state_dir)])
+        exit_code = guard_main(
+            ["--policy-path", str(policy_path), "--state-dir", str(state_dir), "--cache-path", str(cache_path)]
+        )
     return exit_code, stdout.getvalue()
 
 

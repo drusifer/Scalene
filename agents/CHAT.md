@@ -615,3 +615,17 @@ OK
 ---
 [<small>2026-07-14 20:34:19</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
  User decision: accept the cost, revise the NFR (not redesign the spawn). Updated ARCHITECTURE.md sec13.3 with a split NFR - NFR-Perf-Steady-State (<15ms unchanged) + new NFR-Perf-FirstSighting (<25ms provisional per newly-identified resource, headroom over measured ~16ms worst case). PRD.md Sprint 4 Goal 13 + top-level metric annotated same way. Phase 3 task 3.4 must verify the provisional number for real, not assume. @Neo *swe impl phase-3
+
+---
+[<small>2026-07-14 20:56:53</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
++  pattern: \.md$
++  target: file:///tmp/tmpg0wxalk2/clean.md
++  description: ''
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK (skipped=1)
+
+---
+[<small>2026-07-14 20:59:24</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 3 done: resource_verifier.py replaces PolicyConfig.evaluate(), PolicyRule/allowlist removed, first-sighting wording wired, NFR split verified for real. 200/200 (1 documented skip). IMPORTANT for Smith's gate: onboard-suggestion e2e test now skipped, real regression confirmed. Full: agents/neo.docs/phase3_handoff.md @Trin *qa test phase-3

@@ -25,6 +25,8 @@ from typing import Any
 
 from .masking import MaskingEngine
 from .policy_config import PolicyConfig
+from .resource_verifier import evaluate as verify_resources
+from .scan_cache import DEFAULT_CACHE_PATH, ScanCache
 from .taint_state import DEFAULT_STATE_DIR, TaintState
 
 logger = logging.getLogger("scalene.adapter")
@@ -72,10 +74,17 @@ def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> 
     """Build a ready-to-run `scg onboard` command for the exact call that
     was just masked (Smith UX consult, 2026-07-09) — an https:// target, since
     that's what actually exempts a future identical call from masking
-    (PolicyConfig.evaluate routes http(s):// rules into MatchResult.is_trusted,
-    which MaskingEngine.decide checks). Pattern defaults to an anchored escaped
-    literal of the real value — the narrowest possible rule; the developer
-    loosens it themselves if they want broader coverage."""
+    (resource_verifier.evaluate resolves http(s):// resources into
+    MatchResult.is_trusted, which MaskingEngine.decide checks). Pattern
+    defaults to an anchored escaped literal of the real value — the
+    narrowest possible rule; the developer loosens it themselves if they
+    want broader coverage.
+
+    NOTE: this still builds a `--tool`/`--jsonpath`/`--pattern` command
+    matching today's `scg onboard` CLI (pre-scope) — Sprint 4 Phase 4
+    re-scopes that CLI to pre-seed the resource cache instead (sec13.4),
+    at which point this suggestion must be rebuilt around `--target` alone.
+    """
     jsonpath = f"$.{payload_field}"
     pattern = f"^{re.escape(str(value))}$"
     return (
@@ -93,6 +102,7 @@ def pre_tool_use(
     state_dir: Path = DEFAULT_STATE_DIR,
     payload_fields: dict[str, str] | None = None,
     audit_log_path: Path = DEFAULT_AUDIT_LOG,
+    cache_path: Path = DEFAULT_CACHE_PATH,
 ) -> dict[str, Any]:
     """STORY-301: evaluate a tool call before execution; mask or block if a
     tainted-sensitive session actually sends a real secret to an untrusted
@@ -109,7 +119,7 @@ def pre_tool_use(
     payload_fields = DEFAULT_PAYLOAD_FIELDS if payload_fields is None else payload_fields
 
     taint = TaintState.load(session_id, state_dir=state_dir)
-    match = config.evaluate(tool_name, tool_input)
+    match = verify_resources(tool_name, tool_input, config, ScanCache(cache_path))
 
     payload_field = payload_fields.get(tool_name)
     value = tool_input.get(payload_field) if payload_field is not None else None
@@ -122,6 +132,15 @@ def pre_tool_use(
 
     findings_text = "; ".join(decision.findings)
     suggestion = _suggest_onboard_command(tool_name, payload_field, value)
+    # STORY-1003 (Smith Gate 1/2 note): a destination that simply hasn't been
+    # scanned yet reads very differently from one a scan actively flagged as
+    # bad -- conflating the two ("untrusted") overstates first-sighting risk
+    # and erodes trust in later, real findings.
+    verification_note = (
+        "This destination has not yet been verified — Scalene defaults to caution until a background scan completes."
+        if match.fail_safe_triggered
+        else "This destination is known to be untrusted."
+    )
 
     if decision.action == "block":
         _append_audit_log(
@@ -139,6 +158,7 @@ def pre_tool_use(
             "deny",
             reason=(
                 f"Scalene blocked the '{payload_field}' argument to {tool_name}: {findings_text}. "
+                f"{verification_note} "
                 f"To allow this exact call going forward, run:\n{suggestion}"
             ),
         )
@@ -165,6 +185,7 @@ def pre_tool_use(
         "allow",
         reason=(
             f"Scalene masked the '{payload_field}' argument to {tool_name}: {findings_text}. "
+            f"{verification_note} "
             f"To allow this exact call going forward, run:\n{suggestion}"
         ),
         updated_input=updated_input,
@@ -175,6 +196,7 @@ def post_tool_use(
     hook_input: dict[str, Any],
     config: PolicyConfig,
     state_dir: Path = DEFAULT_STATE_DIR,
+    cache_path: Path = DEFAULT_CACHE_PATH,
 ) -> dict[str, Any]:
     """STORY-302: update sticky taint flags from the tool's result. Runs on every
     call, success or failure. Output masking (if any) already happened in
@@ -189,7 +211,7 @@ def post_tool_use(
     tool_name = hook_input["tool_name"]
 
     taint = TaintState.load(session_id, state_dir=state_dir)
-    match = config.evaluate(tool_name, tool_response)
+    match = verify_resources(tool_name, tool_response, config, ScanCache(cache_path))
 
     if match.is_sensitive:
         taint.mark_sensitive()

@@ -69,6 +69,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             self.assertEqual(_decision(result), "allow")
             self.assertIsNone(_updated_input(result))
@@ -87,6 +88,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             self.assertEqual(_decision(result), "allow")
             self.assertEqual(_updated_input(result)["command"], MaskingEngine.MASK_LITERAL)
@@ -105,6 +107,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             self.assertEqual(_decision(result), "deny")
             self.assertIsNone(_updated_input(result))
@@ -123,6 +126,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             self.assertEqual(_decision(result), "allow")
 
@@ -140,6 +144,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
                 audit_log_path=audit_log,
             )
             self.assertTrue(audit_log.exists())
@@ -161,6 +166,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
                 audit_log_path=audit_log,
             )
             entry = json.loads(audit_log.read_text().strip())
@@ -180,6 +186,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
                 audit_log_path=audit_log,
             )
             self.assertFalse(audit_log.exists())
@@ -198,6 +205,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
                 audit_log_path=audit_log,
             )
             self.assertEqual(_decision(result), "allow")
@@ -218,6 +226,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             expected_findings = scan_text_for_secrets(f"curl {REAL_SECRET}")
             message = result["systemMessage"]
@@ -237,6 +246,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             message = result["systemMessage"]
             self.assertIn("scg onboard", message)
@@ -260,6 +270,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             message = result["systemMessage"]
             self.assertIn("<domain-this-call-reaches>", message)
@@ -284,6 +295,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             suggested_line = result["systemMessage"].split("run:\n", 1)[1]
             completed = subprocess.run(["bash", "-n", "-c", suggested_line], capture_output=True, text=True)
@@ -303,6 +315,7 @@ class TestPreToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
                 audit_log_path=audit_log,
             )
             entry = json.loads(audit_log.read_text().strip().splitlines()[-1])
@@ -325,6 +338,7 @@ class TestPostToolUse(unittest.TestCase):
                 },
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             reloaded = TaintState.load("s1", state_dir=state_dir)
             self.assertTrue(reloaded.has_sensitive_data)
@@ -344,6 +358,7 @@ class TestPostToolUse(unittest.TestCase):
                 },
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             # second call with a non-sensitive, trusted result must not clear the sticky flag
             post_tool_use(
@@ -355,6 +370,7 @@ class TestPostToolUse(unittest.TestCase):
                 },
                 PolicyConfig(sensitive_by_default=False, untrusted_by_default=False),
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             reloaded = TaintState.load("s1", state_dir=state_dir)
             self.assertTrue(reloaded.has_sensitive_data)
@@ -367,6 +383,7 @@ class TestPostToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "false"}, "tool_response": {}},
                 config,
                 state_dir=state_dir,
+                cache_path=state_dir / "scan_cache.json",
             )
             self.assertEqual(result, {})
 
@@ -389,6 +406,7 @@ class TestScaleneBypass(unittest.TestCase):
                     {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
                     config,
                     state_dir=state_dir,
+                    cache_path=state_dir / "scan_cache.json",
                 )
             self.assertEqual(_decision(result), "allow")
             self.assertIsNone(_updated_input(result))
@@ -409,6 +427,7 @@ class TestScaleneBypass(unittest.TestCase):
                     },
                     config,
                     state_dir=state_dir,
+                    cache_path=state_dir / "scan_cache.json",
                 )
             self.assertEqual(result, {})
             self.assertFalse((state_dir / "s1.json").exists())

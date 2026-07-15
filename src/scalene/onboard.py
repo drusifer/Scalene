@@ -25,7 +25,6 @@ from urllib.parse import urlparse
 
 import yaml
 
-from .policy_config import PolicyConfigError, PolicyRule
 from .subprocess_isolation import run_scanner
 
 DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
@@ -34,6 +33,24 @@ DEFAULT_AUDIT_LOG = Path(".scalene") / "audit.log"
 
 class OnboardError(Exception):
     """Raised when onboarding is blocked. The message is the clear, user-facing reason."""
+
+
+# PolicyRule/allowlist (validation via PolicyRule.from_dict) was removed
+# from policy_config.py in Sprint 4 Phase 3 (docs/ARCHITECTURE.md sec13.1 --
+# full replacement, not coexistence). This CLI's own re-scope (drop
+# --tool/--jsonpath/--pattern/--description, write directly into the scan
+# cache instead of scalene_policy.yaml's allowlist, sec13.4) is explicitly
+# Phase 4 scope, not this phase's -- this is a minimal inline stand-in for
+# the validation PolicyRule.from_dict used to do, only so `scg onboard`
+# keeps working (and its tests keep passing) in the gap between the two
+# phases, not a preview of Phase 4's real design.
+_REQUIRED_RULE_FIELDS = ("tool", "jsonpath", "pattern", "target")
+
+
+def _validate_rule_shim(rule: dict) -> None:
+    missing = [k for k in _REQUIRED_RULE_FIELDS if not rule.get(k)]
+    if missing:
+        raise OnboardError(f"Onboarding blocked: invalid rule — missing required field(s) {missing}: {rule!r}")
 
 
 def _resolve_scan(target: str) -> tuple[str, str]:
@@ -66,10 +83,7 @@ def onboard(
         raise OnboardError(f"Onboarding blocked: {scan_type} check failed — {scan['reason']}")
 
     rule = {"tool": tool, "jsonpath": jsonpath, "pattern": pattern, "target": target, "description": description}
-    try:
-        PolicyRule.from_dict(rule)
-    except PolicyConfigError as exc:
-        raise OnboardError(f"Onboarding blocked: invalid rule — {exc}") from exc
+    _validate_rule_shim(rule)
 
     before_text = policy_path.read_text() if policy_path.exists() else ""
     try:

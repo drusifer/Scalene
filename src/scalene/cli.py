@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .hook_adapter import post_tool_use, pre_tool_use
 from .policy_config import PolicyConfig, PolicyConfigError
+from .scan_cache import DEFAULT_CACHE_PATH
 from .taint_state import DEFAULT_STATE_DIR
 
 logger = logging.getLogger("scalene.guard")
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="scalene-guard")
     parser.add_argument("--policy-path", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
+    parser.add_argument("--cache-path", default=str(DEFAULT_CACHE_PATH))
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     try:
@@ -49,12 +51,13 @@ def main(argv: list[str] | None = None) -> int:
         logger.warning("Fail-safe triggered: %s could not be loaded (%s) — using fail-safe defaults", policy_path, exc)
         config = PolicyConfig()
     state_dir = Path(args.state_dir)
+    cache_path = Path(args.cache_path)
 
     event = payload.get("hook_event_name")
     if event == "PreToolUse":
-        result = pre_tool_use(payload, config, state_dir=state_dir)
+        result = pre_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
     elif event == "PostToolUse":
-        result = post_tool_use(payload, config, state_dir=state_dir)
+        result = post_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
     else:
         result = {}
 

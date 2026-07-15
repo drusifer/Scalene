@@ -9,8 +9,9 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import yaml
+
 from scalene.onboard import OnboardError, onboard
-from scalene.policy_config import PolicyConfig
 
 
 class TestOnboardFileTarget(unittest.TestCase):
@@ -95,8 +96,12 @@ class TestOnboardAppendsToExistingConfig(unittest.TestCase):
 
             onboard(f"file://{target}", "Read", "$.file_path", r"\.md$", policy_path=policy_path)
 
-            config = PolicyConfig.from_yaml(policy_path)
-            self.assertEqual(len(config.allowlist), 2)
+            # PolicyConfig no longer parses `allowlist` (Sprint 4 Phase 3,
+            # sec13.1 full replacement) -- this test is really about
+            # onboard.py's own YAML-append behavior (unchanged pending
+            # Phase 4's re-scope), so it reads the raw YAML directly.
+            written = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(len(written["allowlist"]), 2)
 
     def test_unknown_scheme_blocks_with_no_write(self):
         with TemporaryDirectory() as tmp:

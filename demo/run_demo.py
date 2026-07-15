@@ -22,9 +22,17 @@ GUARD = Path(sys.executable).parent / "scalene-guard"
 FAKE_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets recognizes this)
 
 
-def _call_guard(payload: dict, state_dir: Path, policy_path: Path) -> dict:
+def _call_guard(payload: dict, state_dir: Path, policy_path: Path, cache_path: Path) -> dict:
     result = subprocess.run(
-        [str(GUARD), "--policy-path", str(policy_path), "--state-dir", str(state_dir)],
+        [
+            str(GUARD),
+            "--policy-path",
+            str(policy_path),
+            "--state-dir",
+            str(state_dir),
+            "--cache-path",
+            str(cache_path),
+        ],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -50,6 +58,7 @@ def run() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         state_dir = Path(tmp) / "state"
         policy_path = Path(tmp) / "scalene_policy.yaml"  # intentionally does not exist
+        cache_path = Path(tmp) / "scan_cache.json"
 
         print("Step 1 — An assistant reads a file.")
         _call_guard(
@@ -61,6 +70,7 @@ def run() -> int:
             },
             state_dir,
             policy_path,
+            cache_path,
         )
         print("  -> Allowed. Nothing is flagged yet — this is the first thing to happen.")
         print()
@@ -75,6 +85,7 @@ def run() -> int:
             },
             state_dir,
             policy_path,
+            cache_path,
         )
         print("  -> Scalene now remembers: this session has touched sensitive data.")
         print("     That memory persists for the rest of the session, even across many")
@@ -91,6 +102,7 @@ def run() -> int:
             },
             state_dir,
             policy_path,
+            cache_path,
         )
         decision = result["hookSpecificOutput"]["permissionDecision"]
         masked_value = result["hookSpecificOutput"].get("updatedInput", {}).get("prompt")
