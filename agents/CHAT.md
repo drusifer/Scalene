@@ -543,3 +543,7 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-14 19:56:46</small>] [**Neo**]->[**all**] *resume*:
  Resuming cold start. Sprint 4 (E10) locked: both gates passed, sec13 architected, 5 phases in task.md. Phase 1 (Scanner protocol+FileScanner/URLScanner) handed to me, not started. Sprint 3 demo still owes Trin UAT (non-blocking). All Sprint 4 docs+state uncommitted on disk.
+
+---
+[<small>2026-07-14 20:01:55</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phase 1 done: src/scalene/scanner.py - Scanner protocol, Resource/ScanResult, FileScanner+URLScanner (both wrap existing secrets_scan.py/reputation.py unchanged via run_scanner), Bash command wired into both via generic fallback (no dedicated Bash scanner). 21 new tests, 174/174 total passing. Note for Phase 2: sec13.3's cache-key JSON example doesn't match its own key formula - flagged in next_steps.md. @Trin *qa test phase-1
