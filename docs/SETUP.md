@@ -44,19 +44,17 @@ Equivalently, you can hand-edit `.claude/settings.json` yourself:
 
 ## Policy configuration
 
-Create `scalene_policy.yaml` at your project root (see `docs/ARCHITECTURE.md` §4 for the schema). If the file is missing, Scalene falls back to fail-safe defaults (`sensitive_by_default: true`, `untrusted_by_default: true`, empty allowlist).
+Create `scalene_policy.yaml` at your project root (see `docs/ARCHITECTURE.md` §13 for the schema). If the file is missing, Scalene falls back to fail-safe defaults (`sensitive_by_default: true`, `untrusted_by_default: true`).
 
 ## Onboarding a false positive
 
 ```bash
-scg onboard --target file://path/to/file.md --tool Read --jsonpath '$.file_path' \
-  --pattern '\.md$' --description "markdown is fine"
+scg onboard --target file://path/to/file.md
 
-scg onboard --target https://internal.example.com --tool WebFetch --jsonpath '$.url' \
-  --pattern '^https://internal\.example\.com/'
+scg onboard --target https://internal.example.com
 ```
 
-`--target`'s scheme decides what gets checked and how the rule counts: a `file://` target runs a secrets scan on that path before writing (rule counts as "not sensitive"); an `http(s)://` target runs a reputation check on that host (rule counts as "trusted destination"). Both run in an isolated subprocess before writing anything. On success it prints the rule added and a diff of `scalene_policy.yaml`, and appends an entry to `.scalene/audit.log`. On failure, nothing is written — you get a clear reason instead.
+`--target`'s scheme decides what gets checked: a `file://` target runs a secrets scan on that path before writing (seeds the cache as "public" on success); an `http(s)://` target runs a reputation check on that host (seeds the cache as "trusted" on success). Both run in an isolated subprocess before writing anything, directly into `.scalene/scan_cache.json` — the same cache the live hook consults. On success it prints the resolved label. On failure, nothing is written — you get a clear reason instead.
 
 ## State and audit files
 

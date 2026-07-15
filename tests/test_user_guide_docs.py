@@ -46,13 +46,13 @@ class TestUserGuideDocs(unittest.TestCase):
 
     def test_guard_flags_match_real_help_output(self):
         real_help = _help_output(guard_main)
-        for flag in ("--policy-path", "--state-dir"):
+        for flag in ("--policy-path", "--state-dir", "--cache-path"):
             self.assertIn(flag, real_help)
             self.assertIn(flag, self.text)
 
     def test_onboard_flags_match_real_help_output(self):
         real_help = _help_output(onboard_main)
-        for flag in ("--target", "--tool", "--jsonpath", "--pattern", "--description", "--policy-path"):
+        for flag in ("--target", "--cache-path"):
             self.assertIn(flag, real_help)
             self.assertIn(flag, self.text)
 

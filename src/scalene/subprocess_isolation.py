@@ -18,9 +18,16 @@ _KNOWN_SCAN_TYPES = {"secrets", "reputation"}
 
 def run_scanner(scan_type: str, target: str) -> dict:
     """Never raises — any failure (unknown scan type, subprocess error, bad
-    output) fails safe with ok=False and a clear reason."""
+    output) fails safe with ok=False and a clear reason.
+
+    "machinery_error": True marks a failure where the scan itself couldn't
+    run (this function's own failure modes, or scan_worker.py's own,
+    propagated through) -- distinct from an ordinary finding (a real
+    secret/bad reputation). STORY-1004: this is the signal Scanner.scan()
+    (scanner.py) uses to decide whether to raise ScannerMachineryError
+    instead of returning a normal ScanResult."""
     if scan_type not in _KNOWN_SCAN_TYPES:
-        return {"ok": False, "reason": f"unknown scan type: {scan_type}"}
+        return {"ok": False, "reason": f"unknown scan type: {scan_type}", "machinery_error": True}
 
     env = os.environ.copy()
     env["SCALENE_BYPASS"] = "1"
@@ -34,9 +41,9 @@ def run_scanner(scan_type: str, target: str) -> dict:
             timeout=30,
         )
     except Exception as exc:
-        return {"ok": False, "reason": f"scanner subprocess failed to run: {exc}"}
+        return {"ok": False, "reason": f"scanner subprocess failed to run: {exc}", "machinery_error": True}
 
     try:
         return json.loads(completed.stdout)
     except (json.JSONDecodeError, TypeError) as exc:
-        return {"ok": False, "reason": f"scanner subprocess returned malformed output: {exc}"}
+        return {"ok": False, "reason": f"scanner subprocess returned malformed output: {exc}", "machinery_error": True}

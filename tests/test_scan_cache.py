@@ -15,7 +15,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scalene.scan_cache import FRESHNESS_SECONDS, CacheEntry, ScanCache, refresh_if_needed
+from scalene.scan_cache import FRESHNESS_SECONDS, CacheEntry, ScanCache, ScanCacheError, refresh_if_needed
 from scalene.scanner import Resource, ScanResult
 
 
@@ -88,13 +88,35 @@ class TestScanCacheGetPut(unittest.TestCase):
             entry = reloaded.get(resource)
             self.assertEqual(entry.label, "trusted")
 
-    def test_corrupted_cache_file_fails_safe_to_empty_not_a_crash(self):
+    def test_corrupted_cache_file_raises_scan_cache_error(self):
+        # 2026-07-15 (Phase 4, STORY-1004): changed from Phase 2's original
+        # "fails safe to empty" behavior -- now that a clean, plain-language
+        # fatal exit exists (cli.py), silently treating a corrupted cache as
+        # empty would quietly degrade protection (every resource looks
+        # first-seen forever) without ever telling anyone it's broken.
         with TemporaryDirectory() as tmp:
             cache_path = Path(tmp) / "scan_cache.json"
             cache_path.write_text("{not valid json")
             cache = ScanCache(cache_path)
             resource = Resource(kind="url", identity="internal.example.com", scanner_name="reputation")
-            self.assertIsNone(cache.get(resource))
+            with self.assertRaises(ScanCacheError):
+                cache.get(resource)
+
+
+class TestScanCacheUnwritable(unittest.TestCase):
+    def test_unwritable_store_raises_scan_cache_error(self):
+        with TemporaryDirectory() as tmp:
+            read_only_dir = Path(tmp) / "readonly"
+            read_only_dir.mkdir()
+            cache_path = read_only_dir / "scan_cache.json"
+            read_only_dir.chmod(0o500)  # r-x, no write
+            try:
+                cache = ScanCache(cache_path)
+                resource = Resource(kind="url", identity="internal.example.com", scanner_name="reputation")
+                with self.assertRaises(ScanCacheError):
+                    cache.put(resource, ScanResult(label="trusted"))
+            finally:
+                read_only_dir.chmod(0o700)  # restore so TemporaryDirectory cleanup can remove it
 
 
 class TestScanCacheFreshness(unittest.TestCase):

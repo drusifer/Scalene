@@ -37,15 +37,21 @@ def main(argv: list[str]) -> int:
     resource = Resource(kind=kind, identity=identity, scanner_name=scanner_name)
     try:
         result = scanner.scan(resource)
+        ScanCache(cache_path).put(resource, result)
     except Exception:
-        # A genuine scanner-machinery failure (not an ordinary finding --
-        # Scanner.scan() implementations already fail safe into a
+        # A genuine scanner-machinery failure (ScannerMachineryError,
+        # ScanCacheError, or anything else unexpected -- not an ordinary
+        # finding, Scanner.scan() implementations already fail safe into a
         # ScanResult for those). Leaving no cache entry means the next
         # lookup sees "no entry" and retries via the normal fail-safe path,
-        # rather than silently caching a wrong/missing result.
+        # rather than silently caching a wrong/missing result. This worker
+        # is detached from the parent scalene-guard process, so there's no
+        # one left to report this failure to beyond a non-zero exit code
+        # here -- 2026-07-15 (Phase 4): now also covers the cache-write
+        # step itself, which earlier versions of this worker left
+        # unprotected (Morpheus's Phase 2 review carry-forward note).
         return 1
 
-    ScanCache(cache_path).put(resource, result)
     return 0
 
 

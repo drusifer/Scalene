@@ -73,6 +73,13 @@ class ScanResult:
     reason: str = ""
 
 
+class ScannerMachineryError(Exception):
+    """Raised by Scanner.scan() when the scan itself couldn't run (STORY-1004:
+    scanning-machinery failure, e.g. subprocess spawn failure or the target
+    couldn't even be read) -- distinct from an ordinary finding, which is
+    always returned as a ScanResult, never raised."""
+
+
 class Scanner(Protocol):
     name: str  # "secrets", "reputation", ... -- the label namespace this scanner owns
 
@@ -115,6 +122,8 @@ class FileScanner:
 
     def scan(self, resource: Resource) -> ScanResult:
         result = run_scanner("secrets", resource.identity)
+        if result.get("machinery_error"):
+            raise ScannerMachineryError(result.get("reason", "secrets scan machinery failed"))
         if result.get("ok", False):
             return ScanResult(label="public")
         return ScanResult(label="sensitive", reason=result.get("reason", ""))
@@ -145,6 +154,8 @@ class URLScanner:
 
     def scan(self, resource: Resource) -> ScanResult:
         result = run_scanner("reputation", resource.identity)
+        if result.get("machinery_error"):
+            raise ScannerMachineryError(result.get("reason", "reputation scan machinery failed"))
         if result.get("ok", False):
             return ScanResult(label="trusted")
         return ScanResult(label="untrusted", reason=result.get("reason", ""))

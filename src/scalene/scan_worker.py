@@ -32,19 +32,22 @@ _SCANNERS = {"secrets": _scan_secrets, "reputation": _scan_reputation}
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print(json.dumps({"ok": False, "reason": f"usage: scan_worker <{'|'.join(_SCANNERS)}> <target>"}))
+        print(json.dumps({"ok": False, "reason": f"usage: scan_worker <{'|'.join(_SCANNERS)}> <target>", "machinery_error": True}))
         return 2
 
     scan_type, target = argv
     scanner = _SCANNERS.get(scan_type)
     if scanner is None:
-        print(json.dumps({"ok": False, "reason": f"unknown scan type: {scan_type}"}))
+        print(json.dumps({"ok": False, "reason": f"unknown scan type: {scan_type}", "machinery_error": True}))
         return 2
 
     try:
         result = scanner(target)
     except Exception as exc:
-        print(json.dumps({"ok": False, "reason": f"scan_worker error: {exc}"}))
+        # The scan itself couldn't run (e.g. target unreadable) -- distinct
+        # from a real finding (STORY-1004: this is what makes Scanner.scan()
+        # raise ScannerMachineryError at the caller, not return a ScanResult).
+        print(json.dumps({"ok": False, "reason": f"scan_worker error: {exc}", "machinery_error": True}))
         return 1
 
     print(json.dumps(result))

@@ -64,12 +64,38 @@ class TestRunScannerIsolation(unittest.TestCase):
         result = run_scanner("bogus_scan_type", "whatever")
         self.assertFalse(result["ok"])
 
+    def test_unknown_scan_type_is_marked_as_machinery_error(self):
+        # STORY-1004: distinguishes "the scan couldn't run" from an ordinary
+        # finding, so Scanner.scan() knows to raise instead of returning a
+        # ScanResult.
+        result = run_scanner("bogus_scan_type", "whatever")
+        self.assertTrue(result["machinery_error"])
+
     def test_never_raises_when_subprocess_itself_errors(self):
         with patch("scalene.subprocess_isolation.subprocess.run") as mock_run:
             mock_run.side_effect = OSError("no such executable")
             result = run_scanner("reputation", "example.com")
             self.assertFalse(result["ok"])
             self.assertTrue(result["reason"])
+
+    def test_subprocess_error_is_marked_as_machinery_error(self):
+        with patch("scalene.subprocess_isolation.subprocess.run") as mock_run:
+            mock_run.side_effect = OSError("no such executable")
+            result = run_scanner("reputation", "example.com")
+            self.assertTrue(result["machinery_error"])
+
+    def test_malformed_subprocess_output_is_marked_as_machinery_error(self):
+        with patch("scalene.subprocess_isolation.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "not valid json"
+            result = run_scanner("reputation", "example.com")
+            self.assertFalse(result["ok"])
+            self.assertTrue(result["machinery_error"])
+
+    def test_ordinary_finding_is_not_marked_as_machinery_error(self):
+        result = run_scanner("reputation", "203.0.113.42")
+        self.assertFalse(result["ok"])
+        self.assertFalse(result.get("machinery_error", False))
 
 
 if __name__ == "__main__":

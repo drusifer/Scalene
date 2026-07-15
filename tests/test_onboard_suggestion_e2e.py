@@ -22,21 +22,10 @@ REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets 
 
 
 class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
-    @unittest.skip(
-        "KNOWN REGRESSION, Sprint 4 Phase 3->4 gap (docs/ARCHITECTURE.md sec13): "
-        "resource_verifier.evaluate() (Phase 3) no longer reads scalene_policy.yaml's "
-        "allowlist at all -- only the scan cache. `scg onboard` (unchanged until Phase 4's "
-        "re-scope, sec13.4) still only writes to scalene_policy.yaml, so running the exact "
-        "suggested command now writes a rule that has zero effect: the identical call is "
-        "STILL masked afterward. Confirmed live, not assumed -- this is the real, load-bearing "
-        "promise STORY-501/this test exists to verify, genuinely broken until Phase 4 ships. "
-        "Un-skip once Phase 4 re-scopes `scg onboard` to write into the scan cache instead."
-    )
     def test_running_the_suggested_command_stops_future_masking(self):
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             state_dir = tmp_path / "state"
-            policy_path = tmp_path / "scalene_policy.yaml"
             audit_log = tmp_path / "audit.log"
             cache_path = tmp_path / "scan_cache.json"
 
@@ -73,18 +62,17 @@ class TestSuggestedOnboardCommandClosesTheLoop(unittest.TestCase):
                 "https://reports.internal.example.com" if arg == "https://<domain-this-call-reaches>" else arg
                 for arg in argv
             ]
-            argv += ["--policy-path", str(policy_path)]
+            argv += ["--cache-path", str(cache_path)]
 
             exit_code = scalene_main(argv)
             self.assertEqual(exit_code, 0)
-            self.assertTrue(policy_path.exists())
-            self.assertIn("allowlist", policy_path.read_text())
+            self.assertTrue(cache_path.exists())
+            self.assertIn("reports.internal.example.com", cache_path.read_text())
 
-            # 3. The exact same call must no longer be masked.
-            fresh_config = PolicyConfig.from_yaml(policy_path)
-            allowed = pre_tool_use(
-                call, fresh_config, state_dir=state_dir, audit_log_path=audit_log, cache_path=cache_path
-            )
+            # 3. The exact same call must no longer be masked -- resource
+            # verification now reads the scan cache, not scalene_policy.yaml,
+            # so the same config is reused unchanged.
+            allowed = pre_tool_use(call, config, state_dir=state_dir, audit_log_path=audit_log, cache_path=cache_path)
             self.assertEqual(allowed["hookSpecificOutput"]["permissionDecision"], "allow")
             self.assertNotIn("updatedInput", allowed["hookSpecificOutput"])
             self.assertNotIn("systemMessage", allowed)

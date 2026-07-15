@@ -18,7 +18,8 @@ from pathlib import Path
 
 from .hook_adapter import post_tool_use, pre_tool_use
 from .policy_config import PolicyConfig, PolicyConfigError
-from .scan_cache import DEFAULT_CACHE_PATH
+from .scan_cache import DEFAULT_CACHE_PATH, ScanCacheError
+from .scanner import ScannerMachineryError
 from .taint_state import DEFAULT_STATE_DIR
 
 logger = logging.getLogger("scalene.guard")
@@ -54,12 +55,38 @@ def main(argv: list[str] | None = None) -> int:
     cache_path = Path(args.cache_path)
 
     event = payload.get("hook_event_name")
-    if event == "PreToolUse":
-        result = pre_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
-    elif event == "PostToolUse":
-        result = post_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
-    else:
-        result = {}
+    try:
+        if event == "PreToolUse":
+            result = pre_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
+        elif event == "PostToolUse":
+            result = post_tool_use(payload, config, state_dir=state_dir, cache_path=cache_path)
+        else:
+            result = {}
+    except (ScanCacheError, ScannerMachineryError) as exc:
+        # STORY-1004: the ONLY fatal-nonzero-exit case -- the scanning
+        # machinery itself is broken (cache store corrupt/unwritable, or a
+        # scanner's own scan()/identify() couldn't run), not an ordinary
+        # scan finding (secret found, bad reputation), which always stays
+        # exit 0 via the normal mask/block/allow decision path above.
+        # Plain-language reason only, never a raw traceback.
+        #
+        # Exit code 2, verified (not assumed) 2026-07-15 against Claude
+        # Code's real hook contract -- confirmed both by fetching the
+        # current docs and by live-testing against this very repo's own
+        # dogfooded scalene-guard hook: exit 1 (the initial, Unix-
+        # conventional choice) is explicitly documented as a NON-blocking
+        # error for PreToolUse ("Claude Code treats exit code 1 as a
+        # non-blocking error and proceeds with the action"); only exit
+        # code 2 actually blocks a PreToolUse call. Confirmed live: with
+        # exit 1, a real tool call proceeded normally through this exact
+        # fatal path with zero visible effect -- the fail-closed behavior
+        # STORY-1004 wants (block the call when the scanning machinery
+        # can't be trusted) requires exit 2, not 1. For PostToolUse, exit
+        # 2 is explicitly non-blocking too (the tool already ran) --
+        # using 2 uniformly is correct and simplest; it's the only code
+        # that changes behavior anywhere, and it changes it correctly.
+        print(f"scalene-guard: fatal scanning-machinery failure — {exc}", file=sys.stderr)
+        return 2
 
     print(json.dumps(result))
     return 0

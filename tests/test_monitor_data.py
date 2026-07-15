@@ -186,35 +186,27 @@ class TestApplyOnboardCommand(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "clean.txt"
             target.write_text("ordinary docs, nothing sensitive")
-            policy_path = Path(tmp) / "scalene_policy.yaml"
+            cache_path = Path(tmp) / "scan_cache.json"
 
-            command = (
-                f"scg onboard --target file://{target} --tool Read "
-                f"--jsonpath $.file_path --pattern .* "
-                f"--policy-path {policy_path}"
-            )
+            command = f"scg onboard --target file://{target} --cache-path {cache_path}"
             ok, output = apply_onboard_command(command)
 
         self.assertTrue(ok, output)
-        self.assertIn("Rule added", output)
+        self.assertIn("Pre-seeded the scan cache", output)
 
     def test_real_subprocess_end_to_end_blocks_on_a_real_secret(self):
         with tempfile.TemporaryDirectory() as tmp:
             fake_key = "AKIA" + "ABCDEFGHIJKLMNOP"
             target = Path(tmp) / "secret.txt"
             target.write_text(f'aws_key = "{fake_key}"')
-            policy_path = Path(tmp) / "scalene_policy.yaml"
+            cache_path = Path(tmp) / "scan_cache.json"
 
-            command = (
-                f"scg onboard --target file://{target} --tool Write "
-                f"--jsonpath $.content --pattern .* "
-                f"--policy-path {policy_path}"
-            )
+            command = f"scg onboard --target file://{target} --cache-path {cache_path}"
             ok, output = apply_onboard_command(command)
 
         self.assertFalse(ok)
         self.assertIn("secrets check failed", output)
-        self.assertFalse(policy_path.exists())
+        self.assertFalse(cache_path.exists())
 
     def test_missing_binary_returns_a_plain_language_failure_not_a_crash(self):
         # Morpheus's Phase 3 review finding: a nonexistent/unreachable binary

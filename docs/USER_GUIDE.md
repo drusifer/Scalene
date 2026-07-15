@@ -10,11 +10,13 @@ Scalene installs two binaries: `scalene-guard` (the hook Claude Code invokes aut
 
 ```
 usage: scalene-guard [-h] [--policy-path POLICY_PATH] [--state-dir STATE_DIR]
+                      [--cache-path CACHE_PATH]
 
 options:
   -h, --help            show this help message and exit
   --policy-path POLICY_PATH
   --state-dir STATE_DIR
+  --cache-path CACHE_PATH
 ```
 
 Reads one hook JSON payload from stdin, writes one JSON response to stdout, using Claude Code's real `PreToolUse`/`PostToolUse` hook contract (`hookSpecificOutput.permissionDecision`/`updatedInput` for `PreToolUse`; an empty response for `PostToolUse`, which is pure bookkeeping). You won't invoke this directly in normal use — see [docs/SETUP.md](SETUP.md) for wiring it into `.claude/settings.json`.
@@ -22,22 +24,16 @@ Reads one hook JSON payload from stdin, writes one JSON response to stdout, usin
 ### `scg onboard`
 
 ```
-usage: scg onboard [-h] --target TARGET --tool TOOL --jsonpath JSONPATH
-                   --pattern PATTERN [--description DESCRIPTION]
-                   [--policy-path POLICY_PATH]
+usage: scg onboard [-h] --target TARGET [--cache-path CACHE_PATH]
 
 options:
   -h, --help            show this help message and exit
   --target TARGET       file://<path> (runs a secrets scan) or
                         http(s)://<host> (runs a reputation check)
-  --tool TOOL
-  --jsonpath JSONPATH
-  --pattern PATTERN
-  --description DESCRIPTION
-  --policy-path POLICY_PATH
+  --cache-path CACHE_PATH
 ```
 
-Adds one rule to `scalene_policy.yaml`'s single `allowlist`, after running a safety check first (see [Onboarding workflow](#onboarding-workflow-the-fast-path) below — you should almost never need to type this command's flags out by hand). There's no separate `--list-type` flag: `--target`'s URI scheme *is* the list type — `file://` and `http(s)://` targets get verified differently and affect different parts of the decision (see [Policy configuration](#policy-configuration) below), but they live in one list and go through one command.
+Pre-seeds the resource cache (`.scalene/scan_cache.json`) for a target you already know is fine, after running a safety check first (see [Onboarding workflow](#onboarding-workflow-the-fast-path) below — you should almost never need to type `--target` out by hand). `--target`'s URI scheme resolves which scanner runs: `file://` paths get a secrets scan, `http(s)://` hosts get a reputation check. There's nothing else to specify — no tool name, no JSONPath, no pattern — the cache is keyed by the resource itself (the file's path, or the host), not by which call touched it.
 
 ### `scg install-hooks`
 
@@ -57,53 +53,44 @@ Launches a live TUI over `.scalene/audit.log` and session taint state — see ma
 
 ## Onboarding workflow: the fast path
 
-Don't start by hand-writing `scg onboard`'s four required flags — you shouldn't need to know Scalene's JSONPath/pattern format from scratch. Whenever a call gets masked, Scalene's response includes a `systemMessage` with a ready-to-run onboarding command built from the *exact call that was just masked*: the real tool name, a JSONPath into the field that matched, and an escaped literal pattern of the real value. You saw this in [Getting Started](GETTING_STARTED.md) step 4 — the `systemMessage` there is the actual output, not a mocked example.
+Don't start by hand-writing `--target` — you don't need to know a destination's scheme from memory. Whenever a call gets masked, Scalene's response includes a `systemMessage` with a ready-to-run onboarding command built from the *exact call that was just masked*, e.g. `scg onboard --target https://<domain-this-call-reaches>` with the placeholder filled in from the real destination. You saw this in [Getting Started](GETTING_STARTED.md) step 4 — the `systemMessage` there is the actual output, not a mocked example.
 
 The same suggestion is also what `scg monitor`'s onboarding action runs when you select a mask event and apply it — the console is a UI shell over this exact command, not a separate code path.
 
-**Masking is content-gated, not just session-gated.** A session touching sensitive data earlier is necessary but not sufficient — Scalene only actually masks (and only reports) a call when that specific value scans as a real secret via `detect-secrets` (the same engine `scg onboard`'s allowlist check uses). An ordinary command like `ls -la` or `git status` in a tainted session is allowed through untouched; only a call whose argument actually looks like a credential gets masked. The message says exactly what was detected (e.g. "Possible AWS Access Key detected"), not just that the session was generically risky.
+**Masking is content-gated, not just session-gated.** A session touching sensitive data earlier is necessary but not sufficient — Scalene only actually masks (and only reports) a call when that specific value scans as a real secret via `detect-secrets`. An ordinary command like `ls -la` or `git status` in a tainted session is allowed through untouched; only a call whose argument actually looks like a credential gets masked. The message says exactly what was detected (e.g. "Possible AWS Access Key detected"), not just that the session was generically risky. It also says whether the destination was *known* to be untrusted (a real reputation finding) versus simply *not yet verified* (no scan has completed for it yet) — the two read differently on purpose, so a brand-new-but-probably-fine destination doesn't sound as alarming as a confirmed-bad one.
 
-Only fall back to hand-writing the flags yourself if you want to pre-emptively allow something *before* it's ever been blocked (there's no prior call to generate a suggestion from). In that case:
+Only fall back to hand-writing `--target` yourself if you want to pre-emptively verify something *before* it's ever been blocked (there's no prior call to generate a suggestion from):
 
-- `--target http://<host>` or `--target https://<host>`: exempts calls from *this exact tool* whose *this exact field* matches your pattern from ever being masked, once the session is already tainted.
-- `--target file://<path>`: marks matching *read* results as non-sensitive in the first place, so they never taint the session at all.
-- `--jsonpath`: a [JSONPath](https://github.com/h2non/jsonpath-ng) expression into the tool's argument/response dict (e.g. `$.command` for `Bash`, `$.prompt` for `WebFetch`).
-- `--pattern`: a Python regex matched against the field's string value.
+- `--target https://<host>` (or `http://`): runs a reputation check on that host now; on success, future calls to it are trusted immediately instead of paying the first-sighting cost.
+- `--target file://<path>`: runs a secrets scan on that path now; on success, future reads of it are marked non-sensitive immediately.
 
-Both kinds of target run a safety check *before* writing anything: a `file://` target runs a secrets scan on that path (via `detect-secrets`); an `http(s)://` target runs a reputation check on that host. If the check fails, nothing is written — see [Troubleshooting](#troubleshooting) below.
+Both kinds of target run the same safety check the live hook would eventually run in the background anyway — `scg onboard` just runs it synchronously, right now, instead of waiting for a real call to trigger it. If the check fails, nothing is written to the cache — see [Troubleshooting](#troubleshooting) below.
 
-## Policy configuration
+## Resource verification & the scan cache
 
-Project-level rules live in `scalene_policy.yaml` at your project root. If the file is missing (or unreadable — see Troubleshooting), Scalene falls back to fail-safe defaults: everything read counts as sensitive, everything called counts as untrusted, until you say otherwise.
+Scalene doesn't match calls against hand-authored rules — each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit):
+
+| Cache state for a resource | What happens |
+|---|---|
+| Never seen before | Falls back to the same fail-safe defaults as always (`sensitive_by_default`/`untrusted_by_default`) — no added latency for this call. A scan is kicked off in the background so the *next* call to the same resource is faster. |
+| Seen recently (within 24h, file unchanged) | Uses the cached, real result directly. |
+| Seen a while ago, or a file's content changed since | Uses the last-known result for this call, and re-scans in the background so the next call reflects reality. |
+
+`scalene_policy.yaml` still controls the two knobs that apply when nothing more specific is known:
 
 ```yaml
 defaults:
   sensitive_by_default: true
   untrusted_by_default: true
   mode: mask   # or "block" — what to do when a real secret is detected (see below)
-
-allowlist:
-  - tool: "Read"
-    jsonpath: "$.file_path"
-    pattern: "^/workspace/public/.*"
-    target: "file:///workspace/public"
-    description: "Public asset directory — never sensitive"
-
-  - tool: "WebFetch"
-    jsonpath: "$.url"
-    pattern: "^https://internal\\.example\\.com/"
-    target: "https://internal.example.com"
-    description: "Internal API — always trusted"
 ```
-
-One list, one command (`scg onboard`) — a rule's `target` scheme (`file://` vs `http(s)://`) is what determines whether it counts toward "not sensitive" or "trusted destination"; `tool`/`jsonpath`/`pattern` determine which calls it matches, same as before.
 
 **`mode`** controls what happens when a call is both provenance-risky (tainted-sensitive session, untrusted destination) *and* the specific value actually scans as a real secret:
 
 - `mask` (default): the value is replaced with the mask literal and the call proceeds — the agent keeps working, just without the secret.
 - `block`: the call is denied outright (`permissionDecision: "deny"`) with a plain-language reason. Use this if you'd rather stop and reconsider than have the agent silently continue with a masked argument.
 
-Full field-level class model (`PolicyConfig`, `PolicyRule`, `MatchResult`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §4; the schema's field capabilities (nested JSON, shell strings, URLs, file paths, DB targets) are specified in [docs/BRD.md](BRD.md) §2.3.2. This guide won't repeat either — edit `scalene_policy.yaml` by hand for pre-emptive rules, or prefer `scg onboard` (previous section) so the safety checks run automatically.
+Full field-level class model (`PolicyConfig`, `Scanner`, `MatchResult`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §13.
 
 ## Troubleshooting
 
@@ -111,10 +98,11 @@ Scalene is built to **fail safe** — an internal problem should degrade to "tre
 
 | Situation | What happens |
 |---|---|
-| No `scalene_policy.yaml` at all | Falls back to `PolicyConfig()` defaults (`sensitive_by_default`/`untrusted_by_default` both `true`, empty rule lists). |
+| No `scalene_policy.yaml` at all | Falls back to `PolicyConfig()` defaults (`sensitive_by_default`/`untrusted_by_default` both `true`). |
 | `scalene_policy.yaml` exists but is malformed (invalid YAML, wrong types, unreadable) | Falls back to the same fail-safe defaults as a missing file, with a warning logged (`scalene.guard` logger) — **never crashes** `scalene-guard`. |
 | Malformed hook input (bad JSON on stdin) or an unrecognized hook event | Returns `{}` — an empty response, which Claude Code's hook contract treats as "allow, no changes" — the call proceeds unmodified rather than blocking your agent. |
-| A policy rule's JSONPath fails to evaluate against a real call (e.g. a typo'd expression) | That one rule fails safe to sensitive=true/untrusted=false for this call — logged as a warning, other rules still apply. |
-| `scg onboard` blocked | Nothing is written to `scalene_policy.yaml`. The failure reason is always plain language (e.g. `Onboarding blocked: secrets check failed — Possible AWS Access Key detected`) — never a raw library exception, even after the `detect-secrets` upgrade (STORY-801). |
+| A resource has never been scanned yet | Falls back to the fail-safe defaults for that call (same as an unconfigured resource always has) — not an error, just "not yet verified." |
+| The scan cache store itself is corrupted or unwritable, or a scanner's own scan couldn't run at all | This is the one case that's genuinely fatal, not fail-safe: `scalene-guard` exits non-zero with a plain-language reason on stderr (never a raw traceback) — this means the scanning machinery itself is broken, not that a scan found something bad. |
+| `scg onboard` blocked | Nothing is written to the scan cache. The failure reason is always plain language (e.g. `Onboarding blocked: secrets check failed — Possible AWS Access Key detected`) — never a raw library exception. |
 
 If you see a raw Python traceback from `scalene-guard` or `scg`, that's a bug — please file an issue rather than assuming it's expected.

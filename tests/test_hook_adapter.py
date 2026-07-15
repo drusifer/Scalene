@@ -249,9 +249,13 @@ class TestPreToolUse(unittest.TestCase):
                 cache_path=state_dir / "scan_cache.json",
             )
             message = result["systemMessage"]
+            # 2026-07-15 (Phase 4, sec13.4): --tool/--jsonpath/--pattern
+            # dropped entirely -- scg onboard now only takes --target.
             self.assertIn("scg onboard", message)
-            self.assertIn("--tool Bash", message)
-            self.assertIn("$.command", message)
+            self.assertIn("--target", message)
+            self.assertNotIn("--tool", message)
+            self.assertNotIn("--jsonpath", message)
+            self.assertNotIn("--pattern", message)
 
     def test_suggested_command_target_placeholder_is_domain_only(self):
         """Regression for Smith's Sprint-1 wording nit, fixed in Phase 3: the

@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -72,28 +71,20 @@ def _append_audit_log(entry: dict[str, Any], audit_log_path: Path) -> None:
 
 def _suggest_onboard_command(tool_name: str, payload_field: str, value: Any) -> str:
     """Build a ready-to-run `scg onboard` command for the exact call that
-    was just masked (Smith UX consult, 2026-07-09) — an https:// target, since
-    that's what actually exempts a future identical call from masking
+    was just masked (Smith UX consult, 2026-07-09) — an https:// target,
+    since that's what actually exempts a future identical call from masking
     (resource_verifier.evaluate resolves http(s):// resources into
-    MatchResult.is_trusted, which MaskingEngine.decide checks). Pattern
-    defaults to an anchored escaped literal of the real value — the
-    narrowest possible rule; the developer loosens it themselves if they
-    want broader coverage.
+    MatchResult.is_trusted, which MaskingEngine.decide checks).
 
-    NOTE: this still builds a `--tool`/`--jsonpath`/`--pattern` command
-    matching today's `scg onboard` CLI (pre-scope) — Sprint 4 Phase 4
-    re-scopes that CLI to pre-seed the resource cache instead (sec13.4),
-    at which point this suggestion must be rebuilt around `--target` alone.
+    2026-07-15 (Sprint 4 Phase 4, sec13.4): `scg onboard` re-scoped to
+    pre-seed the resource cache from `--target` alone — no more
+    `--tool`/`--jsonpath`/`--pattern`/`--description`, since there's no YAML
+    rule to author anymore. `tool_name`/`payload_field`/`value` are no
+    longer used to build the command itself, but the signature is kept as-is
+    (call sites already pass them) since they're still useful context for
+    whoever might extend this later.
     """
-    jsonpath = f"$.{payload_field}"
-    pattern = f"^{re.escape(str(value))}$"
-    return (
-        "scg onboard "
-        f"--target {shlex.quote('https://<domain-this-call-reaches>')} "
-        f"--tool {shlex.quote(tool_name)} "
-        f"--jsonpath {shlex.quote(jsonpath)} "
-        f"--pattern {shlex.quote(pattern)}"
-    )
+    return f"scg onboard --target {shlex.quote('https://<domain-this-call-reaches>')}"
 
 
 def pre_tool_use(

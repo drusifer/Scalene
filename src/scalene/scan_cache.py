@@ -15,6 +15,14 @@ not N (task.md Phase 2 exit criteria: no orphaned/redundant processes). A
 stale reservation (a worker that died without writing a result) expires on
 its own after PENDING_TIMEOUT_SECONDS so one crashed worker can't
 permanently wedge a resource out of ever being rescanned.
+
+2026-07-15 (Sprint 4 Phase 4, STORY-1004): a corrupted/unwritable cache
+store now raises ScanCacheError rather than silently degrading to "empty"
+(Phase 2's original behavior) -- STORY-1004's fatal-exit boundary exists
+specifically so this can be surfaced honestly (a clean, plain-language
+non-zero exit) instead of silently treating every resource as first-seen
+forever, which would quietly degrade protection without ever telling
+anyone the cache store itself is broken.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +43,11 @@ from .scanner import Resource, ScanResult
 DEFAULT_CACHE_PATH = Path(".scalene") / "scan_cache.json"
 FRESHNESS_SECONDS = 24 * 60 * 60
 PENDING_TIMEOUT_SECONDS = 5 * 60
+
+
+class ScanCacheError(Exception):
+    """Raised when the scan cache store itself is unreadable/unwritable
+    (STORY-1004: a scanning-machinery failure, not an ordinary lookup)."""
 
 
 @dataclass(frozen=True)
@@ -55,20 +69,33 @@ class ScanCache:
     def _lock_path(self) -> Path:
         return Path(str(self.cache_path) + ".lock")
 
+    @contextmanager
+    def _locked(self):
+        try:
+            with FileLock(str(self._lock_path())):
+                yield
+        except OSError as exc:
+            raise ScanCacheError(f"Scan cache store {self.cache_path} lock is unusable: {exc}") from exc
+
     def _read(self) -> dict:
         if not self.cache_path.exists():
             return {}
         try:
             return json.loads(self.cache_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
+        except json.JSONDecodeError as exc:
+            raise ScanCacheError(f"Scan cache store {self.cache_path} is corrupted: {exc}") from exc
+        except OSError as exc:
+            raise ScanCacheError(f"Scan cache store {self.cache_path} is unreadable: {exc}") from exc
 
     def _write(self, data: dict) -> None:
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self.cache_path.write_text(json.dumps(data))
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(json.dumps(data))
+        except OSError as exc:
+            raise ScanCacheError(f"Scan cache store {self.cache_path} is unwritable: {exc}") from exc
 
     def get(self, resource: Resource) -> CacheEntry | None:
-        with FileLock(str(self._lock_path())):
+        with self._locked():
             data = self._read()
         raw = data.get(_cache_key(resource))
         if raw is None or "label" not in raw:
@@ -89,7 +116,7 @@ class ScanCache:
         if resource.kind == "file" and os.path.exists(resource.identity):
             entry["mtime"] = os.stat(resource.identity).st_mtime
 
-        with FileLock(str(self._lock_path())):
+        with self._locked():
             data = self._read()
             data[_cache_key(resource)] = entry
             self._write(data)
@@ -109,7 +136,7 @@ class ScanCache:
         resource. Returns False if another reservation is still fresh
         (dedup) -- otherwise stakes a new reservation and returns True."""
         key = _cache_key(resource)
-        with FileLock(str(self._lock_path())):
+        with self._locked():
             data = self._read()
             existing = data.get(key, {})
             pending_since = existing.get("pending_since")

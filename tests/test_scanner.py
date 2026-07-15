@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scalene.scanner import SCANNERS, FileScanner, Resource, ScanResult, URLScanner
+from scalene.scanner import SCANNERS, FileScanner, Resource, ScanResult, ScannerMachineryError, URLScanner
 
 
 class TestResourceAndScanResult(unittest.TestCase):
@@ -104,6 +104,14 @@ class TestFileScannerScan(unittest.TestCase):
             result = self.scanner.scan(Resource(kind="file", identity=str(target), scanner_name="secrets"))
             self.assertEqual(result.label, "sensitive")
             self.assertTrue(result.reason)
+
+    def test_target_that_cannot_be_read_raises_machinery_error_not_a_finding(self):
+        # STORY-1004: a scan that couldn't run (target unreadable) is a
+        # machinery failure, distinct from an ordinary "sensitive" finding --
+        # this is what makes the fatal-exit path fire (cli.py), not a
+        # ScanResult a caller would otherwise treat as a normal decision.
+        with self.assertRaises(ScannerMachineryError):
+            self.scanner.scan(Resource(kind="file", identity="/no/such/path/here.md", scanner_name="secrets"))
 
 
 class TestURLScannerIdentify(unittest.TestCase):

@@ -1,45 +1,35 @@
 """Tests for the `scg onboard` CLI/library function (STORY-501).
 
-2026-07-14: `--list-type` removed — the scan type (secrets vs reputation)
-and the policy effect (non-sensitive vs trusted) are now both inferred from
-`target`'s URI scheme (file:// vs http(s)://) instead of a separate flag.
+2026-07-15 (Sprint 4 Phase 4, docs/ARCHITECTURE.md sec13.4): re-scoped to
+pre-seed the resource cache instead of writing a scalene_policy.yaml rule.
+`--tool`/`--jsonpath`/`--pattern`/`--description` are gone; `--target`'s
+URI scheme still resolves the scanner exactly as before.
 """
 
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import yaml
-
 from scalene.onboard import OnboardError, onboard
+from scalene.scan_cache import ScanCache
 
 
 class TestOnboardFileTarget(unittest.TestCase):
-    def test_clean_target_writes_rule_and_returns_diff(self):
+    def test_clean_target_seeds_the_cache_as_public(self):
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             target = tmp_path / "clean.md"
             target.write_text("ordinary docs")
-            policy_path = tmp_path / "scalene_policy.yaml"
-            audit_log = tmp_path / "audit.log"
+            cache_path = tmp_path / "scan_cache.json"
 
-            result = onboard(
-                f"file://{target}",
-                "Read",
-                "$.file_path",
-                r"\.md$",
-                description="markdown is fine",
-                policy_path=policy_path,
-                audit_log_path=audit_log,
-            )
-            self.assertIn("rule", result)
-            self.assertIn("diff", result)
-            self.assertTrue(policy_path.exists())
-            self.assertIn("allowlist", policy_path.read_text())
-            self.assertTrue(audit_log.exists())
-            self.assertIn("onboard", audit_log.read_text())
+            result = onboard(f"file://{target}", cache_path=cache_path)
+            self.assertEqual(result["label"], "public")
 
-    def test_secrets_found_blocks_onboarding_with_clear_reason_and_no_write(self):
+            entry = ScanCache(cache_path).get(result["resource"])
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry.label, "public")
+
+    def test_secrets_found_blocks_onboarding_with_clear_reason_and_no_cache_write(self):
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             target = tmp_path / "leaky.env"
@@ -47,68 +37,55 @@ class TestOnboardFileTarget(unittest.TestCase):
             # secret scanner would flag in this source file.
             fake_key = "AKIA" + "ABCDEFGHIJKLMNOP"
             target.write_text(f"AWS_KEY={fake_key}")
-            policy_path = tmp_path / "scalene_policy.yaml"
+            cache_path = tmp_path / "scan_cache.json"
 
             with self.assertRaises(OnboardError) as ctx:
-                onboard(f"file://{target}", "Read", "$.file_path", r"\.env$", policy_path=policy_path)
+                onboard(f"file://{target}", cache_path=cache_path)
             self.assertIn("secrets", str(ctx.exception).lower())
-            self.assertFalse(policy_path.exists())
+            self.assertFalse(cache_path.exists())
+
+    def test_seeded_identity_matches_live_evaluation_normalization(self):
+        # The cache key onboard() writes must match what FileScanner
+        # produces during a real hook call for the same file, or
+        # pre-seeding silently does nothing.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            cache_path = tmp_path / "scan_cache.json"
+
+            from scalene.scanner import FileScanner
+
+            result = onboard(f"file://{target}", cache_path=cache_path)
+            live_resources = FileScanner().identify("Read", {"file_path": str(target)})
+            self.assertEqual(len(live_resources), 1)
+            self.assertEqual(result["resource"].identity, live_resources[0].identity)
 
 
 class TestOnboardUrlTarget(unittest.TestCase):
-    def test_trusted_domain_writes_rule(self):
+    def test_trusted_domain_seeds_the_cache_as_trusted(self):
         with TemporaryDirectory() as tmp:
-            policy_path = Path(tmp) / "scalene_policy.yaml"
-            result = onboard(
-                "https://internal.example.com",
-                "WebFetch",
-                "$.url",
-                r"^https://internal\.example\.com/",
-                policy_path=policy_path,
-            )
-            self.assertTrue(policy_path.exists())
-            self.assertIn("allowlist", policy_path.read_text())
-            self.assertIn("rule", result)
+            cache_path = Path(tmp) / "scan_cache.json"
+            result = onboard("https://internal.example.com", cache_path=cache_path)
+            self.assertEqual(result["label"], "trusted")
 
-    def test_untrusted_ip_target_blocks_onboarding_with_no_write(self):
+            entry = ScanCache(cache_path).get(result["resource"])
+            self.assertEqual(entry.label, "trusted")
+
+    def test_untrusted_ip_target_blocks_onboarding_with_no_cache_write(self):
         with TemporaryDirectory() as tmp:
-            policy_path = Path(tmp) / "scalene_policy.yaml"
+            cache_path = Path(tmp) / "scan_cache.json"
             with self.assertRaises(OnboardError) as ctx:
-                onboard("https://203.0.113.42", "WebFetch", "$.url", r".*", policy_path=policy_path)
+                onboard("https://203.0.113.42", cache_path=cache_path)
             self.assertTrue(str(ctx.exception))
-            self.assertFalse(policy_path.exists())
+            self.assertFalse(cache_path.exists())
 
-
-class TestOnboardAppendsToExistingConfig(unittest.TestCase):
-    def test_preserves_existing_rules(self):
+    def test_unknown_scheme_blocks_with_no_cache_write(self):
         with TemporaryDirectory() as tmp:
-            policy_path = Path(tmp) / "scalene_policy.yaml"
-            policy_path.write_text(
-                "allowlist:\n"
-                "  - tool: Read\n"
-                '    jsonpath: "$.file_path"\n'
-                '    pattern: "\\\\.txt$"\n'
-                '    target: "file:///workspace/docs"\n'
-                "    description: existing rule\n"
-            )
-            target = Path(tmp) / "clean.md"
-            target.write_text("ordinary docs")
-
-            onboard(f"file://{target}", "Read", "$.file_path", r"\.md$", policy_path=policy_path)
-
-            # PolicyConfig no longer parses `allowlist` (Sprint 4 Phase 3,
-            # sec13.1 full replacement) -- this test is really about
-            # onboard.py's own YAML-append behavior (unchanged pending
-            # Phase 4's re-scope), so it reads the raw YAML directly.
-            written = yaml.safe_load(policy_path.read_text())
-            self.assertEqual(len(written["allowlist"]), 2)
-
-    def test_unknown_scheme_blocks_with_no_write(self):
-        with TemporaryDirectory() as tmp:
-            policy_path = Path(tmp) / "scalene_policy.yaml"
+            cache_path = Path(tmp) / "scan_cache.json"
             with self.assertRaises(OnboardError):
-                onboard("ftp://x.md", "Read", "$.file_path", r".*", policy_path=policy_path)
-            self.assertFalse(policy_path.exists())
+                onboard("ftp://x.md", cache_path=cache_path)
+            self.assertFalse(cache_path.exists())
 
 
 if __name__ == "__main__":
