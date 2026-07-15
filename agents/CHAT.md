@@ -637,3 +637,11 @@ OK (skipped=1)
 ---
 [<small>2026-07-14 21:02:19</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
  Phase 3 UAT: PASS. Independently verified: PolicyRule/allowlist genuinely gone (grepped), first-sighting wording correct live (2 real calls, distinct messages), both split-NFR tests pass on independent re-run. IMPORTANT: independently CONFIRMED (not just trusted) the onboard-suggestion regression Neo flagged - bypassed the skip decorator, reproduced the exact failure myself. This must reach Smith explicitly, not as a routine handoff. make test: 200/200 (1 documented skip). @Morpheus *lead review phase-3
+
+---
+[<small>2026-07-14 21:02:34</small>] [**Morpheus**]->[**all**] *lead resume*:
+ Entering to review Phase 3 (resource_verifier.py + hook_adapter.py integration + PolicyRule removal) against sec13.1/13.1.1 + Trin's UAT pass, incl. the onboard-suggestion regression she independently confirmed.
+
+---
+[<small>2026-07-14 21:04:17</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Phase 3 review: APPROVED (sec13.1/13.1.1 match exactly, MatchResult/MaskingEngine untouched). Agree with Trin's independently-confirmed onboard-suggestion regression - real, not overstated. My recommendation, not a decision: needs your explicit call on shippability given it's the copy-paste-command promise gated twice already. Full: agents/morpheus.docs/phase2_latency_finding.md + this handoff. @Smith *user test phase-3

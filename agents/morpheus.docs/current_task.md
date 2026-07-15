@@ -1,9 +1,19 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 2 review: APPROVED. Latency finding resolved by user decision: accept the cost, revise the NFR (not redesign the spawn mechanism). Docs updated, handed Phase 3 to Neo.
+**Status:** Sprint 4 Phase 3 review: APPROVED. Handing to Smith for the mandatory gate — this is a pause point per user instruction ("full run, pause only at Smith gates"), not proceeding further until the real user has weighed in.
 **Assigned to:** N/A
 **Started:** 2026-07-14
 **Completed:** 2026-07-14
+
+## Task Description (most recent): `*lead review phase-3` (Sprint 4, STORY-1002/1003)
+
+## Progress
+- [x] Read `resource_verifier.py` + both `hook_adapter.py` call sites against §13.1/§13.1.1 — confirmed `MatchResult` shape and `MaskingEngine.decide()`'s content-gating logic are genuinely untouched, exactly as the architecture specified this swap should work
+- [x] Confirmed `ScanCache(cache_path)` construction is fresh-per-hook-invocation (no daemon, matches §2's stateless-process-per-hook-call principle)
+- [x] **Structural observation (non-blocking, documentation-worthy)**: `resource_verifier.evaluate()` hardcodes exactly two scanner names (`_FILE_SCANNER_NAME`/`_URL_SCANNER_NAME`) mapping to the two fixed `MatchResult` dimensions (sensitivity/trust) — STORY-1002's "adding a scanner is adding an entry, no dispatch code changes" AC holds for the detection/registry layer (`SCANNERS` dict, `identify()`/`scan()`) but NOT for this aggregation layer. A 3rd scanner type would need someone to explicitly decide which `MatchResult` dimension(s) it affects — inherently a human design call given `MatchResult`'s shape is fixed at 2 dimensions, not something "just add a registry entry" can resolve automatically. Not a regression (implicit since Phase 1's registry design), but worth a one-line `ARCHITECTURE.md` §13.2 clarification so a future contributor doesn't assume full dispatch-free extensibility exists at this layer.
+- [x] Reviewed Trin's independently-confirmed onboard-suggestion regression myself — agree it's real and significant, not overstated. This is the exact "copy the command, run it, it works" promise that's been gated and re-verified twice already (Sprint 1 UX consult, Sprint 3 Gate 1/2) — from a real user's perspective this is one atomic feature now partially broken, even though internally it's cleanly split across two sequenced phases. **My recommendation for Smith to weigh, not a decision I'm making unilaterally**: this needs her explicit call on whether Phase 3 is shippable with this window open, or whether it should block until Phase 4 closes it.
+- [x] `make test`: 200/200 passing, 1 documented skip.
+- [x] **APPROVED.** Handing to Smith for the mandatory gate (task.md: "this is the phase where a real behavior/copy change becomes user-visible").
 
 ## Resolution (2026-07-14)
 User chose "accept the cost, revise the NFR" over the other two options (batch spawns, decouple from sync hot path). Updated both docs to be honest about the real cost rather than let Phase 3's perf test discover it as a surprise:
