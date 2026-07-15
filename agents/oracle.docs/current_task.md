@@ -1,12 +1,20 @@
 # Current Task
 
-**Status:** `*ora groom` for Sprint 2 close complete
+**Status:** `*ora groom` for Sprint 4 close complete
 **Assigned to:** Oracle
-**Started:** 2026-07-10
-**Completed:** 2026-07-10
+**Started:** 2026-07-15
+**Completed:** 2026-07-15
 
-## Task Description
-Stage 3 sprint close, step 7: groom docs, archive CHAT.md if oversized, record durable lessons.
+## Task Description (most recent)
+Stage 3 sprint close (Sprint 4 / E10), step 7: groom docs, archive CHAT.md if oversized, record durable lessons.
+
+## Progress
+- [x] `CHAT.md` was at 157 messages (well over the 50-100 threshold) — archived messages through the Phase 3 gate approval to `agents/chat_archive/CHAT-ARCHIVE-20260715.md`, replaced with a summary + link, kept Phase 4/5 + close activity live (~40 messages)
+- [x] Recorded 2 durable lessons in `agents/oracle.docs/lessons.md`: (1) an architecture claim about latency/exit-codes is a hypothesis until measured — both Phase 2's latency finding and Phase 4's exit-code finding were the same failure shape; (2) a row-content/data-model UI test is not a rendering test — Phase 5's real-screenshot-caught truncation bug, and the first fix attempt passing every data-level test while still being visibly broken
+- [x] Flagged 3 AC-text staleness items to Cypher, not edited myself: **STORY-1001's entire premise no longer matches what shipped** (describes a user-facing `pattern`-with-capture-groups feature; the actual §13.1 architecture decision made named captures purely an internal scanner detail, never user-facing) — significant, not cosmetic; STORY-1003's cache-key wording overstates what's literally in the key vs. value; all 5 E10 story checkboxes still unchecked despite all 5 phases being done. Full: `agents/oracle.docs/e10_story_staleness_flag.md`
+- [x] Handed off to Smith for Stage 3 step 8 (end-to-end sprint testing)
+
+## Task Description (prior): Sprint 2 close groom
 
 ## Progress
 - [x] `CHAT.md` was at 109 messages (over the 50-100 threshold) — archived messages 1-81 to `agents/chat_archive/CHAT-ARCHIVE-20260710.md`, replaced with a summary + link, kept the recent tail live

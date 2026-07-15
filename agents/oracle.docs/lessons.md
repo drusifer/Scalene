@@ -81,3 +81,40 @@ Two separate failure modes stacked on top of each other:
 
 ### References
 - **Files:** `agents/tools/trace_annotate.py`, `agents/tools/trace_rules.json`, `agents/skills/judge/SKILL.md`, `agents/neo.docs/SKILL.md`, `agents/trin.docs/SKILL.md`, `agents/trin.docs/judge_20260710_trace.md`, `agents/smith.docs/trace_eval_20260710.md`
+
+---
+
+## [2026-07-15] Sprint 4: An Architecture Claim Is a Hypothesis, Not a Fact, Until Measured
+
+> **Tags:** #Process #Morpheus #Neo #Architecture #Testing
+
+### Context
+Sprint 4 (E10) contained two separate, unrelated instances of the same failure shape: a written architectural claim about runtime behavior turned out to be empirically false when someone actually measured or tested it, rather than trusted it.
+
+### The Issue
+1. **Phase 2:** `docs/ARCHITECTURE.md` §13.3 asserted the new-resource cache-lookup path was "zero-added-latency." Morpheus measured it directly instead of trusting his own design doc and found ~6.6ms avg / ~16ms max per call, isolated to the background-scan spawn cost — a real risk against the <15ms hot-path NFR, not a rounding error.
+2. **Phase 4:** the same architecture doc left the fatal-exit code "provisionally 1... pending verification." Neo actually corrupted this repo's own live, dogfooded `scalene-guard` hook (`.claude/settings.json` wires the real editable install as the session's own hook) and confirmed exit 1 has **zero blocking effect** on a real tool call — only exit code 2 blocks `PreToolUse`, per Claude Code's real hook contract, fetched fresh rather than recalled.
+
+### The Rule (The "Lesson")
+Any architecture-doc claim about latency, exit codes, or other externally-governed runtime behavior is a hypothesis until someone measures or tests it against the real system it depends on — not a fact because it was reasoned through carefully at design time. This is a stricter, more specific case of the 2026-07-10 "real execution catches what code review misses" lesson: here, the thing being checked wasn't even the codebase's own logic, it was an *external contract* (the hook harness, the OS process-spawn cost) that no amount of internal code review could ever validate. When architecture explicitly flags something as "provisional, needs verification," treat that as a hard requirement to actually verify empirically before implementation is considered done — not a formality to note and move past.
+
+### References
+- **Files:** `docs/ARCHITECTURE.md` §13.3/§13.5, `agents/morpheus.docs/phase2_latency_finding.md`, `src/scalene/cli.py`, `tests/test_performance.py`, `tests/test_cli.py`
+
+---
+
+## [2026-07-15] Sprint 4: A Row-Content Check Is Not a Rendering Check
+
+> **Tags:** #Process #Smith #Trin #Neo #Testing #UI
+
+### Context
+Sprint 4 Phase 5 added a resource-cache panel to the `scg monitor` TUI. Trin's UAT added a real test asserting the panel's `DataTable` held the correct identity/label/timestamp values (closing a known gap-class from Sprint 2). Smith's UX gate still found a real bug: at a common 120-column terminal width, the "Last Scanned" column rendered as unreadable truncated text.
+
+### The Issue
+Textual's `DataTable` stores full, correct cell values regardless of the terminal's actual rendered width — a test that queries `table.get_row()` or asserts on stored cell content will pass even when the *visible, rendered* text is cut off to a few characters. Only Smith's `app.export_screenshot()` check, which inspects the actual rendered SVG/text output at a real terminal size, caught the truncation. The first fix attempt (shortening the timestamp string) still passed every existing data-level test while remaining visibly broken in a re-rendered screenshot — proving the string-shortening fix wrong required re-running the *same* screenshot check that found the bug, not writing a new unit test.
+
+### The Rule (The "Lesson")
+For any TUI/UI change, "the data model has the right values" and "the rendered output is legible" are two different claims requiring two different kinds of check. Row-count and row-content assertions (`table.get_row()`, `row_count`) verify the former; only a rendered screenshot (`app.export_screenshot()` at a realistic terminal size, or the real terminal itself) verifies the latter. Do not treat a passing data-level Pilot test as sufficient sign-off for a layout/width-sensitive UI change — and when re-verifying a fix for a rendering bug specifically, re-run the same screenshot-based check that found it, since a new data-level test can pass while the original rendering problem is still present.
+
+### References
+- **Files:** `src/scalene/monitor_app.py`, `tests/test_monitor_app.py` (`test_last_scanned_column_is_not_truncated_at_a_common_terminal_width`), `agents/smith.docs/phase5_bug_last_scanned_truncation.md`

@@ -1,17 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-None planned. Sprint 2 groom pass done, CHAT.md archived.
+Sprint 4 groom pass done, handed to Smith for full sprint end-to-end testing.
 
 ## Waiting On
-None.
+Smith (end-to-end test) → all-persona retro → Cypher launch.
 
 ## Planned Work
-- [x] `agents/cypher.docs/current_task.md` staleness — since resolved by Cypher herself during Sprint 2 planning
-- [ ] `agents/CHAT.md` now at ~50 messages (grew from the 2026-07-10 `*qa judge session` revised loop) — check again at the next groom pass, still under the ~80-109 threshold that triggered the last archive
-- [ ] A 3rd lesson was added to `lessons.md` directly by Bob (2026-07-10, "A Written Rule Nobody Checks Is Not an Enforced Rule") outside a formal `*ora groom` pass — worth a look next groom, not a problem, just noting it wasn't Oracle who wrote it
-- [ ] No `*ora tldr` sweep has been run on `src/scalene/monitor*.py`, `agents/tools/trace_annotate.py`, or the new `tests/test_monitor_*.py` files — consider running one
-- [ ] Watch for more orphans landing bundled inside code commits — same lesson as before, still applies
+- [ ] `agents/CHAT.md` now at ~40 live messages after this archive — check again at the next groom pass (Sprint 5 close, whenever that is), well under threshold for now.
+- [ ] Watch whether Cypher acts on the STORY-1001 staleness flag (`agents/oracle.docs/e10_story_staleness_flag.md`) — if not addressed before launch, it should at least be carried into the retro so it doesn't get lost.
+- [ ] Sprint 3 was never formally closed (demo never got Trin's UAT). Still open. Worth resolving before Sprint 5 starts, whenever that is — two open sprints stacking up is confusing.
+- [ ] No `*ora tldr` sweep has been run on the new Sprint 4 modules (`resource_verifier.py`, `scan_cache.py`, `scanner.py`, `cache_refresh_worker.py`) — consider running one, same standing item carried from Sprint 2's groom that never got picked up.
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-15*
