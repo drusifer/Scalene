@@ -1,11 +1,22 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 1 review: APPROVED. Handed Phase 2 to Neo.
-**Assigned to:** N/A (Phase 1 review finished; next is Phase 2 implementation)
+**Status:** Sprint 4 Phase 2 review: APPROVED, with a major flag for Phase 3. Paused for user visibility before Phase 3 starts (not a formal Smith gate, but a real architecture-premise risk).
+**Assigned to:** N/A
 **Started:** 2026-07-14
 **Completed:** 2026-07-14
 
-## Task Description (most recent): `*lead review phase-1` (Sprint 4, STORY-1001/1002)
+## Task Description (most recent): `*lead review phase-2` (Sprint 4, STORY-1003)
+
+## Progress
+- [x] Read `scan_cache.py`/`cache_refresh_worker.py` against §13.3 — key format matches the literal `f"{scanner_name}:{resource.identity}"` formula (correctly resolved, not the illustrative-but-inconsistent JSON example I flagged after Phase 1)
+- [x] Found a real (if bounded) robustness gap myself: `cache_refresh_worker.py`'s `try/except` wraps `scanner.scan()` but not the subsequent `ScanCache.put()` call — confirmed live with a mocked `OSError` on `put()`, the exception propagates uncaught out of `main()`. Bounded impact: this is a detached background worker, so its crash never reaches the parent's already-returned response; practical effect is just that one resource sits in its 5-minute pending-reservation window before self-healing on the next lookup. **Non-blocking** — flagged for Phase 3/4 hardening, not a Phase 2 rejection.
+- [x] **Major finding — personally verified the "zero-added-latency" claim from my own §13.3 design and found it does NOT hold**: measured `refresh_if_needed()` on brand-new (never-cached) resources at ~6.6ms avg / ~16ms max per call. Isolated the cause: it's `subprocess.Popen()`'s own spawn-call cost in a fire-and-forget pattern (not waiting between spawns) — reproduced the same ~3.6ms avg / ~19ms max with a trivial no-op command, ruling out the worker script's own complexity as the cause. This is real process-creation cost in this environment, not a measurement artifact.
+  - **Why this matters**: §13.3's entire non-regression argument for the "new resource" path rests on it being "identical to today's fail-safe-default behavior... zero-latency." It isn't — it's up to ~16ms of *added* latency on top of whatever `pre_tool_use` already costs (~6ms per Trin's Sprint 1 informal check), which alone could exceed the existing <15ms hot-path NFR on a single first-sighting call, before even accounting for multiple never-seen resources in one call (e.g. a `Bash` command with 2 paths + 1 URL = 3 separate spawns, compounding).
+  - **Not a fresh surprise** — this is precisely the risk Smith's Gate 2 watch-item and task.md's Phase 3 task 3.4 ("re-verify <15ms NFR... not assumed compatible") already anticipated. My measurement turns that from a flagged-but-unverified risk into a confirmed, quantified one, which changes Phase 3 from "verify it's probably fine" to "this needs an actual design decision before wiring into the hot path."
+- [x] `make test`: 195/195 passing
+- [x] **APPROVED** (Phase 2 delivered exactly its own scope correctly) **with the latency finding escalated to the user before Phase 3 begins** — this isn't a formal Smith gate, but building Phase 3 on a performance premise I've now personally disproven risks a lot of wasted downstream work.
+
+## Task Description (prior): `*lead review phase-1` (Sprint 4, STORY-1001/1002)
 
 ## Progress
 - [x] Read `src/scalene/scanner.py` in full against §13.2's spec — `Scanner` Protocol, `Resource`/`ScanResult` dataclasses, `SCANNERS` registry all match the architecture literally (field names, registry shape)

@@ -603,3 +603,11 @@ OK
 ---
 [<small>2026-07-14 20:25:43</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
  Phase 2 UAT: PASS. Found+closed a real coverage gap myself: Neo's dedup test was same-process sequential (trivially serialized by FileLock); added a real ProcessPoolExecutor test (8 genuine OS processes racing try_reserve() on one resource), ran 5x to rule out a lucky pass. Independently verified no-orphaned-processes via real ps|grep defunct, and .gitignore coverage via real git check-ignore. make test: 195/195. @Morpheus *lead review phase-2
+
+---
+[<small>2026-07-14 20:25:52</small>] [**Morpheus**]->[**all**] *lead resume*:
+ Entering to review Phase 2 (scan_cache.py + cache_refresh_worker.py) against sec13.3 + Trin's UAT pass.
+
+---
+[<small>2026-07-14 20:29:38</small>] [**Morpheus**]->[**User**] *lead escalation*:
+ Phase 2 review: APPROVED (functionally correct, 195/195, dedup+no-orphans independently confirmed by Trin). BUT major finding: personally measured sec13.3's 'zero-added-latency' claim and it's FALSE as implemented - refresh_if_needed() costs ~6.6ms avg/16ms max per never-cached resource, isolated to Popen spawn cost itself. Real risk against the <15ms hot-path NFR. Pausing before Phase 3 for user input on how to resolve. Full: agents/morpheus.docs/phase2_latency_finding.md @User decision needed
