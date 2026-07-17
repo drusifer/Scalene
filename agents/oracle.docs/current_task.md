@@ -1,11 +1,14 @@
 # Current Task
 
-**Status:** `*ora groom` for Sprint 4 close complete
+**Status:** `*ora groom` for Sprint 3 close complete
 **Assigned to:** Oracle
-**Started:** 2026-07-15
-**Completed:** 2026-07-15
+**Started:** 2026-07-16
+**Completed:** 2026-07-16
 
-## Task Description (most recent)
+## Task Description (most recent): Sprint 3 close groom
+CHAT.md at 47 messages — well under the archive threshold, no action needed. Checked STORY-901/902/903's ACs in `docs/USER_STORIES.md` for staleness (unlike E10's STORY-1001, none of these literally describe a mechanism that got replaced) — checked all off as genuinely satisfied, with 2 small in-place notes (STORY-902/903) pointing at where Sprint 4 kept the underlying doc/demo current rather than letting it drift. No new durable lessons this pass — this was process catch-up (a skipped UAT step run late), not a new discovery.
+
+## Task Description (prior)
 Stage 3 sprint close (Sprint 4 / E10), step 7: groom docs, archive CHAT.md if oversized, record durable lessons.
 
 ## Progress

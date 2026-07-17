@@ -178,29 +178,29 @@ As a security-conscious engineer, I want the onboarding secrets scan to detect a
 As a new user evaluating Scalene, I want a `docs/GETTING_STARTED.md` that takes me from a clean clone to seeing Scalene mask a real tool call in under 5 minutes, so that I can validate the tool works before investing time in full configuration.
 
 **Acceptance Criteria**
-- [ ] Every command in the doc is copy-pasteable and runs successfully on a clean clone (no undocumented prerequisites).
-- [ ] The walkthrough ends with the reader observing one concrete masked/blocked event (e.g. an entry in `.scalene/audit.log`), not just "install succeeded."
-- [ ] A person with no prior Scalene knowledge can complete it start-to-finish in under 5 minutes (Smith to verify by timing a cold run).
-- [ ] `README.md`'s "Getting started" section is updated to link to this doc instead of duplicating/stubbing the content.
+- [x] Every command in the doc is copy-pasteable and runs successfully on a clean clone (no undocumented prerequisites).
+- [x] The walkthrough ends with the reader observing one concrete masked/blocked event (e.g. an entry in `.scalene/audit.log`), not just "install succeeded."
+- [x] A person with no prior Scalene knowledge can complete it start-to-finish in under 5 minutes (Smith verified by timing a cold run: 24s machine time end-to-end).
+- [x] `README.md`'s "Getting started" section is updated to link to this doc instead of duplicating/stubbing the content.
 
 ### STORY-902
 As a developer operating Scalene day-to-day, I want a `docs/USER_GUIDE.md` covering all CLI commands, policy config options, and common workflows (onboarding a rule, reading the audit log, running the monitor console) in one place, so that I don't have to piece together usage from `SETUP.md`, `ARCHITECTURE.md`, and source code.
 
 **Acceptance Criteria**
-- [ ] Documents every `scalene` and `scalene-guard` CLI command/flag that exists in the current codebase (verified against actual `--help` output, not assumed).
-- [ ] Documents `scalene_policy.yaml`'s schema by example, cross-referencing `ARCHITECTURE.md` §4 rather than duplicating the full schema definition.
-- [ ] Includes a troubleshooting section covering fail-safe behavior (what happens on malformed config, missing policy file, scan failure).
-- [ ] `README.md`'s documentation table is updated to include this doc.
-- [ ] No content forked/duplicated from `SETUP.md` without a clear reason — link instead where the content already lives there.
+- [x] Documents every `scalene` and `scalene-guard` CLI command/flag that exists in the current codebase (verified against actual `--help` output, not assumed — and kept current through Sprint 4's flag changes, `--cache-path`/re-scoped `scg onboard`).
+- [x] Documents `scalene_policy.yaml`'s schema by example, cross-referencing `ARCHITECTURE.md` (§13 as of Sprint 4's replacement of the §4-era allowlist schema) rather than duplicating the full schema definition.
+- [x] Includes a troubleshooting section covering fail-safe behavior (what happens on malformed config, missing policy file, scan failure, and — added Sprint 4 — a genuinely fatal scanning-machinery failure).
+- [x] `README.md`'s documentation table is updated to include this doc.
+- [x] No content forked/duplicated from `SETUP.md` without a clear reason — link instead where the content already lives there.
 
 ### STORY-903
 As a prospective user or reviewer, I want a runnable demo that shows Scalene actually stopping a realistic data-exfiltration attempt end-to-end, so that I can see the value in minutes without reading code or setting up my own project.
 
 **Acceptance Criteria**
-- [ ] Demo is a scripted, repeatable flow (e.g. `make demo` or a `demo/` script) — not a one-off manual walkthrough that can drift out of date silently.
-- [ ] Demo scenario matches a real BRD/PRD scenario (tainted-sensitive read followed by an untrusted-destination call) and shows the actual masked output, not a mocked/fake result.
-- [ ] Demo runs offline with no real external network egress (consistent with `ARCHITECTURE.md` §9's offline requirement) — any "untrusted destination" in the demo is simulated locally.
-- [ ] Demo's expected output is checked by `make test` or a dedicated smoke test so it can't silently break/rot as the codebase changes.
+- [x] Demo is a scripted, repeatable flow (`make demo` / `demo/run_demo.py`) — not a one-off manual walkthrough that can drift out of date silently.
+- [x] Demo scenario matches a real scenario (a session that's touched sensitive data, followed by an untrusted-destination call) and shows the actual masked output, not a mocked/fake result — messaging/onboard-suggestion format kept current through Sprint 4's changes (verified live at Sprint 3 close, 2026-07-16, not just re-reading old output).
+- [x] Demo runs offline with no real external network egress — confirmed no network-capable imports exist in `demo/run_demo.py`; `scalene-guard` is decision-only by architecture and never performs the tool call itself.
+- [x] Demo's expected output is checked by a dedicated smoke test (`tests/test_demo.py`) so it can't silently break/rot as the codebase changes.
 
 ---
 

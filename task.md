@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. Sprint 3's 3 phases all implemented and passing 2026-07-14 (direct user-driven fixes/packaging work followed before formal retro/launch — Sprint 3 close is still pending). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher.
 
 ---
 
@@ -137,7 +137,7 @@ Every phase below carries a **required** Smith UX gate (`*user test`) after Trin
 # Sprint 3
 
 **Owner:** Mouse
-**Status:** Planned, pending Morpheus's plan review.
+**Status:** ✅ **SPRINT CLOSED 2026-07-16** — all 3 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 1 & 3). Phase 3's UAT/review/gate were handed off but never actually run when this session moved to unrelated direct-request work back on 2026-07-14 — completed retroactively on 2026-07-16, once flagged, rather than left open indefinitely. Full end-to-end demo re-verified live against Sprint 4's current behavior. 230/230 tests passing. Retro complete, launched by Cypher.
 **Source:** `docs/USER_STORIES.md` (E9) + `docs/ARCHITECTURE.md` (§12)
 **Scope:** User-directed (2026-07-13) — a `GETTING_STARTED.md`, a `USER_GUIDE.md`, and a runnable/tested demo of Scalene stopping a real exfiltration attempt.
 
@@ -154,6 +154,8 @@ None of these 3 phases share code — sequenced by risk/foundational order, not 
 
 **Exit criteria:** Trin UAT passes (every command in the doc actually run on a clean checkout, ends in one concrete observed masked/blocked event). Morpheus reviews. **Smith `*user test` required** — Smith personally times a cold run to verify the sub-5-minute AC (Gate 1 commitment), not just Neo's/Trin's say-so.
 
+✅ **DONE 2026-07-14** — `docs/GETTING_STARTED.md` (real 3-command walkthrough, verified against the real installed binary, not fabricated), `README.md` trimmed to link. Trin UAT passed (cloned fresh, ran `make setup`, ran all 3 commands against that clone's own binary). Smith's timed gate passed — 24s machine time end-to-end, well under 5 minutes.
+
 ---
 
 ## Phase 2 — User Guide
@@ -168,6 +170,8 @@ None of these 3 phases share code — sequenced by risk/foundational order, not 
 
 **Exit criteria:** Trin UAT passes, including diffing documented commands/flags against real `--help` output and confirming Smith's Gate 1 note (onboard-suggestion prominence) actually landed. Morpheus reviews. No dedicated Smith gate — no new interactive surface, this is an accuracy/completeness check, not a usability-flow one.
 
+✅ **DONE 2026-07-14** — `docs/USER_GUIDE.md` (all commands verified against real `--help` output), found+fixed a real pre-existing bug while writing the troubleshooting section (`cli.py` had no exception handling around malformed policy YAML). Trin UAT passed (confirmed Smith's onboard-suggestion note landed). Morpheus approved. Kept current through Sprint 4's CLI/schema changes.
+
 ---
 
 ## Phase 3 — Demo
@@ -181,6 +185,8 @@ None of these 3 phases share code — sequenced by risk/foundational order, not 
 | 3.3 | `make demo` Makefile target wired to `demo/run_demo.py` | STORY-903 |
 
 **Exit criteria:** Trin UAT passes (demo runs clean on a checkout, `tests/test_demo.py` passes, confirms no real network egress occurs). Morpheus reviews. **Smith `*user test` required** — Smith runs the demo herself to confirm it reads as genuinely non-mocked and that the narration is understandable without prior BRD/PRD context (Gate 2 commitment).
+
+✅ **DONE — implemented 2026-07-14, UAT/review/gate completed 2026-07-16** (handed off to Trin on 2026-07-14 but never actually run before that session moved to unrelated direct-request work; closed retroactively once flagged, not silently left open). `demo/run_demo.py` + `tests/test_demo.py` + `make demo`. Trin's UAT (run 2026-07-16 against the demo's current, Sprint-4-updated behavior): clean run, 3/3 tests, no network-capable imports. Morpheus approved (1 non-blocking, pre-existing observation about an uncaught exit-code path that can't realistically trigger given the demo's always-fresh tmp dir). Smith's gate passed — ran the demo herself fresh, narration reads cleanly for a BRD-naive audience, no jargon in the actual printed output. **Sprint 3's last phase — all 3 phases now closed.**
 
 ## Notes
 - No Tank phase this sprint — per Morpheus's architecture (§12.2), `demo/run_demo.py` is a local dev-only script, no new port/service/env var/CI impact.
