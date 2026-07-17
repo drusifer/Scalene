@@ -1,9 +1,31 @@
 # Current Task
 
-**Status:** Sprint 3 (E9) CLOSED. All 3 phases (implemented 2026-07-14, Phase 3's UAT/review/gate completed retroactively 2026-07-16) UAT'd, reviewed, gated, end-to-end tested, retro'd, and launched.
+**Status:** NOT STARTED — user invoked `*sprint go` to start a new sprint. This is the actual next task on cold start: write E11's stories.
 **Assigned to:** Cypher
-**Started:** 2026-07-16
-**Completed:** 2026-07-16
+**Started:** (not yet)
+
+## Task Description (next, unstarted): write E11 stories from Morpheus's §13.8 design
+A direct user design conversation (2026-07-16/17, after Sprint 4's close) found a real defect in shipped E10 code and worked through a full replacement design with Morpheus. **Read `docs/ARCHITECTURE.md` §13.1's revision note and §13.8 in full before starting** — the design is already written, this task is to formalize it as proper user stories so it goes through Smith's Gate 1 like every other sprint, not to invent it from scratch.
+
+**Core of what §13.8 designed** (condensed for story-writing):
+1. §13.1 was wrong: `URLScanner`'s host-only resource identity reproduces the exact "one scan vouches for an unbounded future set" defect E10 existed to fix (trusting `github.com` trusts every repo on it, not just the one that was scanned).
+2. Trust and Sensitivity are independent axes, not parallel signals: Trust = could this source inject malicious instructions (prompt-injection/tool-poisoning risk); Sensitivity = blast radius if something goes wrong, exactly 3 levels (Public / Internal Only / Restricted).
+3. Masking becomes unconditional via an implicit default top-level rule (any tool, any args, `sensitivity: public`, `mode: mask`) — content-scanning is a universal baseline, not gated by classification.
+4. `PolicyRule` returns (jsonpath + pattern, generic across any tool's arg shape) but only decides *candidacy/identity* — the scan cache still verifies and freshness-tracks per distinct matched identity, so a wildcard pattern can't vouch for anything unchecked. New fields: `tool`, `jsonpath`, `pattern`, `sensitivity`, `mode` (mask|block), `scanner` (optional), `description`.
+5. Explicitly NOT yet decided (§13.8's own list): exact JSONPath for "any argument," whether `scanner` must be explicit or inferred, real on-disk schema, how `scg onboard --target` maps onto a generated rule.
+6. **Not in §13.8, flagged by Morpheus's own next_steps.md as a gap**: this changes a shipped, closed-sprint on-disk format (`scan_cache.json` key scheme) and `scalene_policy.yaml`'s schema — needs a real migration/compatibility story for existing projects, not just "re-onboard everything." Surface this explicitly as a story or an open question, don't let it get silently skipped.
+
+## Progress
+- [ ] Not started.
+
+## Blockers
+None — ready to start.
+
+## Oracle Consultations
+None yet.
+
+---
+*Last updated: 2026-07-17*
 
 ## Task Description (most recent): Sprint 3 close — retro, `*pm launch`
 Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, Mouse, Smith). Central theme across nearly every input: this sprint's real lesson isn't about code, it's about how a completed-but-ungated phase silently sat open for 2 days of unrelated work with no mechanism catching it.

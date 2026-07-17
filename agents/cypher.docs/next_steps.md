@@ -1,16 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-None from Cypher — both Sprint 3 and Sprint 4 are now closed and launched. Next Cypher involvement is whenever Sprint 5 planning starts.
+Write E11's user stories from `docs/ARCHITECTURE.md` §13.8 (full detail in `current_task.md`'s "Task Description" — read that first, it's the actual brief, not just this pointer). Follow the sprint skill's Stage 1: stories → Smith Gate 1 → (Morpheus already has a strong draft architecture, but §13.8 has an explicit open-questions list to resolve) → Smith Gate 2 → Mouse phases → Morpheus plan review → implementation Bloop.
 
 ## Waiting On
-Nothing.
+Nothing — this is mine to start.
 
 ## Planned Work
-- [ ] Still open, carried from Sprint 2/3: `scrubadub`/`presidio` category-aware masking remains deferred, not yet promoted to a story.
-- [ ] Combined retro backlog (both Sprint 3's and Sprint 4's, full lists in `agents/cypher.docs/current_task.md`) to consider promoting to stories/process changes for Sprint 5:
-  - Sprint 3's process-gap findings (handoff ≠ completed step, DONE markers should land same-commit as approval) are the most actionable — worth a concrete process change before Sprint 5, not just a retro note that gets re-discovered next time a sprint's tail work gets interrupted.
-  - Sprint 4's test-hygiene/architecture-verification/UI-screenshot findings remain open too.
+- [ ] Draft E11 stories (numbering: E10 used STORY-1001-1005, so E11 should use STORY-1101+).
+- [ ] Make sure the migration/compatibility question (existing `scan_cache.json`/`scalene_policy.yaml` shapes changing) becomes an explicit story or AC, not an implicit assumption — Morpheus flagged this as missing from his own design doc.
+- [ ] Hand off to Smith for Gate 1 once stories are drafted.
 
 ---
-*Last updated: 2026-07-16*
+*Last updated: 2026-07-17*

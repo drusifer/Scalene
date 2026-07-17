@@ -1,10 +1,29 @@
 # Current Task
 
-**Status:** Assessing user's per-resource `mask|block` onboarding proposal — awaiting user direction before designing further. Not yet a story, not yet architected.
-**Assigned to:** Morpheus
+**Status:** Architecture correction written and documented (`docs/ARCHITECTURE.md` §13.1 revision note + new §13.8). Not yet implemented. User has invoked `*sprint go` to formalize this as a real sprint — Cypher is next (write stories), not Morpheus.
+**Assigned to:** N/A (handed to Cypher)
 **Started:** 2026-07-17
+**Completed:** 2026-07-17 (architecture-writing step; implementation is a separate future phase)
 
-## Task Description (most recent): direct user proposal — per-resource mode at onboard time
+## Task Description (most recent): correct §13.1, document the trust/sensitivity model (§13.8)
+The per-resource mask|block proposal (previous task below) evolved through direct conversation with the user into something much larger and more fundamental: **§13.1's "URL resource identity = host, not full URL" decision is wrong** — it structurally reproduces the exact "one scan vouches for an unbounded future set" defect E10 was built to close, just relocated from a user-authored regex into the resource-identity model. `FileScanner` already does this correctly (full path); `URLScanner` doesn't.
+
+The user reframed Scalene's actual priority: mitigating prompt-injection/tool-poisoning is the **primary** goal (trust = could this source make the agent do something malicious), secret-masking is the **emergent/secondary** protection (sensitivity = blast radius if something goes wrong). These are independent axes, not parallel provenance signals as previously treated.
+
+**What's now written into `docs/ARCHITECTURE.md`** (committed):
+- §13.1: revision note in place (kept the original wrong reasoning visible, not deleted) pointing to §13.8.
+- §13.8 (new): the corrected model in full —
+  - Trust (read-side, could this source inject malicious instructions) vs. Sensitivity (blast radius, independent axis) as two separate concepts.
+  - Exactly 3 sensitivity levels: Public / Internal Only / Restricted.
+  - Masking becomes **unconditional** via an implicit default top-level rule (`tool: ".*"`, `jsonpath: "$.*"`, `pattern: ".*"`, `sensitivity: public`, `mode: mask`) — content-scanning is a universal baseline, not gated by taint/classification. This is what makes `sensitivity: public` a safe default rather than a weakening.
+  - `PolicyRule` returns (jsonpath + pattern, tool-shape-agnostic) but in a **narrower role than pre-Sprint-4**: it decides *candidacy and resource identity* (named capture groups become the cache key, generalizing STORY-1001's original intent instead of Phase 1's internal-only downgrade of it) — it does NOT decide trust directly. The scan cache still verifies and freshness-tracks *per distinct matched identity*, so a wildcard `pattern` widens what's considered, never what's vouched for without checking. This is the piece that makes bringing patterns back safe this time.
+  - `PolicyRule`'s new shape: `tool`, `jsonpath`, `pattern`, `sensitivity`, `mode` (mask|block — not a boolean, confirmed with the user), `scanner` (optional), `description`.
+  - Explicit "not yet decided" list: exact JSONPath for "any argument," whether `scanner` must be explicit or inferred, the real on-disk schema, how `scg onboard --target` maps onto a generated rule.
+- §4's class diagram: `PolicyRule` added back, connected to `ResourceVerifier`, explanatory note rewritten.
+
+**Not implemented.** This is a documented, corrected *design*, not code. The user then said `*sprint go` — meaning: run this through the real sprint process (Cypher writes stories, Smith gates, Mouse phases, implementation Bloop) rather than just coding it ad hoc, given it touches a shipped, closed sprint's on-disk format and CLI surface.
+
+## Task Description (prior): direct user proposal — per-resource mode at onboard time
 User (via `*chat TO=all`): "add a property to the allowlist rules for: mask | block. So when I onboard I can make that decision." Assessed against the current architecture (post Sprint 4/E10): flagged that `MaskingEngine.decide()`'s `not match.is_trusted` gate means content-scanning is *skipped entirely* for trusted resources today, not scanned-then-treated-leniently — so a per-resource mode property attached to `trusted` would never actually fire. Presented 2 structural paths (always-scan-and-weight vs. a new scan-but-respond-differently category) with a lean toward the latter (additive, doesn't weaken what `trusted` currently guarantees or E10's latency reasoning). Full writeup: `agents/morpheus.docs/proposal_per_resource_mode.md`. Explicitly did not decide unilaterally — asked the user for direction, flagged this probably wants Cypher's requirements framing too before a schema change (touches `.scalene/scan_cache.json`'s on-disk format and `scg onboard`'s CLI, both just stabilized in Sprint 4).
 
 ## Task Description (prior): `*lead review phase-3` (Sprint 3, STORY-903) — completing Sprint 3's close

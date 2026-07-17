@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Waiting on the user's direction on the per-resource `mask`/`block` proposal (Option A: always-scan-and-weight vs. Option B: new additive category vs. something else). Do not start implementation or a formal architecture doc until that's resolved — this is still at the "is this the right shape" stage, not locked.
+None for Morpheus right now. `*sprint go` was invoked by the user to formalize the §13.8 design as a real sprint (likely "Sprint 5" / a new epic, call it E11 for now — not yet officially numbered by Cypher). **Cypher is next**: write user stories capturing what §13.8 already designed, so it goes through Smith's Gate 1 like every other sprint has.
 
 ## Waiting On
-User (direction on the proposal) → possibly Cypher (requirements framing, is this a new story) → then a real architecture pass if it proceeds.
+Cypher (write E11 stories) → Smith (Gate 1) → Morpheus (formal architecture pass — §13.8 is a strong draft but has an explicit "not yet decided" list to resolve: exact JSONPath for "any argument," scanner-inference rules, on-disk schema, `scg onboard` mapping) → Smith (Gate 2) → Mouse (phase breakdown) → Morpheus (plan review) → implementation Bloop.
 
 ## Planned Work
-- [ ] If the user picks a direction: write it up properly (likely a new `docs/ARCHITECTURE.md` §14 or an addendum to §13, since it touches the same scan cache / resource-verification system) rather than just coding it ad hoc — this changes an on-disk format and a CLI surface that only just stabilized.
-- [ ] If Option A (always-scan) is chosen: need to re-verify the latency/NFR story again (same "measure, don't assume" discipline as Phase 2's finding this sprint) — removing the scan-skip for trusted resources could reintroduce the exact cost Phase 2 was built to avoid for cached/trusted paths.
-- [ ] If Option B (new category) is chosen: need a clear name for it distinct from "trusted" — placeholder used in the proposal doc ("acknowledged, still scan") is not a real proposed name, just descriptive.
+- [ ] When architecture comes back to me (post-Cypher-stories, pre-Gate-2): resolve §13.8's explicit open questions into concrete decisions, not leave them as TBD through implementation.
+- [ ] Whichever phase implements this: re-verify the latency/NFR story again once rule-matching (regex evaluation per call) is back in the hot path — same "measure, don't assume" discipline as Sprint 4 Phase 2's finding. Rule matching could plausibly cost more than the current hardcoded scanner `identify()` methods, especially if a project accumulates many rules.
+- [ ] Flag to whoever phases this: this changes a shipped, closed-sprint on-disk format (`scan_cache.json`'s key scheme, if URL identity moves from host to full-path) and `scalene_policy.yaml`'s schema (allowlist returns, differently shaped) — needs a real migration/compatibility story, not just "old projects re-onboard everything." Not addressed in §13.8, worth surfacing at Cypher's story-writing stage.
 
 ---
 *Last updated: 2026-07-17*

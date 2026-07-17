@@ -65,6 +65,16 @@ classDiagram
         <<module: resource_verifier.py>>
         +evaluate(tool, args, config, cache) MatchResult
     }
+    class PolicyRule {
+        <<corrected 2026-07-17, sec13.8>>
+        +str tool
+        +str jsonpath
+        +str pattern
+        +str sensitivity
+        +str mode
+        +str scanner
+        +str description
+    }
     class Scanner {
         <<interface>>
         +str name
@@ -117,14 +127,16 @@ classDiagram
     ResourceVerifier --> Scanner
     ResourceVerifier --> ScanCache
     ResourceVerifier --> PolicyConfig
+    ResourceVerifier --> PolicyRule
     ResourceVerifier --> MatchResult
+    PolicyRule ..> Scanner
     ScanCache --> CacheEntry
     ScanCache ..> ScanCacheError
     MaskingEngine --> MatchResult
     MaskingEngine --> TaintState
 ```
 
-**Full replacement, not incremental simplification (2026-07-15, Sprint 4 / E10, §13.1):** `PolicyConfig.allowlist`/`PolicyRule` (the "one unified allowlist keyed by target scheme" model, itself only one commit old) is removed entirely — the defect this epic exists to fix (a rule's one-time scan vouching for an unbounded future pattern match) is structural to pattern-matching itself, not something an incremental schema tweak could fix. `PolicyConfig` now only carries the sensitivity/trust defaults and `mode`; resource identification (`Scanner`/`FileScanner`/`URLScanner`) and verification (`ScanCache`, `ResourceVerifier.evaluate()`) replace rule-matching entirely, per §13. `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
+**Full replacement, not incremental simplification (2026-07-15, Sprint 4 / E10, §13.1) — corrected 2026-07-17, §13.8:** the original `PolicyConfig.allowlist`/`PolicyRule` model (tool/jsonpath/pattern/target, matching a call *and* deciding trust in one step) was removed entirely at Sprint 4, on the reasoning that pattern-matching itself was structurally unsafe (one scan vouching for an unbounded future match). That reasoning was right about the *old* `PolicyRule`, but the replacement (host-only resource identity for URLs) reintroduced the identical defect in a different shape — see §13.1's revision note. `PolicyRule` returns in §13.8's corrected model, but doing a narrower job than before: it decides *candidacy and resource identity* (jsonpath + pattern, tool-shape-agnostic), never trust directly — the scan cache (`ScanCache`) still verifies and freshness-tracks each *distinct* matched identity, which is what keeps a wildcard `pattern` from vouching for anything it hasn't actually checked. `PolicyConfig` still carries the mode/sensitivity-by-default fallbacks used when no rule matches. `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
 
 ## 5. Sequence & Interaction Flows
 
@@ -285,6 +297,8 @@ STORY-903 requires the demo show a *real* masked call, offline, and be checked b
 
 ### 13.1 Decision: replace the allowlist/PolicyRule matching model, don't bolt scanning on top of it
 
+**Corrected 2026-07-17 (direct user design session, post-Sprint-4-close) — see §13.8.** The paragraph below is kept as the historical record of what shipped and why it was wrong, not silently rewritten. The specific error: claiming host-only resource identity "doesn't lose" the old model's flexibility. It does, and worse — host-level identity **structurally reproduces the exact defect this epic exists to fix** (one verification vouching for an unbounded future set), just relocated from a user-authored regex into the resource-identity model itself. Trusting a host based on scanning one path under it is the same shape of bug as a `pattern` matching an unbounded set based on scanning one `target`. §13.8 corrects this: `PolicyRule` (jsonpath + pattern) returns as the *matching* mechanism — generic across any tool's argument shape, not assuming a fixed per-tool-type resource schema — while the scan cache's per-distinct-identity verification and freshness tracking (§13.3, which was and remains correct) is what actually keeps a wildcard pattern safe: the pattern controls *candidacy*, the cache still controls *trust*, checked per specific match, not once for the whole pattern.
+
 Cypher's epic left this as an explicit open question. **Decision: full replacement**, not coexistence. `PolicyConfig.allowlist`/`PolicyRule` (tool/jsonpath/pattern/target, shipped one commit before this epic) is removed entirely, not deprecated alongside a new system.
 
 Reasoning: the defect this epic exists to fix — a rule's `pattern` can match an unbounded future set while its `target` was only ever scanned once — is structural to the pattern-matching model itself, not a bug in one implementation of it. Any coexistence would keep the hole open for whichever rules stay on the old path. The new model's resource-identity granularity (a URL scanner's resource is a *host*, not a full URL) already gives broad, reusable coverage — "trust `internal.example.com`" naturally covers every path under it — without needing a hand-written regex to express "broad." The old model's flexibility isn't lost, it's absorbed into resource-identity choice.
@@ -399,3 +413,52 @@ New panel alongside the existing Sessions/Mask-events tables (`monitor_app.py`),
 ### 13.7 Devops/Infra impact
 
 No Tank gate: still no daemon, no new port/service/env var. The one new behavior worth Tank's awareness (not a gate) is background subprocess spawning via `Popen` without `wait()` — confirm this doesn't leave zombie/orphaned processes in constrained container environments; Neo to verify during implementation with a real, repeated-invocation test, not just a single-call check.
+
+### 13.8 Correction (2026-07-17): rule-driven resource identity, and an explicit trust/sensitivity model
+
+Direct user design session, after Sprint 4 was formally closed. Corrects §13.1's resource-identity decision and generalizes it — not a new epic replacing E10, an in-place fix to a defect in what E10 shipped.
+
+**What was wrong.** §13.1 hard-codes what "a resource" means per scanner type: `FileScanner`'s identity is the full path (correct), `URLScanner`'s identity is the *host* (wrong). Host-level identity means onboarding one path under a host (e.g. `github.com/you/your-repo`) silently trusts every other path under that host (e.g. anyone else's repo on `github.com`) — one verification vouching for an unbounded set, the exact defect this epic exists to close, just relocated into the resource model instead of a user-authored regex.
+
+**Why it matters more than "less granular than ideal."** The user framed Scalene's primary purpose precisely: mitigating prompt-injection/tool-poisoning vectors without relying on the model's own guardrails, *not* secret-leak prevention — that's the secondary, emergent protection that falls out of the taint-tracking/content-scanning machinery. Under that priority order, **trust is the primary control** (should the agent be allowed to pull content from this source at all) and **masking is the backup** (catch it if something sensitive slips out anyway). Host-level trust granularity is therefore a hole in the *primary* control, not the backup one: `github.com` hosts both a trusted repo and every untrusted, potentially-poisoned repo anyone else has ever pushed, and host-level identity cannot distinguish them.
+
+**Two independent axes, not one.** Prior to this correction, `is_sensitive`/`is_trusted` were treated as roughly parallel provenance signals. They are not — they answer different questions:
+- **Trust** — *could this source cause the agent to do something malicious* (prompt injection, tool poisoning)? A read-side/source-legitimacy question, answered by scanning/verifying/vouching for a resource, at whatever granularity actually distinguishes the safe case from the unsafe one (per-repo, not per-host, for anything multi-tenant like a public git host).
+- **Sensitivity** — *what's the blast radius if a malicious tool call involving this resource succeeds?* A data-classification question, independent of trust. Exactly three levels, deliberately small:
+  1. **Public** — anyone in the world can access it.
+  2. **Internal Only** — anyone internal to the org can access it.
+  3. **Restricted** — only specific people can see it.
+
+  It's fine to work with low- or medium-trust sources when sensitivity is Public/non-critical — the worst case is bounded. The dangerous combination (the "Triangle-of-Doom"/lethal-trifecta case this whole project exists to prevent) is low-trust *and* high-sensitivity together, not either alone.
+
+**Masking becomes unconditional, not sensitivity-gated.** Today, content-scanning only runs when a session is already tainted-sensitive *and* tainted-untrusted (`MaskingEngine.decide()`'s `provenance_risk` gate). Under the corrected model, an implicit, always-present top-level rule —
+
+```yaml
+- tool: ".*"        # any tool
+  jsonpath: "$.*"    # any argument (conceptual; exact JSONPath TBD at implementation)
+  pattern: ".*"      # any value
+  sensitivity: public
+  mode: mask
+```
+
+— matches every call by default, so real-secret content-scanning is a universal baseline, not conditioned on classification. This is what makes `sensitivity: public` a safe *default* rather than a weakening: the leak-detection safety net no longer depends on the classification being right. Sensitivity/trust govern *stricter* handling on top of that baseline (e.g. a rule matching something classified `restricted` can carry `mode: block` instead of `mask`), not whether any protection exists at all.
+
+**`PolicyRule` returns, generalized — not the pre-Sprint-4 shape.** The pre-Sprint-4 `PolicyRule` matched calls directly and *was itself* the trust decision (evaluate → allow/deny), which is what let one scan vouch for an unbounded pattern. The corrected model splits that: `PolicyRule` (jsonpath + pattern, tool-shape-agnostic — Scalene does not need to know a given tool's argument structure in advance) decides *candidacy and resource identity* (a named capture group in `pattern`, generalizing STORY-1001's original — not Phase 1's internal-only downgrade of it — intent, becomes the cache key); the scan cache (§13.3, unchanged and still correct) decides *trust*, verified and freshness-tracked per distinct identity a rule's pattern actually matches, never once for the whole pattern. A wildcard rule widens what's *considered*, never what's *vouched for without checking*.
+
+```python
+@dataclass(frozen=True)
+class PolicyRule:
+    tool: str          # regex against tool_name (".*" = any)
+    jsonpath: str       # JSONPath into tool_input/tool_response
+    pattern: str        # regex against the extracted value; named capture groups
+                        # (e.g. (?P<host>...)) become the resource identity
+    sensitivity: str    # "public" | "internal" | "restricted"
+    mode: str           # "mask" | "block"
+    scanner: str = ""   # which verifier checks a match ("secrets" | "reputation" |
+                        # inferred from context if omitted)
+    description: str = ""
+```
+
+**Zero-config baseline is preserved, not replaced.** `FileScanner`/`URLScanner`'s built-in generic-fallback detection (Phase 1, unaffected) remains the reason a brand-new, unconfigured project gets real protection immediately — rules are an *additive precision layer* (narrower or broader than the generic heuristic, deliberately chosen) layered on top of that baseline via the implicit default rule above, not a configuration requirement before any scanning happens.
+
+**Not yet decided / explicitly deferred to implementation:** the exact JSONPath expression for "any argument" in the default rule; whether `scanner` must always be explicit on a user-authored rule or can be inferred the way URI scheme inference works today; the real on-disk schema for `PolicyRule` in `scalene_policy.yaml` (replaces the removed `allowlist`, does not resurrect its exact pre-Sprint-4 shape — `sensitivity`/`mode` are new fields, `target` does not return); how `scg onboard` maps a `--target` onto a generated rule with a sensible default pattern. This section documents the corrected *model*; implementation is a follow-up phase, not retroactively applied to already-closed Sprint 4 code without going through the same Bloop review process everything else in this document did.

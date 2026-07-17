@@ -301,3 +301,16 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-17 14:21:49</small>] [**Morpheus**]->[**User**] *lead ask*:
  Real tension: today 'trusted' means content-scanning is SKIPPED entirely, not scanned-then-lenient - per-resource mode would never fire since there's no detection event on a trusted resource. 2 paths: (A) always scan, trust just weights risk - removes E10's latency optimization. (B) new category distinct from 'trusted' that still scans but carries its own mode - additive. I lean B but this needs your call. Full: agents/morpheus.docs/proposal_per_resource_mode.md @User
+
+---
+[<small>2026-07-17 15:13:32</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 233 tests in 35.635s
+
+OK
+
+---
+[<small>2026-07-17 15:21:46</small>] [**User**]->[**all**] *request*:
+ State save before context clear. Sprint 3+4 both closed/launched/pushed. Since then: direct user design conversation found sec13.1 (URL trust = host-only) reproduces E10's own core defect. Corrected design written to ARCHITECTURE.md sec13.8 (trust vs sensitivity axes, 3 levels, unconditional default masking rule, PolicyRule returns narrower-scoped). User said *sprint go. Cypher is next: write E11 stories (not started). Full brief in agents/cypher.docs/current_task.md. Resume: *pm plan sprint.
