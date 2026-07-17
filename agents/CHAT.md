@@ -289,3 +289,15 @@ Ran 233 tests in 37.356s
 OK
 Pre-seeded the scan cache: reputation:reports.internal.example.com -> trusted
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-17 14:20:47</small>] [**User**]->[**all**] *request*:
+ I think what would make sense is to add a property to the allowlist rules for: mask | block. So when I onboard I can make that decision.
+
+---
+[<small>2026-07-17 14:20:58</small>] [**Morpheus**]->[**all**] *lead resume*:
+ Entering on the user's per-resource mask|block proposal. Checking how it interacts with the current onboarding/trust model before responding.
+
+---
+[<small>2026-07-17 14:21:49</small>] [**Morpheus**]->[**User**] *lead ask*:
+ Real tension: today 'trusted' means content-scanning is SKIPPED entirely, not scanned-then-lenient - per-resource mode would never fire since there's no detection event on a trusted resource. 2 paths: (A) always scan, trust just weights risk - removes E10's latency optimization. (B) new category distinct from 'trusted' that still scans but carries its own mode - additive. I lean B but this needs your call. Full: agents/morpheus.docs/proposal_per_resource_mode.md @User

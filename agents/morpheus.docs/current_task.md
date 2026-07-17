@@ -1,11 +1,13 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 3 (Demo) review: APPROVED — completing Sprint 3's close. Handing to Smith for her Phase 3 gate (never run back in Sprint 3).
-**Assigned to:** N/A
-**Started:** 2026-07-16
-**Completed:** 2026-07-16
+**Status:** Assessing user's per-resource `mask|block` onboarding proposal — awaiting user direction before designing further. Not yet a story, not yet architected.
+**Assigned to:** Morpheus
+**Started:** 2026-07-17
 
-## Task Description (most recent): `*lead review phase-3` (Sprint 3, STORY-903) — completing Sprint 3's close
+## Task Description (most recent): direct user proposal — per-resource mode at onboard time
+User (via `*chat TO=all`): "add a property to the allowlist rules for: mask | block. So when I onboard I can make that decision." Assessed against the current architecture (post Sprint 4/E10): flagged that `MaskingEngine.decide()`'s `not match.is_trusted` gate means content-scanning is *skipped entirely* for trusted resources today, not scanned-then-treated-leniently — so a per-resource mode property attached to `trusted` would never actually fire. Presented 2 structural paths (always-scan-and-weight vs. a new scan-but-respond-differently category) with a lean toward the latter (additive, doesn't weaken what `trusted` currently guarantees or E10's latency reasoning). Full writeup: `agents/morpheus.docs/proposal_per_resource_mode.md`. Explicitly did not decide unilaterally — asked the user for direction, flagged this probably wants Cypher's requirements framing too before a schema change (touches `.scalene/scan_cache.json`'s on-disk format and `scg onboard`'s CLI, both just stabilized in Sprint 4).
+
+## Task Description (prior): `*lead review phase-3` (Sprint 3, STORY-903) — completing Sprint 3's close
 Reviewed `demo/run_demo.py` adversarially (my own standing habit). One narrow, non-blocking observation: `_call_guard()`'s `subprocess.run(..., check=True)` would raise an uncaught `CalledProcessError` if `scalene-guard` ever exited non-zero (Sprint 4's new fatal-exit path, STORY-1004) — the demo only handles the "decision != allow" case gracefully, not a machinery-failure exit. In practice this can't trigger: the demo always uses a fresh tmp dir, so the scan cache is never corrupted (missing ≠ corrupted — `ScanCache._read()` returns `{}` for a missing file, no error). Pre-existing shape, orthogonal to Sprint 3's actual scope, not worth a fix round for a local dev demo script. **APPROVED.**
 
 ## Task Description (prior): `*lead review phase-5-fix` (Last Scanned truncation fix)

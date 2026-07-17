@@ -1,15 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Phase 5 approved, handed to Smith for the mandatory gate. **This is the last Sprint 4 phase** — once Smith clears it, Sprint 4 (E10) implementation is complete and Stage 3 close begins.
+Waiting on the user's direction on the per-resource `mask`/`block` proposal (Option A: always-scan-and-weight vs. Option B: new additive category vs. something else). Do not start implementation or a formal architecture doc until that's resolved — this is still at the "is this the right shape" stage, not locked.
 
 ## Waiting On
-Smith (Phase 5 gate) → Sprint 4 close (Oracle groom → Smith end-to-end test → all-persona retro → Cypher launch). No more phase-level Morpheus reviews expected for Sprint 4 after this.
+User (direction on the proposal) → possibly Cypher (requirements framing, is this a new story) → then a real architecture pass if it proceeds.
 
-## Planned Work (Sprint 4 close)
-- [ ] No standing Morpheus-specific action until close, but stay available if Smith's end-to-end testing surfaces an architecture-level question spanning multiple phases (the whole point of an end-to-end pass is catching things no single phase gate would).
-- [ ] My own retro input when `*sprint retro` happens: the latency finding (Phase 2) and the exit-code verification (Phase 4) were both "verify the real thing, don't assume" catches with real consequences — worth naming as this sprint's throughline, not just two isolated findings.
-- [ ] Not urgent: Sprint 3 was never formally closed. Worth resolving before starting Sprint 5, whenever that begins.
+## Planned Work
+- [ ] If the user picks a direction: write it up properly (likely a new `docs/ARCHITECTURE.md` §14 or an addendum to §13, since it touches the same scan cache / resource-verification system) rather than just coding it ad hoc — this changes an on-disk format and a CLI surface that only just stabilized.
+- [ ] If Option A (always-scan) is chosen: need to re-verify the latency/NFR story again (same "measure, don't assume" discipline as Phase 2's finding this sprint) — removing the scan-skip for trusted resources could reintroduce the exact cost Phase 2 was built to avoid for cached/trusted paths.
+- [ ] If Option B (new category) is chosen: need a clear name for it distinct from "trusted" — placeholder used in the proposal doc ("acknowledged, still scan") is not a real proposed name, just descriptive.
 
 ---
-*Last updated: 2026-07-15*
+*Last updated: 2026-07-17*
