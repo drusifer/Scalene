@@ -1,10 +1,20 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 5 bug fix re-verified: PASS. Handed back to Morpheus for re-review, then Smith's gate again. **Last Sprint 4 phase.**
+**Status:** Sprint 3 Phase 3 (Demo) UAT: PASSED, closing a UAT that never ran back in Sprint 3. Handed to Morpheus.
 **Assigned to:** Trin
-**Started:** 2026-07-15
+**Started:** 2026-07-16
 
-## Task Description (most recent): `*qa retest phase-5 bug` (Last Scanned column truncation)
+## Task Description (most recent): `*qa uat phase-3` (Sprint 3, STORY-903) — completing Sprint 3's close
+Sprint 3 was never formally closed because this exact UAT never ran before the session moved to unrelated work back in Sprint 3. Ran it now against the demo as it currently exists (post-Sprint-4 messaging/onboarding changes — per user direction, held to current correct behavior, not superseded Sprint 3 wording).
+
+## Progress
+- [x] Ran `make demo` for real — reads clearly for a BRD-naive reader (plain language throughout, no "taint"/jargon), correctly shows Sprint 4's current first-sighting wording and re-scoped `scg onboard --target`-only suggestion format.
+- [x] `tests/test_demo.py`: 3/3 passing (subprocess-level, asserts the masking marker appears and the fake secret never appears unmasked).
+- [x] Confirmed no real network egress: grepped `demo/run_demo.py` for any network-capable import — none exist; the script only ever calls the local `scalene-guard` subprocess, which is itself decision-only by architecture (never performs the tool call).
+- [x] `make test`: 230/230 passing (unaffected, demo/test_demo.py already current from Sprint 4's doc-drift fixes).
+- [x] **Verdict: PASS.**
+
+## Task Description (prior): `*qa retest phase-5 bug` (Last Scanned column truncation)
 Smith found a real rendering-truncation bug during her gate (real screenshot at 120 cols). Neo's 1st fix attempt (shorten timestamp) failed a real re-render check and was correctly abandoned per the anti-loop protocol rather than iterated on. 2nd attempt (move the panel to its own full-width row) — independently re-verified with a DIFFERENT, even longer dataset than either Neo's or Smith's own checks (a deep monorepo path, a longer hostname): every column renders fully, nothing truncated. `make test`: 230/230. **Verdict: PASS.**
 
 ## Task Description (prior): `*qa uat phase-5` (Sprint 4, STORY-1005)

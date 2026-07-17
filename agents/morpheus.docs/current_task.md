@@ -1,11 +1,14 @@
 # Current Task
 
-**Status:** Sprint 4 Phase 5 bug-fix review: APPROVED. Handing back to Smith to re-run her gate. **Last Sprint 4 phase.**
+**Status:** Sprint 3 Phase 3 (Demo) review: APPROVED — completing Sprint 3's close. Handing to Smith for her Phase 3 gate (never run back in Sprint 3).
 **Assigned to:** N/A
-**Started:** 2026-07-15
-**Completed:** 2026-07-15
+**Started:** 2026-07-16
+**Completed:** 2026-07-16
 
-## Task Description (most recent): `*lead review phase-5-fix` (Last Scanned truncation fix)
+## Task Description (most recent): `*lead review phase-3` (Sprint 3, STORY-903) — completing Sprint 3's close
+Reviewed `demo/run_demo.py` adversarially (my own standing habit). One narrow, non-blocking observation: `_call_guard()`'s `subprocess.run(..., check=True)` would raise an uncaught `CalledProcessError` if `scalene-guard` ever exited non-zero (Sprint 4's new fatal-exit path, STORY-1004) — the demo only handles the "decision != allow" case gracefully, not a machinery-failure exit. In practice this can't trigger: the demo always uses a fresh tmp dir, so the scan cache is never corrupted (missing ≠ corrupted — `ScanCache._read()` returns `{}` for a missing file, no error). Pre-existing shape, orthogonal to Sprint 3's actual scope, not worth a fix round for a local dev demo script. **APPROVED.**
+
+## Task Description (prior): `*lead review phase-5-fix` (Last Scanned truncation fix)
 Reviewed Neo's structural fix (full-width row instead of a 3rd squeezed column) against Trin's independent re-verification (different, longer dataset than either Neo's or Smith's own checks). Clean, correctly-scoped change — CSS height percentages (60%/40%) could theoretically clash with the other auto-sized siblings (Header/Input/Footer) in Textual's layout model, but both my own and Trin's real rendered screenshots confirm everything displays without clipping, which is the authoritative check here, not CSS-semantics reasoning in the abstract. 230/230 passing. **APPROVED.** Back to Smith to re-run her gate.
 
 ## Task Description (most recent): `*lead review phase-5` (Sprint 4, STORY-1005)

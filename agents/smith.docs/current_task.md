@@ -1,10 +1,15 @@
 # Current Task
 
-**Status:** Sprint 4 close, step 8 (full sprint end-to-end user test): PASSED. Handed to all personas for retro.
+**Status:** Sprint 3 Phase 3 (Demo) gate: APPROVED — the gate that was never run back in Sprint 3, closed now. Sprint 3's implementation is now fully gated.
 **Assigned to:** Smith
-**Started:** 2026-07-15
+**Started:** 2026-07-16
 
-## Task Description (most recent): Sprint 4 close — full sprint end-to-end user test (`*user test sprint4`)
+## Task Description (most recent): Sprint 3 Phase 3 gate — Demo (`*user test phase-3`), never run back in Sprint 3
+Ran `make demo` myself fresh, reading with a genuinely BRD-naive eye per my original Gate 2 commitment. Narration reads cleanly throughout — no internal jargon ("taint," "provenance," "Triangle-of-Doom") ever surfaces in the actual printed output, each step has a clear plain-language payoff ("Scalene now remembers... that memory persists"), the closing paragraph directly addresses the "is this really real" trust question ("Nothing above touched the real network"). Runs in ~1 second, comfortably fast. One light, non-blocking note: the mask literal itself (`[MASKED_BY_POLICY_PROVENANCE_GUARD]`) is the one piece of internal-sounding naming visible in the output — but it's a fixed system-wide constant used everywhere, not demo-specific, not worth changing for this gate alone.
+
+**Verdict: APPROVED.** Sprint 3's Phase 3 (last phase) is now fully closed. All 3 Sprint 3 phases complete.
+
+## Task Description (prior): Sprint 4 close — full sprint end-to-end user test (`*user test sprint4`)
 Not a phase gate — the complete E10 feature exercised as one continuous real scenario, using the real installed `scalene-guard`/`scg` binaries throughout (the standard this whole sprint converged on): a session reads a sensitive file → tries to send it to a brand-new destination → gets masked with the correct first-sighting wording (Phase 3) → the real suggested `scg onboard` command is run for real (Phase 4) → the identical call is now genuinely allowed → the audit log and scan cache both reflect the real state → `scg monitor`'s data layer (Phase 5) sees both the mask event and the onboarded resource directly, with no separate bookkeeping. All 7 steps passed.
 
 **Verdict: PASS.** No new bugs found in this integrated pass — every individual phase gate's own real-verification standard held up when chained together. Handed to all personas for `*sprint retro`.
