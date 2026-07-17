@@ -45,6 +45,43 @@ class TestDemo(unittest.TestCase):
         )
         self.assertIn("scg onboard", result.stdout)
 
+    def test_demo_shows_a_trusted_destination_passing_through_unmasked(self):
+        # 2026-07-16 (direct user request): demonstrates the real tradeoff of
+        # onboarding -- a verified-trusted destination isn't just "not
+        # flagged," content-scanning is skipped for it entirely, so the same
+        # fake secret that got masked in Part 2 passes through unchanged here.
+        result = subprocess.run(
+            [sys.executable, str(DEMO_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Allowed, unchanged", result.stdout)
+        self.assertIn("VERIFIED TRUSTED", result.stdout)
+
+    def test_demo_shows_block_mode_actually_denying_the_call(self):
+        result = subprocess.run(
+            [sys.executable, str(DEMO_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Denied outright", result.stdout)
+        self.assertIn("'deny'", result.stdout)
+
+    def test_demo_distinguishes_not_yet_verified_from_known_bad(self):
+        # Part 2's fail-safe-default destination must read differently from
+        # a real known-bad finding (Smith's standing note, sec13 STORY-1003).
+        result = subprocess.run(
+            [sys.executable, str(DEMO_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertIn("NOT YET VERIFIED", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

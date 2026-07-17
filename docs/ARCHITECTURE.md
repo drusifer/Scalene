@@ -275,7 +275,9 @@ STORY-903 requires the demo show a *real* masked call, offline, and be checked b
 
 ### 12.2 Decision: demo is tested, not just runnable
 
-`tests/test_demo.py` invokes `demo/run_demo.py` as a subprocess (same as a user would) and asserts the final output contains the expected masking marker and does not contain the fake secret in unmasked form. This runs under ordinary `pytest`/`make test` collection — no separate CI wiring needed. `make demo` (new Makefile target) runs the same script directly for a human to watch, narration included.
+`tests/test_demo.py` invokes `demo/run_demo.py` as a subprocess (same as a user would) and asserts the final output matches the demo's real, current behavior. This runs under ordinary `pytest`/`make test` collection — no separate CI wiring needed. `make demo` (new Makefile target) runs the same script directly for a human to watch, narration included.
+
+**2026-07-16 (direct user request, post-Sprint-4):** the demo was extended beyond the single masked-call scenario to demonstrate the actual security-model contrast — mask (default) vs. a verified-trusted destination vs. `mode: block` — using the real `scg onboard` CLI and a real `mode: block` policy file, not just the original zero-config mask case. This means "the fake secret never appears unmasked" is **no longer a whole-demo invariant**: Part 3 deliberately shows the same fake secret passing through *unmasked* to a destination that's been onboarded/verified trusted, since that's the concrete, honest way to demonstrate that trust is an exemption from content-scanning, not an additional layer of detection. `tests/test_demo.py`'s assertions were updated accordingly (the "never unmasked" check is now scoped to Part 2's specific line, not the whole output).
 
 **No Tank gate needed:** no new service, port, env var, or deploy/CI impact — `demo/run_demo.py` is a local dev-only script in the same vein as Sprint 1/2's no-Tank precedent.
 

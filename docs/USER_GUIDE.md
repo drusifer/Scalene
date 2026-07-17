@@ -53,6 +53,10 @@ Launches a live TUI over `.scalene/audit.log`, session taint state, and the reso
 
 ## Onboarding workflow: the fast path
 
+**What onboarding actually buys you.** A brand-new, zero-config project is not unprotected — it's running at Scalene's *strictest* posture. `sensitive_by_default`/`untrusted_by_default` mean every resource is presumed sensitive/untrusted until a real scan says otherwise, so every outbound call in a tainted session gets checked against `detect-secrets` regardless of whether you've onboarded anything. That content scan — not the sensitive/trusted labels — is what actually catches a leaked credential.
+
+Onboarding doesn't add protection on top of that; it's an *exemption* mechanism. Verifying a resource once (a real secrets scan or reputation check) lets Scalene skip re-checking it later — trading a little strictness for less friction on destinations you already know are fine. The system starts maximally cautious and only gets more permissive with evidence; it never starts permissive and hardens over time. Skip onboarding entirely and you're still protected — you'll just see more first-sighting messages, which is the cost of Scalene not yet having anything to skip, not a gap in coverage.
+
 Don't start by hand-writing `--target` — you don't need to know a destination's scheme from memory. Whenever a call gets masked, Scalene's response includes a `systemMessage` with a ready-to-run onboarding command built from the *exact call that was just masked*, e.g. `scg onboard --target https://<domain-this-call-reaches>` with the placeholder filled in from the real destination. You saw this in [Getting Started](GETTING_STARTED.md) step 4 — the `systemMessage` there is the actual output, not a mocked example.
 
 The same suggestion is also what `scg monitor`'s onboarding action runs when you select a mask event and apply it — the console is a UI shell over this exact command, not a separate code path.
