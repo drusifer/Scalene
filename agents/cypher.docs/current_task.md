@@ -1,11 +1,21 @@
 # Current Task
 
-**Status:** Sprint 4 (E10) CLOSED. All 5 phases implemented, UAT'd, reviewed, gated, end-to-end tested, retro'd, and launched.
+**Status:** Sprint 3 (E9) CLOSED. All 3 phases (implemented 2026-07-14, Phase 3's UAT/review/gate completed retroactively 2026-07-16) UAT'd, reviewed, gated, end-to-end tested, retro'd, and launched.
 **Assigned to:** Cypher
-**Started:** 2026-07-15
-**Completed:** 2026-07-15
+**Started:** 2026-07-16
+**Completed:** 2026-07-16
 
-## Task Description (most recent): Sprint 4 close — retro, story accuracy pass, `*pm launch`
+## Task Description (most recent): Sprint 3 close — retro, `*pm launch`
+Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, Mouse, Smith). Central theme across nearly every input: this sprint's real lesson isn't about code, it's about how a completed-but-ungated phase silently sat open for 2 days of unrelated work with no mechanism catching it.
+
+## Retro Backlog (Sprint 3)
+1. **A handoff is not a completed step** (Neo, Trin): `*swe handoff` to Trin sat unactioned across an unrelated multi-day work stretch; Trin's own `next_steps.md` correctly recorded the pending UAT the entire time, but nothing forced consulting it before the next session moved on. Recommend: cold-start protocol should explicitly check for any unresolved handoff addressed to the persona being activated before starting new work, not just read state files passively.
+2. **`task.md`'s own DONE markers lagged reality** (Oracle) — Sprint 3's header still read "Planned, pending review" 2 days after 2 of 3 phases had actually passed every gate; Sprint 1/2/4 all got markers immediately at each phase's approval, Sprint 3 didn't. This is likely the direct, mechanical reason the gap wasn't noticed sooner. Recommend: DONE markers land in the same commit as each phase's own approval, not deferred.
+3. **A 3rd status bucket may be warranted** (Mouse): "implemented but gate unconfirmed" is a real, distinct state from both "in progress" and "done" that nothing currently tracks explicitly.
+4. **Real-subprocess architecture decisions pay off at exactly moments like this** (Morpheus): the demo's "real subprocess, never mocked" design meant re-verifying it against Sprint 4's changed behavior was "run it again," not "update a stale mock."
+5. Sprint 4's retro backlog (recurring test-hygiene gap-shape, architecture claims needing a named verification step, screenshot-check UI, cross-check ACs against architecture as decisions happen) remains open and unaffected by this close — not re-litigated here.
+
+## Task Description (prior): Sprint 4 close — retro, story accuracy pass, `*pm launch`
 - [x] Acted on Oracle's groom-pass flag (`agents/oracle.docs/e10_story_staleness_flag.md`) rather than letting it sit until "someday": rewrote STORY-1001 in `docs/USER_STORIES.md` — its premise (user-facing `pattern` capture groups) was superseded by Morpheus's §13.1 full-replacement decision partway through the sprint, and the story as originally worded would never literally be satisfied. Kept the original text visible with a dated revision note rather than silently rewriting history.
 - [x] Fixed STORY-1003's cache-key wording (said `(path, mtime)` as the key; the real key is path alone, `mtime` is a value field) — same principle, correct rather than mark-satisfied-as-literally-wrong.
 - [x] Checked off all 5 stories' ACs (all verified true via real testing across the phase Bloop, not assumed).

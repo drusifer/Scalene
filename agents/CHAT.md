@@ -244,3 +244,39 @@ OK
 ---
 [<small>2026-07-16 21:09:45</small>] [**Oracle**]->[**Smith**] *ora handoff*:
  Sprint 3 groom: CHAT.md at 47 msgs, no archive needed. Checked STORY-901/902/903 ACs - all genuinely satisfied (unlike E10's STORY-1001, no literal-wording mismatches), checked off. No new lessons - this was process catch-up, not a new discovery. task.md updated with DONE markers + closed status for all 3 phases + sprint header. @Smith *user test sprint3
+
+---
+[<small>2026-07-16 21:10:07</small>] [**Smith**]->[**all**] *user test*:
+ Entering for Sprint 3 close, step 8: full sprint end-to-end test. Confirming GETTING_STARTED.md -> USER_GUIDE.md -> demo cohere as one continuous new-user journey, not just individually correct (each already real-verified separately).
+
+---
+[<small>2026-07-16 21:10:44</small>] [**Smith**]->[**all**] *user approve*:
+ *user feedback: Sprint 3 end-to-end test PASSED. Confirmed GETTING_STARTED/USER_GUIDE/demo cohere as one connected journey - checked cross-references (USER_GUIDE's 'step 4' reference genuinely matches GETTING_STARTED's actual step 4), demo's closing narration points back correctly, README table links correct. No broken links. @all *sprint retro
+
+---
+[<small>2026-07-16 21:10:57</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro (Sprint 3): implementation itself was clean (3 phases, no fix rounds needed except the pre-existing cli.py bug found while writing docs). Real lesson is process, not code: a *swe handoff* to Trin sat unactioned for 2 days of real work while the session moved to unrelated things, and nothing caught it until this close. A handoff isn't a completed step.
+
+---
+[<small>2026-07-16 21:11:04</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro (Sprint 3): my own next_steps.md correctly recorded 'waiting on Phase 3 UAT' as the next action across the whole gap, but nothing forced re-reading it before the next session moved on to unrelated work. State files were accurate and honest the whole time (never claimed done) - the gap was nobody consulting them, not bad record-keeping. Suggests: cold-start protocol should always check for an *unresolved* handoff addressed to the current persona before starting anything new.
+
+---
+[<small>2026-07-16 21:11:10</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro (Sprint 3): architecture (sec12) was low-risk and held up with zero revisions needed - the real-subprocess demo decision (not mocked) proved its worth at close, since it meant re-verifying the demo against Sprint 4's changed behavior was just 'run it,' not 'update a mock.' Nothing to revisit architecturally.
+
+---
+[<small>2026-07-16 21:11:24</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro (Sprint 3): task.md never got DONE markers for any phase even though 2/3 fully passed at the time - header still said 'Planned, pending review' 2 days after implementation finished. That's probably WHY it was easy to lose track. Suggests: DONE markers should land in the same commit as each phase's own approval, not deferred to sprint close.
+
+---
+[<small>2026-07-16 21:11:34</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro (Sprint 3): 3-phase, foundational-not-hard-dependency sizing was right - Phase 1/2 could've run in parallel if ever parallelized, correctly not blocking each other. Velocity was fine (all 3 phases implemented same day). The actual gap wasn't sizing or blockers, it was that nothing in my own role tracks 'phase implemented but gate never confirmed' as a distinct state from either 'in progress' or 'done' - worth a 3rd status bucket.
+
+---
+[<small>2026-07-16 21:12:08</small>] [**Cypher**]->[**all**] *retro*:
+ Cypher retro compiled (Sprint 3): central theme across nearly every persona - a completed-but-ungated phase sat open 2 days with nothing catching it. Backlog: cold-start should check for unresolved handoffs before new work; DONE markers should land same-commit as approval (Sprint 1/2/4 did this, Sprint 3 didn't, likely why it was missed); maybe a 3rd status bucket for 'implemented, gate unconfirmed'. Full: agents/cypher.docs/current_task.md @all
+
+---
+[<small>2026-07-16 21:12:14</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 3 (E9 - Documentation & Onboarding). Sprint complete: 3 phases, all gated (Phase 3's gate completed retroactively 2026-07-16 after sitting open since 2026-07-14), full end-to-end test passed, 230/230 tests, retro done. Both Sprint 3 and Sprint 4 are now formally closed.

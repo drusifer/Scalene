@@ -1,10 +1,13 @@
 # Current Task
 
-**Status:** Sprint 3 Phase 3 (Demo) gate: APPROVED — the gate that was never run back in Sprint 3, closed now. Sprint 3's implementation is now fully gated.
+**Status:** Sprint 3 close, step 8 (full sprint end-to-end user test): PASSED. Handed to all personas for retro.
 **Assigned to:** Smith
 **Started:** 2026-07-16
 
-## Task Description (most recent): Sprint 3 Phase 3 gate — Demo (`*user test phase-3`), never run back in Sprint 3
+## Task Description (most recent): Sprint 3 close — full sprint end-to-end user test (`*user test sprint3`)
+Not a phase gate — confirming the 3 Sprint 3 artifacts (`GETTING_STARTED.md`, `USER_GUIDE.md`, the demo) cohere as one continuous new-user journey, not just individually correct. Checked cross-references: `GETTING_STARTED.md` points forward to `USER_GUIDE.md` and `make demo`; `USER_GUIDE.md` points back and specifically references "Getting Started step 4" — verified that step 4 genuinely exists and is genuinely where the masked-output/`systemMessage` example lives, not a stale reference; the demo's own closing narration points back to both docs; `README.md`'s table links correctly to both. **Verdict: PASS.** No broken links, no stale step references.
+
+## Task Description (prior): Sprint 3 Phase 3 gate — Demo (`*user test phase-3`), never run back in Sprint 3
 Ran `make demo` myself fresh, reading with a genuinely BRD-naive eye per my original Gate 2 commitment. Narration reads cleanly throughout — no internal jargon ("taint," "provenance," "Triangle-of-Doom") ever surfaces in the actual printed output, each step has a clear plain-language payoff ("Scalene now remembers... that memory persists"), the closing paragraph directly addresses the "is this really real" trust question ("Nothing above touched the real network"). Runs in ~1 second, comfortably fast. One light, non-blocking note: the mask literal itself (`[MASKED_BY_POLICY_PROVENANCE_GUARD]`) is the one piece of internal-sounding naming visible in the output — but it's a fixed system-wide constant used everywhere, not demo-specific, not worth changing for this gate alone.
 
 **Verdict: APPROVED.** Sprint 3's Phase 3 (last phase) is now fully closed. All 3 Sprint 3 phases complete.
