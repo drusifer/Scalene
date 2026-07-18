@@ -18,6 +18,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlparse
 
 from .subprocess_isolation import run_scanner
 
@@ -40,7 +41,12 @@ _URL_FIELDS = {
 # "echo hello world") don't produce false-positive file resources.
 _PATH_FALLBACK_RE = re.compile(r"(?P<path>\.{0,2}/[\w./+-]+)")
 
-_URL_FALLBACK_RE = re.compile(r"https?://(?P<host>[^/\s:\"']+)")
+# STORY-1101 (docs/ARCHITECTURE.md sec14.2): captures the full URL (scheme +
+# host + path), stopping at the first '?' -- identity is per-URL, not
+# per-host, so scanning one path can no longer vouch for an unbounded set of
+# other paths under the same host. Query string dropped to keep cache keys
+# bounded.
+_URL_FALLBACK_RE = re.compile(r"(?P<url>https?://[^\s\"'?]+)")
 
 # Full URL span (scheme + host + path/query), used only to exclude a URL's
 # internal slashes from _PATH_FALLBACK_RE -- otherwise "https://host/a/b"
@@ -63,7 +69,7 @@ def _find_paths_excluding_urls(text: str) -> list[str]:
 @dataclass(frozen=True)
 class Resource:
     kind: str  # "file" | "url" -- extensible, not a closed enum
-    identity: str  # cache key material: absolute path, or host
+    identity: str  # cache key material: absolute path, or full URL (sec14.2 -- not bare host)
     scanner_name: str
 
 
@@ -133,27 +139,33 @@ class URLScanner:
     name = "reputation"
 
     def identify(self, tool_name: str, args: dict) -> list[Resource]:
-        hosts: list[str] = []
+        urls: list[str] = []
 
         known_field = _URL_FIELDS.get(tool_name)
         known_value = args.get(known_field) if known_field else None
         if isinstance(known_value, str) and known_value:
-            hosts.extend(m.group("host") for m in _URL_FALLBACK_RE.finditer(known_value))
+            urls.extend(m.group("url") for m in _URL_FALLBACK_RE.finditer(known_value))
 
         for value in _string_args(args):
-            hosts.extend(m.group("host") for m in _URL_FALLBACK_RE.finditer(value))
+            urls.extend(m.group("url") for m in _URL_FALLBACK_RE.finditer(value))
 
         seen: set[str] = set()
         resources = []
-        for host in hosts:
-            if host in seen:
+        for url in urls:
+            if url in seen:
                 continue
-            seen.add(host)
-            resources.append(Resource(kind="url", identity=host, scanner_name=self.name))
+            seen.add(url)
+            resources.append(Resource(kind="url", identity=url, scanner_name=self.name))
         return resources
 
     def scan(self, resource: Resource) -> ScanResult:
-        result = run_scanner("reputation", resource.identity)
+        # sec14.2: identity is per-URL for cache-key granularity, but the
+        # reputation heuristic itself is host-level (a URL's path doesn't
+        # change whether its host is reputable) -- extract the host if
+        # identity parses as a URL, otherwise treat identity as already
+        # being a bare host (onboard.py / direct-construction callers).
+        host = urlparse(resource.identity).hostname or resource.identity
+        result = run_scanner("reputation", host)
         if result.get("machinery_error"):
             raise ScannerMachineryError(result.get("reason", "reputation scan machinery failed"))
         if result.get("ok", False):

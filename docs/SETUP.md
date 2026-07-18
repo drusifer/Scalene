@@ -40,7 +40,7 @@ Equivalently, you can hand-edit `.claude/settings.json` yourself:
 }
 ```
 
-`scalene-guard` reads the hook's JSON payload from stdin, dispatches on the payload's `hook_event_name` field (`PreToolUse` or `PostToolUse`), and writes a JSON response to stdout using Claude Code's real hook contract (`hookSpecificOutput.permissionDecision`/`updatedInput`). Malformed input or an unrecognized event both fail safe to `{}` (empty output, treated as "allow, no change") — Scalene never blocks the agent due to an internal error.
+`scalene-guard` reads the hook's JSON payload from stdin, dispatches on the payload's `hook_event_name` field (`PreToolUse` or `PostToolUse`), and writes a JSON response to stdout using Claude Code's real hook contract (`hookSpecificOutput.permissionDecision` — `"allow"` or `"deny"`). Malformed input or an unrecognized event both fail safe to `{}` (empty output, treated as "allow, no change") — Scalene never blocks the agent due to an internal error.
 
 ## Policy configuration
 

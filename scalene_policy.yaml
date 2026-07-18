@@ -3,19 +3,20 @@ defaults:
   untrusted_by_default: true
   mode: mask
 
-allowlist:
-  - tool: Read
-    jsonpath: "$.file_path"
+# 2026-07-17 (Sprint 5 / E11, docs/ARCHITECTURE.md sec14.6): this file's
+# previous `allowlist:` block (tool/jsonpath/pattern/target/description, one
+# entry per Read/Write/Edit) had been silently dead since Sprint 4 (E10)
+# shipped -- PolicyConfig.from_yaml only ever parsed `defaults:`, nothing in
+# the shipped code read `allowlist:` at all. Rewritten below as the new
+# `rules:` schema (STORY-1105's real, not synthetic, migration case), same
+# intent as the original: this repo's own test/docs/demo fixtures are dev
+# content, not real sensitive/restricted data. `target` does not return
+# (sec14.5) -- a rule's `pattern` matches resource.identity directly, and
+# the scan cache still verifies per distinct matched identity.
+rules:
+  - tool: "Read|Write|Edit"
     pattern: ".*/(tests|docs|demo)/.*"
-    target: "file:///home/drusifer/Projects/Scalene/tests"
-    description: "This repo's own test fixtures and docs are dev content, not real sensitive data"
-  - tool: Write
-    jsonpath: "$.file_path"
-    pattern: ".*/(tests|docs|demo)/.*"
-    target: "https://localhost"
-    description: "Local edits to this repo's own test/doc files, not exfiltration to an external destination"
-  - tool: Edit
-    jsonpath: "$.file_path"
-    pattern: ".*/(tests|docs|demo)/.*"
-    target: "https://localhost"
-    description: "Local edits to this repo's own test/doc files, not exfiltration to an external destination"
+    sensitivity: public
+    mode: mask
+    scanner: secrets
+    description: "This repo's own test/docs/demo fixtures are dev content, not real sensitive data"

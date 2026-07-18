@@ -87,6 +87,22 @@ class TestOnboardUrlTarget(unittest.TestCase):
                 onboard("ftp://x.md", cache_path=cache_path)
             self.assertFalse(cache_path.exists())
 
+    def test_seeded_url_identity_matches_live_evaluation_normalization(self):
+        # STORY-1101: onboarding one path must not silently seed the whole
+        # host. The cache key onboard() writes for a URL target must match
+        # what URLScanner produces during a real hook call for that exact
+        # path.
+        with TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "scan_cache.json"
+
+            from scalene.scanner import URLScanner
+
+            result = onboard("https://internal.example.com/docs/page?x=1", cache_path=cache_path)
+            live_resources = URLScanner().identify("WebFetch", {"url": "https://internal.example.com/docs/page?x=1"})
+            self.assertEqual(len(live_resources), 1)
+            self.assertEqual(result["resource"].identity, live_resources[0].identity)
+            self.assertEqual(result["resource"].identity, "https://internal.example.com/docs/page")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,15 +1,18 @@
 # Next Steps
 
 ## Immediate Next Action
-None for Morpheus right now. `*sprint go` was invoked by the user to formalize the §13.8 design as a real sprint (likely "Sprint 5" / a new epic, call it E11 for now — not yet officially numbered by Cypher). **Cypher is next**: write user stories capturing what §13.8 already designed, so it goes through Smith's Gate 1 like every other sprint has.
+`*lead review sec15` complete (2026-07-18) — approved, one real duplication + 3 doc-drift issues found and fixed. Handed to Oracle for grooming.
 
 ## Waiting On
-Cypher (write E11 stories) → Smith (Gate 1) → Morpheus (formal architecture pass — §13.8 is a strong draft but has an explicit "not yet decided" list to resolve: exact JSONPath for "any argument," scanner-inference rules, on-disk schema, `scg onboard` mapping) → Smith (Gate 2) → Mouse (phase breakdown) → Morpheus (plan review) → implementation Bloop.
+Nothing. Next in the resumed close sequence: Oracle groom → Smith end-to-end test → retro → Cypher launch.
 
 ## Planned Work
-- [ ] When architecture comes back to me (post-Cypher-stories, pre-Gate-2): resolve §13.8's explicit open questions into concrete decisions, not leave them as TBD through implementation.
-- [ ] Whichever phase implements this: re-verify the latency/NFR story again once rule-matching (regex evaluation per call) is back in the hot path — same "measure, don't assume" discipline as Sprint 4 Phase 2's finding. Rule matching could plausibly cost more than the current hardcoded scanner `identify()` methods, especially if a project accumulates many rules.
-- [ ] Flag to whoever phases this: this changes a shipped, closed-sprint on-disk format (`scan_cache.json`'s key scheme, if URL identity moves from host to full-path) and `scalene_policy.yaml`'s schema (allowlist returns, differently shaped) — needs a real migration/compatibility story, not just "old projects re-onboard everything." Not addressed in §13.8, worth surfacing at Cypher's story-writing stage.
+- [x] Resolved all 4 of §13.8's open questions into concrete decisions (§14.1, §14.5).
+- [x] Named the rule-matching/unconditional-scan NFR consequence explicitly rather than leaving it a footnote (§14.4's `NFR-Perf-UnconditionalScan`).
+- [x] Surfaced the migration story explicitly (§14.6).
+- [x] Verified Mouse's phase breakdown matches §14 exactly, plan LOCKED.
+- [ ] At Phase 1 review: confirm the repo's own `scalene_policy.yaml` migration (task 1.3) and §4's class diagram restoration both actually landed, not just claimed.
+- [ ] At Phase 3 review: this is the first phase where I should personally re-verify the `NFR-Perf-UnconditionalScan` measurement myself (same pattern as my own Sprint 4 Phase 2 finding), not just trust Neo's/Trin's reported number.
 
 ---
 *Last updated: 2026-07-17*

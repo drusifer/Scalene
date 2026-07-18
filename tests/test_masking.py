@@ -1,9 +1,16 @@
-"""Tests for MaskingEngine (STORY-401).
+"""Tests for MaskingEngine (STORY-401, STORY-1104).
 
-2026-07-14: masking is now content-gated (detect-secrets via
-secrets_scan.py), not purely provenance-based — a session can be
-tainted-sensitive + untrusted and still allow a call through if the specific
-payload doesn't actually scan as a real secret (e.g. `ls -la`).
+2026-07-14: masking is content-gated (detect-secrets via secrets_scan.py),
+not purely provenance-based — a payload doesn't get masked/blocked just
+because it looks generically risky (e.g. `ls -la`); it must actually scan
+as a real secret.
+
+2026-07-17 (docs/ARCHITECTURE.md sec14.4, STORY-1104): content-scanning is
+now unconditional — the taint/provenance_risk gate is removed entirely.
+Every non-null payload value is scanned regardless of session taint or
+destination trust; `match.mode` (resolved per-call by resource_verifier,
+sec14.1) decides mask/block/allow. The sole remaining way to skip scanning
+is an explicit `mode: allow` rule (sec14.4 amendment) — never session state.
 """
 
 import unittest
@@ -11,76 +18,59 @@ from unittest import mock
 
 from scalene.masking import MaskingEngine
 from scalene.policy_config import MatchResult
-from scalene.taint_state import TaintState
 
 REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets recognizes this)
 NOT_A_SECRET = "ls -la"
 
 
 class TestMaskingEngineDecide(unittest.TestCase):
-    def test_masks_when_provenance_risky_and_value_is_a_real_secret(self):
+    def test_masks_a_real_secret_by_default(self):
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, REAL_SECRET, mode="mask")
+        match = MatchResult(is_sensitive=True, is_trusted=False, mode="mask")
+        decision = engine.decide(match, REAL_SECRET)
         self.assertEqual(decision.action, "mask")
         self.assertTrue(decision.findings)
 
     def test_blocks_instead_of_masks_when_mode_is_block(self):
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, REAL_SECRET, mode="block")
+        match = MatchResult(is_sensitive=True, is_trusted=False, mode="block")
+        decision = engine.decide(match, REAL_SECRET)
         self.assertEqual(decision.action, "block")
         self.assertTrue(decision.findings)
 
-    def test_allows_when_provenance_risky_but_value_has_no_real_secret(self):
-        """The core fix (user-reported): an ordinary command must not be
-        masked/blocked just because the session is generically tainted."""
+    def test_allows_when_value_has_no_real_secret(self):
+        """The core fix (user-reported, 2026-07-14): an ordinary command
+        must not be masked/blocked just because it looks generically risky."""
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, NOT_A_SECRET, mode="mask")
+        match = MatchResult(is_sensitive=True, is_trusted=False, mode="mask")
+        decision = engine.decide(match, NOT_A_SECRET)
         self.assertEqual(decision.action, "allow")
         self.assertEqual(decision.findings, ())
 
-    def test_allows_when_target_trusted_even_with_a_real_secret(self):
+    def test_masks_a_real_secret_even_when_destination_is_trusted(self):
+        # STORY-1104: trust no longer exempts a call from scanning --
+        # this is the entire point of "unconditional baseline."
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=True)
-        decision = engine.decide(taint, match, REAL_SECRET, mode="mask")
-        self.assertEqual(decision.action, "allow")
-
-    def test_allows_when_session_not_sensitive(self):
-        engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=False, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, REAL_SECRET, mode="mask")
-        self.assertEqual(decision.action, "allow")
-
-    def test_allows_when_session_not_untrusted(self):
-        engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=False)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, REAL_SECRET, mode="mask")
-        self.assertEqual(decision.action, "allow")
+        match = MatchResult(is_sensitive=True, is_trusted=True, mode="mask")
+        decision = engine.decide(match, REAL_SECRET)
+        self.assertEqual(decision.action, "mask")
 
     def test_allows_when_value_is_none(self):
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=True, has_untrusted_data=True)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
-        decision = engine.decide(taint, match, None, mode="mask")
+        match = MatchResult(is_sensitive=True, is_trusted=False, mode="mask")
+        decision = engine.decide(match, None)
         self.assertEqual(decision.action, "allow")
 
-    def test_does_not_scan_content_when_provenance_is_already_safe(self):
-        """Perf guard: the content scan must not run at all when the
-        provenance gate already says allow (untainted/trusted sessions pay
-        zero scanning cost)."""
+    def test_mode_allow_skips_scanning_entirely_even_for_a_real_secret(self):
+        # sec14.4 amendment: the sole remaining, deliberate exception --
+        # reachable only via an explicit rule (resource_verifier's job to
+        # resolve), never automatic.
         engine = MaskingEngine()
-        taint = TaintState(session_id="s1", has_sensitive_data=False, has_untrusted_data=False)
-        match = MatchResult(is_sensitive=True, is_trusted=False)
+        match = MatchResult(is_sensitive=True, is_trusted=False, mode="allow")
         with mock.patch("scalene.masking.scan_text_for_secrets") as mock_scan:
-            engine.decide(taint, match, REAL_SECRET, mode="mask")
+            decision = engine.decide(match, REAL_SECRET)
+        self.assertEqual(decision.action, "allow")
+        self.assertEqual(decision.findings, ())
         mock_scan.assert_not_called()
 
 

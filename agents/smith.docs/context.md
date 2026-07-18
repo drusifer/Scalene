@@ -41,4 +41,12 @@
 **Status:** Discussion only, not yet a story/task. No code changed. Not blocking anything.
 
 ---
-*Last updated: 2026-07-09*
+
+## `*user review` Gate 1 — E11 (2026-07-17)
+
+**Approved.** Full review: `agents/smith.docs/e11_gate1_review.md`. Key flag carried to Gate 2 (not blocking Gate 1): E10 made `scg onboard` a single-flag command (`--target` only); E11 reintroduces `PolicyRule`'s `jsonpath`+`pattern` at the config layer. §13.8's open question #4 (how `--target` maps onto a generated rule) is the seam that decides whether that simplicity survives. **I will not approve a Gate 2 architecture where the common onboarding path requires hand-authoring `jsonpath`/`pattern`.**
+
+Also flagged (non-blocking, revisit at end-to-end test): STORY-1104 makes scanning fire on calls that previously silently skipped it entirely — worth checking whether the user gets any visibility signal (heuristic #1) the first time this changes observed behavior on an existing project, or if it's silent.
+
+---
+*Last updated: 2026-07-17*

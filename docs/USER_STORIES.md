@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) implemented 2026-07-14, not yet formally closed (retro/launch pending — see `task.md`). Sprint 4 (E10) — Draft v1, pending Smith gate 1.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11) — Draft v1, pending Smith Gate 1.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -275,3 +275,77 @@ As a developer, I want a summary of recently-scanned resources and their labels,
 
 - **Placeholder wording fix** (Smith's non-blocking note, 2026-07-10: onboard-command placeholder says "domain-or-file" but every current suggestion is trust-list/domain-only): too small for a full story per Bloop's fast-track/consolidation rule — flagged to Mouse as a one-line task to fold into whichever Sprint 2 phase touches `hook_adapter.py`.
 - **Relocate `_suggest_onboard_command()` out of `hook_adapter.py`** (Morpheus's review note, 2026-07-09): explicitly deferred until a second harness adapter is built — not actionable now, no second adapter exists.
+
+---
+
+## E11 — Trust/Sensitivity Model & Rule-Driven Resource Identity
+
+**Origin:** Direct user design session, 2026-07-17, after Sprint 4 (E10) was formally closed. Two threads fed into this epic: (1) the user proposed adding a per-resource `mask`/`block` property at onboard time (`agents/morpheus.docs/proposal_per_resource_mode.md`); pursuing that surfaced a structural tension — `is_trusted` today means "content-scanning is skipped entirely," so a per-resource response mode would never fire on a trusted resource, since there's no detection event left to act on; (2) working through that tension in conversation with the user surfaced a second, more serious problem: `URLScanner`'s host-only resource identity (shipped in E10) **reproduces the exact defect E10 exists to fix** — one verification (scanning a single path under a host) vouches for an unbounded future set (every other path under that host), the same shape of bug as a `pattern` matching unboundedly from one scanned `target`, just relocated from user-authored regex into the resource-identity model itself. `docs/ARCHITECTURE.md` §13.8 documents the corrected design; this epic turns it into testable stories. **Not a new epic replacing E10 — an in-place correction of a defect in what E10 shipped**, following the same Bloop review process (Smith Gate 1/2, Morpheus architecture, Mouse phasing) as everything else in this document, not applied retroactively without review.
+
+**Full design context (from §13.8, condensed for implementers — see the architecture doc for complete reasoning):**
+- **Two independent axes, not parallel signals.** *Trust* answers "could this source cause the agent to do something malicious" (prompt-injection/tool-poisoning risk) — a source-legitimacy question, answered by scanning at whatever granularity actually distinguishes the safe case from the unsafe one (per-repo, not per-host, for anything multi-tenant like a public git host). *Sensitivity* answers "what's the blast radius if a malicious call involving this resource succeeds" — a data-classification question, independent of trust, with exactly three levels: **Public**, **Internal Only**, **Restricted**. The dangerous combination this whole project exists to prevent is low-trust *and* high-sensitivity together, not either alone.
+- **Masking becomes an unconditional baseline, not sensitivity-gated.** An implicit, always-present default rule (any tool, any argument, `sensitivity: public`, `mode: mask`) matches every call unless a more specific rule overrides it — real-secret content-scanning no longer depends on a session already being tainted-sensitive-and-untrusted (`MaskingEngine.decide()`'s current `provenance_risk` gate). This is what makes `sensitivity: public` a safe default rather than a weakening.
+- **`PolicyRule` returns, generalized — not the pre-Sprint-4 shape.** Fields: `tool` (regex), `jsonpath`, `pattern` (regex, named capture groups become resource identity), `sensitivity` (public/internal/restricted), `mode` (mask/block), `scanner` (optional), `description`. Critically, a rule only decides *candidacy and identity* — the scan cache (§13.3, unchanged) still verifies and freshness-tracks per distinct identity a rule's pattern actually matches. A wildcard rule widens what's *considered*, never what's *vouched for without checking* — this is the structural fix for the host-level-trust defect, generalized beyond just `URLScanner`.
+- **Zero-config baseline is preserved.** `FileScanner`/`URLScanner`'s built-in generic-fallback detection (shipped in E10, unaffected) remains why a brand-new project gets real protection immediately; rules are an additive precision layer on top of the implicit default, not a prerequisite for any scanning to happen.
+- The original per-resource `mask`/`block` proposal that started this thread is resolved as a side effect of the generalized model, not as its own separate Option-A/Option-B bolt-on: `mode` is a field on `PolicyRule`, which fires on every call via the always-on default rule, so a mask/block choice is available per rule (and therefore effectively per onboarded resource, via a rule scoped to it) without needing trust itself to become "always scan."
+
+**Explicit open questions for Morpheus (architecture step — §13.8's own deferred list, not pre-decided here):**
+1. The exact JSONPath expression for "any argument" in the default rule.
+2. Whether `scanner` must always be explicit on a user-authored rule, or can be inferred the way URI-scheme inference works today for `scg onboard`.
+3. The real on-disk schema for `PolicyRule` in `scalene_policy.yaml` — replaces the removed `allowlist`; does not resurrect the pre-Sprint-4 shape (`sensitivity`/`mode` are new, `target` does not return).
+4. How `scg onboard --target` maps onto a generated rule with a sensible default pattern.
+
+**Superseded 2026-07-17 (Cypher, groom pass, after the fact — during Phase 3's Smith gate, not before implementation):** the paragraphs above describe E11 exactly as planned and as Phases 1-2 shipped it — kept as the historical record, not rewritten. Phase 3's Smith gate found a real gap in the "masking becomes an unconditional baseline" design: a rule with `pattern: ".*"` + `mode: allow` could silently disable all content-scanning project-wide with zero validation behind it. Working through the fix with the user in real time replaced this epic's *entire core mechanism* — not a tweak to STORY-1104, a different model. `docs/ARCHITECTURE.md` §15 (rule-driven access control) is the real, shipped design: two sticky session tags (`trust`: low/med/high, `sensitivity`: public/internal/restricted, not a single masking mode), a call proceeds only if every resource it touches is validated + explicitly allow-ruled or the session is still clean, otherwise it's blocked outright. Masking/content-scanning (STORY-1104's mechanism) is **not deleted** but is dormant — `MaskingEngine` still exists and is tested, just not wired into the default decision path; whether it has a future role is explicitly undecided (§15.5), not ruled out.
+
+This was implemented directly with the user, mid-conversation, not through a second `*pm plan sprint` cycle — these stories were never rewritten to match, by direct instruction (get the design right first). STORY-1101 (the host-level trust identity fix) and STORY-1105 (cache migration) shipped materially as written below — §15 didn't change resource identity or cache mechanics, only what happens with the resolved trust/sensitivity classification. STORY-1102/1103/1104 describe a mechanism (unconditional masking, per-rule mask/block/allow) that §15 replaced with access-control (allow/block a call, not mask its content) — read them as "what was originally planned," not "what runs today."
+
+### STORY-1101
+As a security-conscious developer, I want a resource's trust identity to be scoped narrowly enough to distinguish a specific verified resource from every other resource sharing its host/domain, so that onboarding one path doesn't silently vouch for everything else nearby.
+
+**Acceptance Criteria**
+- [ ] `URLScanner` (or its replacement matching logic) no longer treats an entire host as trusted on the strength of one scanned path under it by default.
+- [ ] Two different resources under the same host can carry independent trust labels and independent scan-cache entries.
+- [ ] Broadening trust to an entire host remains possible, but only via an explicit, visible rule (auditable in `scalene_policy.yaml`), not as an implicit consequence of resource-identity granularity.
+- [ ] A real test demonstrates the fixed defect directly: onboard/verify one path under a host, then confirm a second, unverified path under the same host is *not* treated as trusted.
+
+### STORY-1102
+As a developer, I want `PolicyRule` to carry `sensitivity` (public/internal/restricted) as an axis independent of trust, so the response to a risky call can scale with blast radius rather than being conflated with source legitimacy.
+
+**Acceptance Criteria**
+- [ ] `PolicyRule` supports exactly three sensitivity levels: Public, Internal Only, Restricted — no open-ended/free-text classification.
+- [ ] Trust and sensitivity are computed independently for a given call; neither is derived from the other.
+- [ ] A worked example (via a real test) shows a low-trust + low-sensitivity resource handled differently from a low-trust + high-sensitivity one, demonstrating the axes actually combine rather than collapse into one signal.
+
+### STORY-1103
+As a developer, I want to set `mode: mask | block | allow` per rule, so I can choose the response to a real finding independently for each classified resource instead of relying on one global `defaults.mode`.
+
+**Revised 2026-07-17 (found during Phase 1 review, resolved directly with the user):** a third `mode` value, `allow`, was added after implementation began. Making STORY-1104's scanning unconditional removes the exemption path E10's onboarding used to provide (onboarding a destination as "trusted" used to stop scanning entirely) — with nothing to replace it, a known false positive (e.g. a test fixture shaped like a real secret) would have no way to be permanently silenced. `allow` is the narrow, explicit replacement: reachable only by hand-authoring a `rules:` entry, never automatically via `scg onboard`. See `docs/ARCHITECTURE.md` §14.4's amendment for the full reasoning.
+
+**Acceptance Criteria**
+- [ ] `PolicyRule` carries a `mode` field (`mask` | `block` | `allow`), honored by `MaskingEngine`'s decision path for calls matched by that rule.
+- [ ] `mode: allow` skips content-scanning entirely for a matched call (`MaskingEngine.decide()` returns `allow` without calling `scan_text_for_secrets`) — the deliberate, scoped exception to STORY-1104's "unconditional" rule.
+- [ ] `mode: allow` is reachable only via a hand-authored `rules:` entry in `scalene_policy.yaml` — `scg onboard --target` never sets it, directly or indirectly.
+- [ ] The global `defaults.mode` in `scalene_policy.yaml` remains the fallback for calls matched only by the implicit default rule (STORY-1104), not removed. `defaults.mode` itself is not extended to accept `allow` (blanket-allow-by-default would defeat the point of a scoped, deliberate exception) — only `PolicyConfig.mode`'s existing `mask`/`block` pair stays valid there.
+- [ ] Resolves the original proposal that opened this epic (`agents/morpheus.docs/proposal_per_resource_mode.md`): a developer can express "let the agent use this resource, but block rather than mask if something real turns up here" without trust itself having to become "always scan."
+
+### STORY-1104
+As a developer, I want content-scanning to run as an unconditional baseline on every call by default, so real-secret detection doesn't silently depend on a resource's trust/sensitivity classification being correct.
+
+**Acceptance Criteria**
+- [ ] An implicit, always-present default rule (any tool, any argument, `sensitivity: public`, `mode: mask`) is active with zero user configuration.
+- [ ] `MaskingEngine.decide()`'s current gate (scanning only when a session is already tainted-sensitive *and* tainted-untrusted) is removed/replaced so a call can be scanned even when neither prior taint flag is set.
+- [ ] A user-authored rule can override the default for a more specific match (e.g. `mode: block` for a rule matched by a `restricted`-sensitivity resource) — the default is a floor, not a ceiling.
+- [ ] A real test confirms a brand-new project with zero authored rules still gets real content-scanning coverage on an arbitrary call, not just previously-tainted ones.
+
+### STORY-1105
+As an operator upgrading from Sprint 4, I want a defined, explicit migration path for the scan cache's resource-identity scheme, so an existing project's `.scalene/scan_cache.json` doesn't silently misbehave when resource identity granularity changes underneath it.
+
+**Note (Cypher):** flagged as a gap by Morpheus's own next_steps.md, not covered by §13.8 itself — surfacing explicitly as a story rather than letting it be silently skipped during implementation, per this epic's own design principle.
+
+**Acceptance Criteria**
+- [ ] Existing `scan_cache.json` entries keyed under the old host-level `URLScanner` identity scheme are explicitly accounted for on upgrade — either re-keyed by a migration step, or explicitly left to expire/re-verify under the new identity scheme with a clearly documented reason for that choice.
+- [ ] The chosen path is fail-safe by construction: an old-scheme cache entry that no longer matches the new identity scheme must never be silently read as still-valid trust for a narrower, unverified resource.
+- [ ] `scalene_policy.yaml` configs written before this epic (no `allowlist`/`PolicyRule` entries exist post-E10 by construction) continue to load without error — this story only needs to cover the *cache's* schema change, not a policy-config migration, since there is no pre-existing rule data to migrate on that side.
+- [ ] The chosen migration behavior (re-key vs. re-verify-on-expiry) is covered by a real test simulating an upgrade from an E10-era cache file, not just documented.
+
+---

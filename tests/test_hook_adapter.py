@@ -1,383 +1,234 @@
 """Tests for the Claude Code PreToolUse/PostToolUse hook adapter (STORY-301, STORY-302).
 
-2026-07-14: two changes verified here:
-1. Response shape corrected to Claude Code's real hook contract
-   (`hookSpecificOutput.permissionDecision`/`updatedInput`), not the
-   previously-invented flat `{"allow": ..., "updatedInput": ...}` shape,
-   which the real harness never honored.
-2. Masking/blocking is now content-gated (secrets_scan.py/detect-secrets),
-   not purely provenance-based — an ordinary command must be allowed even in
-   a tainted-sensitive+untrusted session if it contains nothing recognized
-   as a real secret (user-reported noise).
+2026-07-14: response shape corrected to Claude Code's real hook contract
+(`hookSpecificOutput.permissionDecision`/`updatedInput`), not the
+previously-invented flat `{"allow": ..., "updatedInput": ...}` shape,
+which the real harness never honored.
+
+2026-07-17 (docs/ARCHITECTURE.md sec15, direct user design session):
+rewritten entirely for rule-driven access control, replacing the old
+content-scanning/masking model. `pre_tool_use` now makes the full
+allow/block decision via `resource_verifier.decide_access` and persists
+the resulting trust/sensitivity tags; `post_tool_use` is a documented
+no-op (see hook_adapter.py's docstring for why).
 """
 
 import json
-import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scalene.hook_adapter import post_tool_use, pre_tool_use
-from scalene.masking import MaskingEngine
-from scalene.policy_config import PolicyConfig
-from scalene.secrets_scan import scan_text_for_secrets
+from scalene.policy_config import PolicyConfig, PolicyRule
+from scalene.scan_cache import ScanCache
+from scalene.scanner import Resource, ScanResult
 from scalene.taint_state import TaintState
 
-REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (detect-secrets recognizes this)
-NOT_A_SECRET = "ls -la"
+REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (not used for scanning under sec15, kept for realistic call shapes)
 
 
 def _decision(result: dict) -> str:
     return result["hookSpecificOutput"]["permissionDecision"]
 
 
-def _updated_input(result: dict):
-    return result["hookSpecificOutput"].get("updatedInput")
-
-
 def _reason(result: dict):
     return result["hookSpecificOutput"].get("permissionDecisionReason")
 
 
-class TestPreToolUse(unittest.TestCase):
-    def test_allows_unmodified_when_not_tainted(self):
+class TestPreToolUseCleanContext(unittest.TestCase):
+    def test_no_resources_identified_allows(self):
         with TemporaryDirectory() as tmp:
             config = PolicyConfig()
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "echo hello"}},
                 config,
                 state_dir=Path(tmp),
+                cache_path=Path(tmp) / "cache.json",
             )
             self.assertEqual(_decision(result), "allow")
-            self.assertIsNone(_updated_input(result))
-            self.assertNotIn("systemMessage", result)
 
-    def test_allows_ordinary_command_even_when_session_tainted(self):
-        """Core fix (user-reported): the session being generically tainted
-        must not be enough on its own — the call itself must actually carry
-        something recognized as sensitive."""
+    def test_unmatched_resource_from_clean_context_allows_and_taints_trust(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
+            config = PolicyConfig()
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://never-seen.example.com/x"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=state_dir / "cache.json",
             )
             self.assertEqual(_decision(result), "allow")
-            self.assertIsNone(_updated_input(result))
-            self.assertNotIn("systemMessage", result)
+            taint = TaintState.load("s1", state_dir=state_dir)
+            self.assertEqual(taint.trust, "low")
+            self.assertEqual(taint.sensitivity, "public")
 
-    def test_masks_when_real_secret_present_in_tainted_untrusted_session(self):
+    def test_validated_allow_rule_allows_and_escalates_sensitivity(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            cache_path = state_dir / "cache.json"
+            cache = ScanCache(cache_path)
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
             )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="internal", mode="allow"
+                    ),
+                )
+            )
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://internal.example.com/wiki"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=cache_path,
             )
             self.assertEqual(_decision(result), "allow")
-            self.assertEqual(_updated_input(result)["command"], MaskingEngine.MASK_LITERAL)
-            self.assertIn("systemMessage", result)
+            taint = TaintState.load("s1", state_dir=state_dir)
+            self.assertEqual(taint.trust, "high")
+            self.assertEqual(taint.sensitivity, "internal")
 
-    def test_blocks_instead_of_masking_when_mode_is_block(self):
+
+class TestPreToolUseContaminatedContext(unittest.TestCase):
+    def test_unmatched_resource_from_contaminated_context_is_blocked(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
+            taint = TaintState(session_id="s1", trust="low", state_dir=state_dir)
             taint.save()
-            config = PolicyConfig(untrusted_by_default=True, mode="block")
+            config = PolicyConfig()
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://also-unseen.example.com/x"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=state_dir / "cache.json",
             )
             self.assertEqual(_decision(result), "deny")
-            self.assertIsNone(_updated_input(result))
             self.assertIsNotNone(_reason(result))
 
-    def test_masking_never_raises_even_for_unmapped_tool(self):
+    def test_validated_allow_rule_still_proceeds_from_contaminated_context(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            cache_path = state_dir / "cache.json"
+            cache = ScanCache(cache_path)
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
             )
+            taint = TaintState(session_id="s1", trust="low", sensitivity="restricted", state_dir=state_dir)
             taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="public", mode="allow"),
+                )
+            )
 
             result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://internal.example.com/wiki"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=cache_path,
             )
             self.assertEqual(_decision(result), "allow")
 
-    def test_mask_event_appended_to_audit_log(self):
+
+class TestPreToolUseConfirmedBad(unittest.TestCase):
+    def test_scanner_confirmed_bad_blocks_even_from_clean_context(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            audit_log = Path(tmp) / "audit.log"
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
+            cache_path = state_dir / "cache.json"
+            cache = ScanCache(cache_path)
+            cache.put(
+                Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
             )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
+            config = PolicyConfig()
 
-            pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://evil.example.com/x"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-                audit_log_path=audit_log,
+                cache_path=cache_path,
             )
-            self.assertTrue(audit_log.exists())
-            entry = json.loads(audit_log.read_text().strip())
-            self.assertEqual(entry["event"], "mask")
-            self.assertTrue(entry["findings"])
+            self.assertEqual(_decision(result), "deny")
+            taint = TaintState.load("s1", state_dir=state_dir)
+            self.assertTrue(taint.is_clean)  # blocked call -- no tag mutation
 
+    def test_explicit_non_allow_rule_blocks_even_from_clean_context(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            cache_path = state_dir / "cache.json"
+            cache = ScanCache(cache_path)
+            cache.put(
+                Resource(kind="url", identity="https://banned.example.com/x", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://banned\.example\.com/.*", sensitivity="restricted", mode="block"),
+                )
+            )
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://banned.example.com/x"}},
+                config,
+                state_dir=state_dir,
+                cache_path=cache_path,
+            )
+            self.assertEqual(_decision(result), "deny")
+
+
+class TestPreToolUseAuditLog(unittest.TestCase):
     def test_block_event_appended_to_audit_log(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = Path(tmp) / "audit.log"
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
+            taint = TaintState(session_id="s1", trust="low", state_dir=state_dir)
             taint.save()
-            config = PolicyConfig(untrusted_by_default=True, mode="block")
+            config = PolicyConfig()
 
             pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://unseen.example.com/x"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=state_dir / "cache.json",
                 audit_log_path=audit_log,
             )
             entry = json.loads(audit_log.read_text().strip())
             self.assertEqual(entry["event"], "block")
+            self.assertTrue(entry["reason"])
 
     def test_no_audit_log_entry_when_allowed(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = Path(tmp) / "audit.log"
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
+            config = PolicyConfig()
 
             pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": NOT_A_SECRET}},
+                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "echo hello"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=state_dir / "cache.json",
                 audit_log_path=audit_log,
             )
             self.assertFalse(audit_log.exists())
 
-    def test_no_false_mask_report_for_tool_with_no_mapped_payload_field(self):
+
+class TestPostToolUseIsANoOp(unittest.TestCase):
+    def test_returns_empty_and_writes_no_state(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            audit_log = Path(tmp) / "audit.log"
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "SomeUnknownTool", "tool_input": {"foo": REAL_SECRET}},
+            config = PolicyConfig()
+            result = post_tool_use(
+                {"session_id": "s1", "tool_name": "Read", "tool_input": {}, "tool_response": {"file_path": "secrets.env"}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-                audit_log_path=audit_log,
+                cache_path=state_dir / "cache.json",
             )
-            self.assertEqual(_decision(result), "allow")
-            self.assertNotIn("systemMessage", result)
-            self.assertFalse(audit_log.exists())
-
-    def test_message_names_what_was_actually_detected(self):
-        """User requirement: the message should say what was masked."""
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            expected_findings = scan_text_for_secrets(f"curl {REAL_SECRET}")
-            message = result["systemMessage"]
-            for finding in expected_findings:
-                self.assertIn(finding, message)
-
-    def test_mask_message_includes_suggested_onboard_command(self):
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            message = result["systemMessage"]
-            # 2026-07-15 (Phase 4, sec13.4): --tool/--jsonpath/--pattern
-            # dropped entirely -- scg onboard now only takes --target.
-            self.assertIn("scg onboard", message)
-            self.assertIn("--target", message)
-            self.assertNotIn("--tool", message)
-            self.assertNotIn("--jsonpath", message)
-            self.assertNotIn("--pattern", message)
-
-    def test_suggested_command_target_placeholder_is_domain_only(self):
-        """Regression for Smith's Sprint-1 wording nit, fixed in Phase 3: the
-        placeholder previously said 'domain-or-file' but the suggestion is
-        always an https:// target (domain-only) — '-or-file' offered a
-        choice that never actually existed."""
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            message = result["systemMessage"]
-            self.assertIn("<domain-this-call-reaches>", message)
-            self.assertNotIn("domain-or-file", message)
-
-    def test_suggested_command_is_valid_shell_syntax_even_unedited(self):
-        """Regression test for a Trin UAT finding: every token in the suggested
-        command must be shell-safe, including the --target placeholder — a
-        developer's first move is often to paste the command before editing
-        it, and the placeholder's '<'/'>' are shell redirection operators if
-        left unquoted. `bash -n` syntax-checks without needing `scalene` on
-        PATH or executing anything."""
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            result = pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            suggested_line = result["systemMessage"].split("run:\n", 1)[1]
-            completed = subprocess.run(["bash", "-n", "-c", suggested_line], capture_output=True, text=True)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-
-    def test_audit_log_includes_suggested_onboard_command(self):
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            audit_log = Path(tmp) / "audit.log"
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
-
-            pre_tool_use(
-                {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-                audit_log_path=audit_log,
-            )
-            entry = json.loads(audit_log.read_text().strip().splitlines()[-1])
-            self.assertIn("suggested_onboard_command", entry)
-            self.assertIn("scg onboard", entry["suggested_onboard_command"])
-
-
-class TestPostToolUse(unittest.TestCase):
-    def test_marks_sensitive_and_untrusted_per_story_102_rules(self):
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            config = PolicyConfig(sensitive_by_default=True, untrusted_by_default=True)
-
-            post_tool_use(
-                {
-                    "session_id": "s1",
-                    "tool_name": "Read",
-                    "tool_input": {},
-                    "tool_response": {"file_path": "secrets.env"},
-                },
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            reloaded = TaintState.load("s1", state_dir=state_dir)
-            self.assertTrue(reloaded.has_sensitive_data)
-            self.assertTrue(reloaded.has_untrusted_data)
-
-    def test_flags_stay_sticky_across_calls(self):
-        with TemporaryDirectory() as tmp:
-            state_dir = Path(tmp)
-            config = PolicyConfig(sensitive_by_default=True, untrusted_by_default=False)
-
-            post_tool_use(
-                {
-                    "session_id": "s1",
-                    "tool_name": "Read",
-                    "tool_input": {},
-                    "tool_response": {"file_path": "secrets.env"},
-                },
-                config,
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            # second call with a non-sensitive, trusted result must not clear the sticky flag
-            post_tool_use(
-                {
-                    "session_id": "s1",
-                    "tool_name": "Read",
-                    "tool_input": {},
-                    "tool_response": {"file_path": "README.md"},
-                },
-                PolicyConfig(sensitive_by_default=False, untrusted_by_default=False),
-                state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
-            )
-            reloaded = TaintState.load("s1", state_dir=state_dir)
-            self.assertTrue(reloaded.has_sensitive_data)
+            self.assertEqual(result, {})
+            self.assertFalse((state_dir / "s1.json").exists())
 
     def test_runs_regardless_of_tool_success_or_failure(self):
         with TemporaryDirectory() as tmp:
@@ -387,7 +238,7 @@ class TestPostToolUse(unittest.TestCase):
                 {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "false"}, "tool_response": {}},
                 config,
                 state_dir=state_dir,
-                cache_path=state_dir / "scan_cache.json",
+                cache_path=state_dir / "cache.json",
             )
             self.assertEqual(result, {})
 
@@ -396,42 +247,32 @@ class TestScaleneBypass(unittest.TestCase):
     """STORY-601 AC2: SCALENE_BYPASS=1 must short-circuit both hooks so a
     scanner subprocess's own actions never recursively re-trigger them."""
 
-    def test_pre_tool_use_bypasses_and_does_not_mask(self):
+    def test_pre_tool_use_bypasses_and_writes_no_state(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            taint = TaintState(
-                session_id="s1", has_sensitive_data=True, has_untrusted_data=True, state_dir=state_dir
-            )
-            taint.save()
-            config = PolicyConfig(untrusted_by_default=True)
+            config = PolicyConfig()
 
             with patch.dict("os.environ", {"SCALENE_BYPASS": "1"}):
                 result = pre_tool_use(
-                    {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {REAL_SECRET}"}},
+                    {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://unseen.example.com/x"}},
                     config,
                     state_dir=state_dir,
-                    cache_path=state_dir / "scan_cache.json",
+                    cache_path=state_dir / "cache.json",
                 )
             self.assertEqual(_decision(result), "allow")
-            self.assertIsNone(_updated_input(result))
-            self.assertNotIn("systemMessage", result)
+            self.assertFalse((state_dir / "s1.json").exists())
 
-    def test_post_tool_use_bypasses_and_does_not_write_state(self):
+    def test_post_tool_use_bypasses_and_returns_empty(self):
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
-            config = PolicyConfig(sensitive_by_default=True, untrusted_by_default=True)
+            config = PolicyConfig()
 
             with patch.dict("os.environ", {"SCALENE_BYPASS": "1"}):
                 result = post_tool_use(
-                    {
-                        "session_id": "s1",
-                        "tool_name": "Read",
-                        "tool_input": {},
-                        "tool_response": {"file_path": "secrets.env"},
-                    },
+                    {"session_id": "s1", "tool_name": "Read", "tool_input": {}, "tool_response": {"file_path": "secrets.env"}},
                     config,
                     state_dir=state_dir,
-                    cache_path=state_dir / "scan_cache.json",
+                    cache_path=state_dir / "cache.json",
                 )
             self.assertEqual(result, {})
             self.assertFalse((state_dir / "s1.json").exists())

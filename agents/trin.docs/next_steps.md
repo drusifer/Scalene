@@ -1,18 +1,19 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 4 Phase 5 UAT passed, handed to Morpheus. **Mandatory Smith gate next — last Sprint 4 phase.** Once that clears, Sprint 4 implementation is complete and moves to Stage 3 close.
+`*qa uat sec15` complete (2026-07-18) — the UAT debt flagged in the prior note is closed. Handed to Morpheus for architecture review.
 
 ## Waiting On
-Morpheus (Phase 5 review) → Smith (mandatory gate) → Sprint 4 close (Oracle groom → Smith end-to-end test → all-persona retro → Cypher launch).
+Nothing. Next in the resumed close sequence: Morpheus review → Oracle groom → Smith end-to-end test → retro → Cypher launch.
 
-## Planned Work (Sprint 4 close, once Phase 5 gate clears)
-- [ ] Smith's end-to-end user testing across the whole sprint (`*user test` + `*user feedback`) — this is broader than any single phase gate, covers the full E10 feature as a real user would experience it.
-- [ ] My own retro input when `*sprint retro` happens: test coverage/regression themes across all 5 phases — real cross-process concurrency test (Phase 2), real installed-binary verification for the fatal-exit/onboard-suggestion loop (Phase 4), row-content-not-just-count gaps found twice this sprint (Sprint 2's mask feed, this phase's resource panel) — worth naming as a recurring pattern in retro, not just fixing case-by-case.
+## Planned Work (Sprint 5 close)
+- [ ] If Smith files a `*user bug`, triage per protocol (correctness → Neo, UX → Neo+Smith re-test).
+- [ ] My own retro input when `*sprint retro` happens: (1) this sprint's phase-boundary discipline (Neo correctly deferred `sensitivity`/`mode` test-writing to Phase 2 rather than jumping ahead) — positive pattern, contrasting with Sprint 4's premature-parameter gaps. (2) adversarial regex-validation testing caught a real hot-path crash before it shipped — worth keeping "construct a hostile config value, not just a hostile call" as standard UAT practice for any new user-authored-config feature. (3) a mid-implementation architecture amendment (mode=allow) happened cleanly this sprint because it was raised immediately rather than discovered at close — worth naming as the right instinct to keep.
+- [ ] Carried, not blocking: flagged to Smith that a rule with `pattern: ".*"` + `mode: allow` can blanket-disable scanning at the rule level even though `PolicyConfig.mode` can't — deliberate/reviewable, not automatic, but worth her opinion on whether a warning is worth adding later.
 
-## Loose end (not blocking, from Sprint 3)
-- [ ] Sprint 3 Phase 3's demo was never UAT'd, Sprint 3 was never formally closed. Should probably resolve before or during Sprint 4's own close — two open sprints stacking up gets confusing.
+## Loose ends (not blocking, carried from Sprint 4)
+- [x] Sprint 3 is closed (2026-07-16) — resolved, no longer open.
 - [ ] `make judge-trace` cumulative flags were climbing last sprint. `make test-q` (the documented fix) still doesn't exist as a target — still a real tooling gap to raise with Bob/Mouse eventually.
 
 ---
-*Last updated: 2026-07-15*
+*Last updated: 2026-07-17*

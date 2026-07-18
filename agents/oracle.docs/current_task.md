@@ -19,11 +19,11 @@ Stage 3 sprint close (Sprint 4 / E10), step 7: groom docs, archive CHAT.md if ov
 
 ## Task Description (prior): Sprint 2 close groom
 
-## Progress
-- [x] `CHAT.md` was at 109 messages (over the 50-100 threshold) — archived messages 1-81 to `agents/chat_archive/CHAT-ARCHIVE-20260710.md`, replaced with a summary + link, kept the recent tail live
-- [x] Recorded 2 durable lessons in `agents/oracle.docs/lessons.md`: "real execution catches what code review misses" (3 confirmed instances this sprint) and the `detect-secrets` `scan_line()` vs `scan_file()` gotcha
-- [x] Flagged 2 AC-text staleness items to Cypher (STORY-701 timestamp, STORY-702 placeholder wording) rather than editing her story content myself
-- [x] Handed off to Smith for Stage 3 step 8 (end-to-end sprint testing)
+## Progress (most recent): `*ora groom` — Sprint 5 (E11 → sec15) close
+- [x] `CHAT.md` was at 98 messages (over the 50-100 threshold) — archived messages through 2026-07-17 15:13 to `agents/chat_archive/CHAT-ARCHIVE-20260718.md` (extracted via `sed`, not retyped, to avoid transcription errors on real historical data), replaced with a summary + link, kept the live tail (36 messages).
+- [x] Reconciled `docs/USER_STORIES.md`'s E11 epic, `task.md`'s Sprint 5 section (both the phase table and the top-level status line), and `docs/PRD.md`'s Sprint 5 goals + epic table row — all still described the original masking-centric design. Added dated "Superseded" notes pointing to `docs/ARCHITECTURE.md` §15, same append-only-correction convention as every other revision in these docs — did not rewrite or delete the original text.
+- [x] Recorded 1 durable lesson in `agents/oracle.docs/lessons.md`: "A Gate That Actually Exercises the Feature Can Overturn the Feature" — Smith's mandatory Phase 3 gate tried a maximally broad, laziest-possible rule and found the feature reproduced the project's own core defect; the fix was reopening the design mid-gate, not patching around it.
+- [x] Handed off to Smith for the real end-to-end sprint test (the one that got interrupted by the mode=allow discovery and never completed the first time).
 
 ## Blockers
 None
@@ -32,4 +32,4 @@ None
 None yet
 
 ---
-*Last updated: 2026-07-10*
+*Last updated: 2026-07-18*

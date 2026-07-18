@@ -12,11 +12,11 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
-from textual.widgets import DataTable, Footer, Header, Input, Static
+from textual.widgets import DataTable, Footer, Header, Static
 from textual.widgets.data_table import RowDoesNotExist
 
 from .hook_adapter import DEFAULT_AUDIT_LOG
-from .monitor_data import AuditTail, MaskEvent, apply_onboard_command, discover_scan_results, discover_sessions
+from .monitor_data import AuditTail, BlockEvent, discover_scan_results, discover_sessions
 from .scan_cache import DEFAULT_CACHE_PATH
 from .taint_state import DEFAULT_STATE_DIR
 
@@ -45,8 +45,11 @@ def _format_relative_time(scanned_at: float, now: float | None = None) -> str:
 
 
 class MonitorApp(App):
-    """Live view of session taint status and mask events (STORY-701), with an
-    editable-and-applyable suggested onboard command per mask event (STORY-702)."""
+    """Live view of session trust/sensitivity tags and block events
+    (STORY-701). docs/ARCHITECTURE.md sec15 (2026-07-17): STORY-702's
+    editable-and-applyable onboard-command workflow is retired -- clearing
+    a destination now always takes two explicit steps (a real scan, then a
+    hand-authored rule), not one runnable command."""
 
     CSS = """
     #no-sessions { padding: 1 2; color: $text-muted; display: none; }
@@ -56,7 +59,6 @@ class MonitorApp(App):
     """
     BINDINGS = [
         ("a", "toggle_all_sessions", "Toggle all-sessions feed"),
-        ("escape", "dismiss_edit", "Dismiss"),
     ]
 
     def __init__(
@@ -69,8 +71,8 @@ class MonitorApp(App):
         self._state_dir = state_dir
         self._tail = AuditTail(audit_log_path)
         self._cache_path = cache_path
-        self._events: list[MaskEvent] = []
-        self._visible_events: list[MaskEvent] = []
+        self._events: list[BlockEvent] = []
+        self._visible_events: list[BlockEvent] = []
         self.selected_session_id: str | None = None
         self.show_all_sessions = False
 
@@ -82,11 +84,11 @@ class MonitorApp(App):
                 yield Static("Sessions")
                 yield DataTable(id="sessions")
             with Vertical():
-                yield Static("Mask events (press 'a' to toggle all-sessions, Enter to edit+apply, Escape to dismiss)")
+                yield Static("Block events (press 'a' to toggle all-sessions)")
                 yield DataTable(id="events")
         # STORY-1005 / Smith's Phase 5 gate finding: a resource identity can be
         # a long file path or hostname -- squeezed into a 3rd side-by-side
-        # column (alongside Sessions/Mask-events) it doesn't have enough
+        # column (alongside Sessions/Block-events) it doesn't have enough
         # combined width to stay readable at a common terminal size (real
         # screenshot confirmed truncation even after shortening the
         # timestamp format). Full-width row below instead, so it gets the
@@ -94,17 +96,15 @@ class MonitorApp(App):
         with Vertical(id="scan-results-panel"):
             yield Static("Resource cache (recently scanned files/hosts)")
             yield DataTable(id="scan-results")
-        yield Input(placeholder="Select a mask event to edit its onboard command...", id="command-input", disabled=True)
-        yield Static("", id="apply-status")
         yield Footer()
 
     def on_mount(self) -> None:
         sessions_table = self.query_one("#sessions", DataTable)
-        sessions_table.add_columns("Session", "Sensitive", "Untrusted")
+        sessions_table.add_columns("Session", "Trust", "Sensitivity")
         sessions_table.cursor_type = "row"
 
         events_table = self.query_one("#events", DataTable)
-        events_table.add_columns("Session", "Tool", "Field", "Action")
+        events_table.add_columns("Session", "Tool", "Reason")
         events_table.cursor_type = "row"
 
         scan_results_table = self.query_one("#scan-results", DataTable)
@@ -124,7 +124,7 @@ class MonitorApp(App):
         no_sessions_widget.set_class(not sessions, "visible")
 
         for s in sessions:
-            table.add_row(s.session_id, str(s.has_sensitive_data), str(s.has_untrusted_data), key=s.session_id)
+            table.add_row(s.session_id, s.trust, s.sensitivity, key=s.session_id)
 
         if self.selected_session_id is None and sessions:
             self.selected_session_id = sessions[0].session_id
@@ -174,45 +174,13 @@ class MonitorApp(App):
         )
         self._visible_events = list(reversed(visible))  # newest first — same order as the rows below
         for e in self._visible_events:
-            table.add_row(e.session_id, e.tool_name, e.payload_field, e.event_type)
+            table.add_row(e.session_id, e.tool_name, e.reason)
 
     def action_toggle_all_sessions(self) -> None:
         self.show_all_sessions = not self.show_all_sessions
         self.refresh_events()
 
-    def action_dismiss_edit(self) -> None:
-        """STORY-702: dismissing has no side effect — just clears the editor."""
-        command_input = self.query_one("#command-input", Input)
-        command_input.value = ""
-        command_input.disabled = True
-        self._return_focus_to_events_table()
-
-    def _return_focus_to_events_table(self) -> None:
-        """Disabling a focused Input blurs it (Widget.watch_disabled's own
-        documented behavior) without focusing anything else — leaving the
-        user stranded with no focused widget at all. Hand focus back to the
-        events table so Enter immediately works on the next event."""
-        self.query_one("#events", DataTable).focus()
-
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "sessions":
             self.selected_session_id = str(event.row_key.value)
             self.refresh_events()
-        elif event.data_table.id == "events":
-            mask_event = self._visible_events[event.cursor_row]
-            command_input = self.query_one("#command-input", Input)
-            command_input.disabled = False
-            command_input.value = mask_event.suggested_onboard_command
-            command_input.focus()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "command-input":
-            return
-        # STORY-702: a real subprocess call to the actual `scg` CLI — never
-        # a reimplementation, so this can't bypass onboard.py's safety gates.
-        ok, output = apply_onboard_command(event.value)
-        status = self.query_one("#apply-status", Static)
-        status.update(("Applied: " if ok else "Failed: ") + output)
-        event.input.value = ""
-        event.input.disabled = True
-        self._return_focus_to_events_table()

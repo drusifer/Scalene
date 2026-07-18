@@ -42,24 +42,35 @@ graph TD
 ```mermaid
 classDiagram
     class TaintState {
+        <<sec15, 2026-07-17: trust/sensitivity tags replace has_sensitive_data/has_untrusted_data>>
         +str session_id
-        +bool has_sensitive_data
-        +bool has_untrusted_data
-        +mark_sensitive()
-        +mark_untrusted()
+        +str trust
+        +str sensitivity
+        +bool is_clean
+        +escalate_trust(level)
+        +escalate_sensitivity(level)
         +load(session_id) TaintState
         +save()
+    }
+    class AccessDecision {
+        <<sec15, 2026-07-17>>
+        +bool allowed
+        +str reason
     }
     class PolicyConfig {
         +bool sensitive_by_default
         +bool untrusted_by_default
         +str mode
+        +tuple~PolicyRule~ rules
         +from_yaml(path) PolicyConfig
     }
     class MatchResult {
         +bool is_sensitive
         +bool is_trusted
         +bool fail_safe_triggered
+        +str untrusted_url
+        +str sensitivity
+        +str mode
     }
     class ResourceVerifier {
         <<module: resource_verifier.py>>
@@ -116,7 +127,8 @@ classDiagram
         <<exception>>
     }
     class MaskingEngine {
-        +decide(taint, match, value, mode) Decision
+        <<sec14.4, dormant since sec15 -- no longer called from hook_adapter.pre_tool_use's default flow>>
+        +decide(match, value) Decision
         +apply_mask(args, payload_field) dict
     }
     Scanner <|.. FileScanner
@@ -129,18 +141,21 @@ classDiagram
     ResourceVerifier --> PolicyConfig
     ResourceVerifier --> PolicyRule
     ResourceVerifier --> MatchResult
+    ResourceVerifier --> TaintState
+    ResourceVerifier --> AccessDecision
     PolicyRule ..> Scanner
     ScanCache --> CacheEntry
     ScanCache ..> ScanCacheError
     MaskingEngine --> MatchResult
-    MaskingEngine --> TaintState
 ```
 
 **Full replacement, not incremental simplification (2026-07-15, Sprint 4 / E10, §13.1) — corrected 2026-07-17, §13.8:** the original `PolicyConfig.allowlist`/`PolicyRule` model (tool/jsonpath/pattern/target, matching a call *and* deciding trust in one step) was removed entirely at Sprint 4, on the reasoning that pattern-matching itself was structurally unsafe (one scan vouching for an unbounded future match). That reasoning was right about the *old* `PolicyRule`, but the replacement (host-only resource identity for URLs) reintroduced the identical defect in a different shape — see §13.1's revision note. `PolicyRule` returns in §13.8's corrected model, but doing a narrower job than before: it decides *candidacy and resource identity* (jsonpath + pattern, tool-shape-agnostic), never trust directly — the scan cache (`ScanCache`) still verifies and freshness-tracks each *distinct* matched identity, which is what keeps a wildcard `pattern` from vouching for anything it hasn't actually checked. `PolicyConfig` still carries the mode/sensitivity-by-default fallbacks used when no rule matches. `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
 
 ## 5. Sequence & Interaction Flows
 
-### Pre-tool-call (masking/blocking path)
+### Pre-tool-call (access-control path)
+
+**Superseded 2026-07-17 by sec15** — the diagram below is the historical record of §14.4's content-scanning/masking flow, kept for context, not silently rewritten. See the real current flow further down.
 
 Response shape uses Claude Code's real `PreToolUse` hook contract
 (`hookSpecificOutput.permissionDecision`/`updatedInput`/`permissionDecisionReason`)
@@ -178,6 +193,41 @@ sequenceDiagram
     else safe (untainted or trusted destination)
         Adapter-->>Agent: permissionDecision=allow, unmodified
     end
+```
+
+**Current (sec15): `decide_access()` is the real flow.** No content scanning in the default path — the decision is entirely about whether identified resources are validated + explicitly allowed, or the session is still clean.
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Adapter as Hook Adapter
+    participant Verifier as decide_access
+    participant Cache as ScanCache
+    participant State as Taint State
+    Agent->>Adapter: PreToolUse(tool, args)
+    Adapter->>State: load(session_id)
+    Adapter->>Verifier: decide_access(tool, args, config, cache, taint)
+    Verifier->>Cache: refresh_if_needed(resource) per identified resource
+    alt any resource confirmed bad, or a matched rule's mode != allow
+        Verifier-->>Adapter: AccessDecision(allowed=False, reason)
+        Adapter->>Adapter: log block event (audit.log)
+        Adapter-->>Agent: permissionDecision=deny, reason
+    else all resources validated + allow-ruled (or none identified)
+        Verifier->>State: escalate_sensitivity(rule.sensitivity) per match
+        Verifier-->>Adapter: AccessDecision(allowed=True)
+        Adapter-->>Agent: permissionDecision=allow
+    else some resource unmatched/unvalidated
+        alt session was clean before this call
+            Verifier->>State: escalate_trust("low")
+            Verifier-->>Adapter: AccessDecision(allowed=True)
+            Adapter-->>Agent: permissionDecision=allow
+        else session already tainted
+            Verifier-->>Adapter: AccessDecision(allowed=False, reason)
+            Adapter->>Adapter: log block event (audit.log)
+            Adapter-->>Agent: permissionDecision=deny, reason
+        end
+    end
+    Adapter->>State: save()
 ```
 
 ### Onboarding
@@ -462,3 +512,148 @@ class PolicyRule:
 **Zero-config baseline is preserved, not replaced.** `FileScanner`/`URLScanner`'s built-in generic-fallback detection (Phase 1, unaffected) remains the reason a brand-new, unconfigured project gets real protection immediately — rules are an *additive precision layer* (narrower or broader than the generic heuristic, deliberately chosen) layered on top of that baseline via the implicit default rule above, not a configuration requirement before any scanning happens.
 
 **Not yet decided / explicitly deferred to implementation:** the exact JSONPath expression for "any argument" in the default rule; whether `scanner` must always be explicit on a user-authored rule or can be inferred the way URI scheme inference works today; the real on-disk schema for `PolicyRule` in `scalene_policy.yaml` (replaces the removed `allowlist`, does not resurrect its exact pre-Sprint-4 shape — `sensitivity`/`mode` are new fields, `target` does not return); how `scg onboard` maps a `--target` onto a generated rule with a sensible default pattern. This section documents the corrected *model*; implementation is a follow-up phase, not retroactively applied to already-closed Sprint 4 code without going through the same Bloop review process everything else in this document did.
+
+## 14. Sprint 5 Architecture — Trust/Sensitivity Model & Rule-Driven Resource Identity (E11)
+
+Resolves §13.8's 4 deferred open questions and STORY-1101 through 1105. Grounded in the real shipped E10 code (`scanner.py`, `policy_config.py`, `resource_verifier.py`, `masking.py`, `onboard.py`, `scan_cache.py`), not a rewrite from a blank page — this section states exactly what changes and what stays.
+
+### 14.1 Rules layer *on top of* scanner identification — they do not replace it
+
+Resolves open question #1 (exact JSONPath for "any argument"). §13.8's `PolicyRule` describes `jsonpath` as extracting a value from `tool_input`/`tool_response` directly, which would mean rules do their own independent resource discovery — duplicating what `FileScanner`/`URLScanner`'s `identify()` already does today, and reopening the exact "zero-config baseline preserved" promise §13.8 itself makes a few paragraphs earlier.
+
+**Decision:** rules do not re-derive resources from raw args. `identify()` (unchanged, Phase 1) still finds every candidate `Resource` for a call. A rule's job is purely classification: for each identified `Resource`, find the first rule (in declaration order) where `tool` (regex) matches `tool_name` and `pattern` (regex) matches `resource.identity` — that rule's `sensitivity`/`mode` apply to this resource for this call. The implicit default rule (§13.8, any tool/any value, `sensitivity: public`, `mode: <defaults.mode>`) always matches last, as a fallback, not a real `PolicyRule` requiring JSONPath evaluation — it is constructed in code, never written to a user's YAML (a magic always-on YAML entry could be accidentally deleted; a code-level fallback cannot). This closes open question #1 by making it moot for the default case: `jsonpath` remains a documented field on `PolicyRule` for a future case where a tool has multiple candidate argument fields that need distinguishing, but is not required for E11's scope — omit it and the rule matches any resource the `tool`+`pattern` pair identifies.
+
+**Resolves open question #2 (`scanner` explicit vs. inferred):** inferred by default. Every identified `Resource` already carries `scanner_name` (which scanner found it). A rule's optional `scanner` field is a disambiguating filter only — if present, the rule additionally requires `resource.scanner_name == rule.scanner`; if absent, the rule applies to any resource whose `tool`+`pattern` match, regardless of which scanner identified it. This matters only for the rare case where a file-shaped and URL-shaped string could both plausibly match the same `pattern` (e.g. a Bash command).
+
+### 14.2 Fix STORY-1101: `URLScanner` identity becomes per-URL, not per-host
+
+The defect: `URLScanner.identify()` (§13.2) extracts a `host` capture group as the resource identity. Scanning `https://github.com/you/your-repo` once and caching `reputation:github.com -> trusted` silently trusts `https://github.com/anyone/anything-else` forever after — one verification vouching for an unbounded set.
+
+**Fix:** `_URL_FALLBACK_RE` changes from `https?://(?P<host>[^/\s:"']+)` to capture the full URL span (scheme + host + path, query string dropped to keep cache keys bounded — `https?://(?P<url>[^\s:"']+)`, trimmed of a trailing `?...`). `Resource.identity` for a URL becomes this full (scheme, host, path) string, not the bare host. Every distinct path is now its own cache entry, independently scanned and freshness-tracked (§13.3's cache mechanics are otherwise unchanged) — the exact fix the defect calls for.
+
+**Broadening remains possible, but only via an explicit rule, never implicitly.** A developer who genuinely wants "trust everything under `internal.example.com`" writes:
+```yaml
+rules:
+  - tool: ".*"
+    pattern: "https://internal\\.example\\.com/.*"
+    sensitivity: internal
+    mode: mask
+```
+This rule's `pattern` only decides *candidacy* — which resources it's willing to consider trusted-if-verified. The scan cache still verifies and freshness-tracks each *distinct* URL this pattern actually matches (§13.3, unchanged) — a wildcard rule widens what's considered, never what's vouched for without a real per-resource cache entry. This is the generalized version of the same fix, available to any scanner type, not just URLs.
+
+### 14.3 `scg onboard --target` stays single-flag (Smith's Gate 1 hard requirement, carried to Gate 2)
+
+**Decision: `scg onboard`'s CLI surface does not change.** It still takes exactly `--target <uri>`, verifies that one exact resource (now per-URL under 14.2's fix, same behavior as today for `file://` targets since those were already full-path identity), and pre-seeds the cache — no `--pattern`/`--sensitivity`/`--mode` flags added. This is the common case (§13.4, unaffected) and Smith's explicit condition for Gate 2 approval: the onboarding simplicity E10 shipped does not regress.
+
+Authoring a `PolicyRule` (broader pattern, explicit `sensitivity`/`mode`) is the separate, opt-in power-user path for the two cases `--target` alone can't express: (a) trusting more than one exact resource at a time, (b) setting `sensitivity`/`mode` to anything other than the project-wide `defaults.mode`. A rule is hand-written into `scalene_policy.yaml` directly, same as the pre-Sprint-4 `allowlist:` editing model — this is deliberately not automated by a CLI flag in this epic (no evidence yet that it's the common case; add a `scg rule add` convenience command later if usage shows otherwise, not speculatively now).
+
+### 14.4 `MatchResult` gains `sensitivity`/`mode`; `MaskingEngine` scanning becomes unconditional (STORY-1102, 1103, 1104)
+
+`resource_verifier.evaluate()` (currently returns `MatchResult(is_sensitive, is_trusted, fail_safe_triggered)`) gains two fields:
+```python
+@dataclass(frozen=True)
+class MatchResult:
+    is_sensitive: bool          # unchanged: FileScanner's literal secret-content detection (taint tracking)
+    is_trusted: bool            # unchanged in meaning, now computed at per-URL identity (14.2)
+    fail_safe_triggered: bool = False
+    sensitivity: str = "public"  # NEW: resolved from the matching PolicyRule (14.1), 3 levels
+    mode: str = "mask"           # NEW: resolved from the matching PolicyRule, "mask" | "block" | "allow" (14.4 amendment)
+```
+`is_sensitive`/`is_trusted` keep their exact current meaning and taint-tracking role (`post_tool_use` → `taint.mark_sensitive()`/`mark_untrusted()`, still read by `scg monitor`'s Sessions panel — unaffected by this epic). `sensitivity`/`mode` are the new, independent axis (§13.8) resolved once per call by taking the *most specific single rule match* across all of a call's identified resources — if resources disagree (rare: a call touching two resources with different rule matches), the most restrictive `mode` (`block` over `mask`) and most restrictive `sensitivity` (`restricted` > `internal` > `public`) wins, matching the existing ANY-match-wins-conservative convention `evaluate()` already uses for `is_sensitive`/`is_trusted`.
+
+**`MaskingEngine.decide()` changes** (STORY-1104 — this is the behavior change users will actually notice):
+```python
+def decide(self, match: MatchResult, value: Any) -> Decision:
+    if value is None:
+        return Decision(action="allow")
+    findings = tuple(scan_text_for_secrets(str(value)))
+    if not findings:
+        return Decision(action="allow")
+    return Decision(action="block" if match.mode == "block" else "mask", findings=findings)
+```
+The `taint`/`provenance_risk` gate is removed entirely — every call's payload value is scanned for real secret content, unconditionally, using `match.mode` (resolved per-call from whichever rule applied) instead of the caller-supplied global `mode` argument. `taint: TaintState` is dropped from `decide()`'s signature — `TaintState` itself is **not removed**; it keeps being loaded/updated in `pre_tool_use`/`post_tool_use` exactly as today, purely for `scg monitor`'s existing session-risk display, which has no other data source (`monitor_data.py`/`monitor_app.py` read `has_sensitive_data`/`has_untrusted_data` directly — confirmed by grep, no other consumer).
+
+**NFR consequence, named explicitly rather than left as a footnote (per the Sprint 4 retro lesson — architecture claims about runtime behavior need a named verification step, not a caveat sentence):** today, `scan_text_for_secrets` only runs when a session is already tainted-sensitive-and-untrusted — most calls in most sessions pay zero scanning cost. Under this change, every call with a non-null payload value pays that cost, every time. **`NFR-Perf-UnconditionalScan` (new, provisional):** budget <10ms added latency per scanned payload value (in-process regex/heuristic work, no subprocess spawn — same cost class as `secrets_scan.py`'s existing per-file scan, not a new mechanism). Phase task must verify this with a real test analogous to `tests/test_performance.py`'s existing steady-state test, not assume it holds — same standard as `NFR-Perf-FirstSighting` (§13.3).
+
+**Amendment 2026-07-17 (found during Phase 1 review, resolved with the user directly): a third `mode` value, `allow`, is required.** Unconditional scanning has a real side effect that wasn't caught when §14.4 was first written: under E10, onboarding a destination as "trusted" exempted it from secret-scanning entirely — that's how the existing suggested-onboard-command messaging works (mask once, onboard, never masked again for that exact call). Making scanning unconditional removes that exemption path *entirely*, with nothing designed to replace it — there would be no way left for a user to permanently silence a known false positive (e.g. a test fixture shaped like a real secret, a case that already exists in this very repo's own test suite). Presented to the user as a real fork, not silently decided: accept "no bypass, ever" as final, or add a scoped suppression mechanism. **Decision: add one, narrow and explicit.**
+
+`PolicyRule.mode` gains a third valid value: `"allow"` (`VALID_MODES = ("mask", "block", "allow")`). When the rule that resolves for a call's matched resource has `mode: allow`, `MaskingEngine.decide()` skips `scan_text_for_secrets` entirely for that call and returns `Decision(action="allow")` immediately — the same full-exemption semantics onboarding used to provide under E10, but now:
+- **Never automatic.** `scg onboard --target` still only pre-seeds the trust/reputation cache (§14.3, unchanged) — it does not write a rule and does not grant `mode: allow`. A destination being "trusted" no longer implies "exempt from scanning" (that conflation is exactly the bug STORY-1104 fixes).
+- **Only reachable by hand-authoring a `rules:` entry** in `scalene_policy.yaml` with an explicit `mode: allow` — a deliberate, visible, reviewable action (the rule shows up in the file, with its own `description`), not an automatic side effect of a CLI convenience command.
+- **Scoped by the rule's own `pattern`/`tool`**, same candidacy mechanism as `mask`/`block` rules (§14.1) — a suppression rule is exactly as narrow or broad as its author writes it, auditable the same way.
+
+**Onboard-suggestion messaging must be reworded** (Phase 3 task, not Phase 4/5 — this sprint has no Phase 4/5): the existing message ("run this command to stop future masking") becomes false once this lands. The reworded message states plainly that scanning happens regardless of trust, and — only when a real destination was identified — separately suggests the `rules:`/`mode: allow` path with an explicit warning that it disables scanning for the matched pattern, so a user opts into the risk deliberately rather than being nudged into it by convenient phrasing. `tests/test_onboard_suggestion_e2e.py`'s assertion (onboarding alone stops future masking) no longer holds under the new model and must be rewritten to test the real new behavior — an explicit `mode: allow` rule, not `scg onboard`, is what closes the loop now.
+
+### 14.5 On-disk schema (resolves open question #3)
+
+`scalene_policy.yaml` gains a top-level `rules:` list, sibling to the existing `defaults:` block — `allowlist:` (pre-Sprint-4, dead since E10 shipped — see 14.6) is not reused as the key name, to avoid any reader assuming pre-Sprint-4 semantics:
+```yaml
+defaults:
+  sensitive_by_default: true
+  untrusted_by_default: true
+  mode: mask
+
+rules:
+  - tool: ".*"                                    # regex against tool_name; ".*" = any
+    pattern: "https://internal\\.example\\.com/.*" # regex against resource.identity
+    sensitivity: internal                          # public | internal | restricted
+    mode: block                                    # mask | block
+    scanner: reputation                            # optional, inferred from the resource otherwise
+    description: "Internal wiki — block on any real finding"
+```
+`rules:` is optional — a project with none gets exactly the implicit-default-rule behavior (14.1), identical to a brand-new zero-config project. `PolicyConfig.from_yaml` parses `rules:` into `list[PolicyRule]`, validating each entry's `sensitivity`/`mode` against the same fixed value sets `PolicyConfig.mode` already validates against (`PolicyConfigError` on an invalid value — consistent with existing error handling, no new error-reporting mechanism).
+
+### 14.6 STORY-1105: migration, and a real bug found while designing it
+
+**This repo's own checked-in `scalene_policy.yaml` (root of the repo) still has a pre-Sprint-4 `allowlist:` block** (`tool`/`jsonpath`/`pattern`/`target`/`description` entries) that has been **silently dead since E10 shipped** — `PolicyConfig.from_yaml` (current code) only ever reads `defaults:`; nothing in the shipped E10 code parses `allowlist:` at all. This sat unnoticed through Sprint 4's entire close and retro. Not caused by this epic, but found while designing it, and directly relevant: Neo's implementation phase must rewrite this file's dead `allowlist:` block into the new `rules:` schema (14.5) as part of Phase 1 — this repo's own dogfooded config becomes the real (not synthetic) test case for the migration story below.
+
+**Scan cache key scheme (the actual STORY-1105 concern):** existing `.scalene/scan_cache.json` entries from before this epic are keyed `reputation:<host>` (14.2's fix changes this to `reputation:<full-url>`). **Decision: no automatic re-keying.** A host-keyed entry cannot be safely converted to a URL-keyed one — there is no single correct URL to assign it, and mechanically picking one (e.g. `https://<host>/`) would just relocate the exact over-broad-trust defect this epic fixes. Old-scheme entries are simply never matched by new lookups (`reputation:github.com` never equals any `reputation:https://github.com/...` key) — inert, harmless JSON, not silently read as valid trust for a narrower unverified resource (fail-safe-by-construction, satisfies the AC by construction rather than by added migration code). Every URL resource re-verifies under the new scheme exactly like any other never-before-seen resource — same fail-safe-default-then-background-scan path §13.3 already handles, no special-cased migration logic needed. `scalene_policy.yaml`'s schema change is purely additive (14.5) — no pre-existing `rules:` data exists to migrate, and old configs with only `defaults:` continue to load unchanged.
+
+Phase task must include a real test: seed a cache file with an old-format `reputation:<host>` entry, confirm a call against a *different* path on that host is **not** treated as trusted (proves the fail-safe-by-construction claim rather than asserting it).
+
+### 14.7 Devops/Infra impact
+
+None — no daemon, no new port/service/env var, no change to the background-scan subprocess mechanism (§13.7 stands unchanged). No Tank gate.
+
+### 14.8 Carried-forward, not addressed by this epic
+
+`docs/ARCHITECTURE.md` §4's class diagram will need a `PolicyRule` box again (it was correctly removed after E10 per Neo's Phase 5 closure of the 3x-carried-forward note) — flagged for whoever implements Phase 1 to update alongside the code change, not deferred a 4th time.
+
+## 15. Sprint 5 Correction (2026-07-17) — Rule-Driven Access Control Replaces Content-Scanning as the Core Mechanism
+
+Direct user design session, after Phases 1-3 of §14 were already implemented, reviewed, and gated (Trin's Phase 3 UAT flagged a real gap: a rule with `pattern: ".*"` + `mode: allow` could silently disable content-scanning project-wide with zero validation behind it — see Phase 3 UAT notes in `agents/trin.docs/current_task.md`). Working through the fix exposed a deeper question — what does "trust, backed by validation" actually mean structurally — and the answer reframes the *core protection mechanism* itself. Kept as an append-only correction, same convention as §13.1's revision note and §14.4's amendment: the sections above are the historical record of what was built and reviewed, not silently rewritten.
+
+**What changes:** the core decision of whether a tool call proceeds moves from §14.4's model (scan every outbound payload for literal secrets, `mode` chosen by whichever rule matched) to an **access-control model**: a tool call either has a validated, explicit rule permitting it, or it is blocked outright. **Masking/content-scanning is explicitly out of scope for this correction** — deferred to a later pass, not decided here. §14.4's unconditional-scanning design (STORY-1104), the `mode: allow`-skips-scanning mechanic, the reworked onboard-suggestion messaging, and the demo's Part 3/4 rework are all superseded by this model for the call-permission decision. Sprint 5's already-implemented Phase 1-3 code will need reconciling against this corrected model as a follow-up implementation step, through the same Bloop review process as everything else in this document — not retroactively rewritten in place.
+
+### 15.1 Two independent, sticky session tags
+
+Both start at their least-restrictive value at session start (or after an explicit context-clear — the only ways to reset them; never automatic, never time-based):
+
+- **`trust`**: `low` | `med` | `high`. Three levels, not binary, even though only two (`high` and `low`) are actually produced by any transition in this correction's scope — kept 3-valued deliberately so a future scanner/rule can resolve an intermediate trust level without a breaking change later. Starts at `high`.
+- **`sensitivity`**: `public` | `internal` | `restricted` (unchanged from §13.8/§14.1 — blast radius if something goes wrong). Starts at `public`.
+
+A session that has only ever touched validated `sensitivity: public` resources at `trust: high` is "clean."
+
+### 15.2 Rule matching requires validation, not just a pattern hit
+
+A `PolicyRule`'s `tool`/`pattern` still decide *candidacy* (§14.1, unchanged) — but a match only counts if the scanner registry's own cache (§13.3, unchanged: `identify()`/`scan()`/`ScanCache`) independently confirms the matched resource is clean. A rule declares *intent* ("I trust this API endpoint," "this package is fine"); the extensible scanner architecture supplies the *validation*. **A resource the scanner has actively found bad is always blocked, regardless of any rule** — a rule can declare intent but can never override a real, validated bad finding. Periodic re-validation/alerting for a resource that goes bad *after* being trusted (the scan cache's existing 24h freshness + background refresh, §13.3, already re-checks it) is real, deliberate future work for the *alerting* half of that story — not required to get this correction's core decision right today.
+
+### 15.3 Per-call decision
+
+For each resource a call touches (via the existing `identify()`, unchanged):
+
+| Resource outcome | Effect |
+|---|---|
+| Matches a validated rule, `mode: allow`, `sensitivity: public` | Proceeds. Tags unchanged. |
+| Matches a validated rule, `mode: allow`, `sensitivity: internal`/`restricted` | Proceeds. `sensitivity` tag escalates to that level if higher than current (sticky, most-restrictive-wins). |
+| Matches a rule but validation fails (scanner actively found it bad), or the rule's `mode` isn't `allow` | **Blocked**, unconditionally. |
+| No matching rule at all, context currently clean (`trust: high`, `sensitivity: public`) | Proceeds — nothing sensitive is at risk yet (lethal-trifecta logic, unchanged from the project's founding framing: risk requires *both* taint *and* an unvetted channel). Afterward, `trust` tag drops to `low` (fail-safe — an unrecognized resource could be anything). |
+| No matching rule at all, context already contaminated (`trust != high` or `sensitivity != public`) | **Blocked** — no explicit clearance exists for this destination while risk is already present. |
+
+### 15.4 Aggregation and persistence
+
+Most-restrictive-wins on each axis independently, both across multiple resources touched within one call and across the whole session's lifetime — tags only ratchet toward more restrictive, never relax on their own. This mirrors the existing ANY-match-wins-conservative convention already used for `is_sensitive`/`is_trusted` aggregation (§13.1.1) and for rule-resolved `sensitivity`/`mode` aggregation (§14.4) — same principle, now governing call-permission instead of (or in addition to) content response.
+
+### 15.5 Not yet decided / explicitly deferred
+
+Whether content-scanning (masking) still has a role on top of this access-control decision (e.g. as an additional check even on an *allowed* call) — genuinely open, not decided here, masking is out of scope for this correction by direct instruction. The real on-disk/in-memory shape for the two session tags (replacing or extending `TaintState`'s existing `has_sensitive_data`/`has_untrusted_data` booleans). Exactly how "validation" is checked at rule-match time (a fresh cache lookup vs. requiring a specific freshness bound). How this reconciles with Sprint 5's already-built Phase 1-3 code. This section documents the corrected *model*; implementation is a follow-up phase, through the same Bloop review process as everything else in this document.

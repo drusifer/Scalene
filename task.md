@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing.
 
 ---
 
@@ -274,3 +274,61 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 - No Tank phase this sprint — no daemon, no new port/service; background scans are one-shot detached subprocesses, not a persistent process (§13.7). Devops-adjacent note (not a gate): confirm background `Popen` spawning doesn't leave orphaned processes in constrained container environments — folded into Phase 2's exit criteria rather than a separate Tank phase.
 - Phases are hard-dependency-ordered, unlike Sprint 3's foundational-but-parallel-capable phases — Phase 3 cannot be built without Phases 1-2 existing, and Phases 4-5 are consumers of the finished cache/scanner system.
 - `.scalene/scan_cache.json` needs the same `.gitignore` treatment as `.scalene/audit.log`/`state/` (Morpheus's Gate 2 follow-up) — folded into Phase 2, not a separate task.
+
+---
+
+# Sprint 5
+
+**Owner:** Mouse
+**Status:** ✅ **SPRINT CLOSED 2026-07-18** — Phases 1-2 shipped as planned below. Phase 3's Smith gate found a real gap (a blanket `pattern:".*"` + `mode:allow` rule could silently disable all scanning) that led to replacing the sprint's entire core mechanism mid-gate: `docs/ARCHITECTURE.md` §15 (rule-driven access control) superseded §14.4 (masking) for the call-permission decision, implemented directly with the user rather than as a re-scoped Phase 3. See §15 for the real shipped design; the phase table below is the original plan, kept as historical record. Full re-review (Trin UAT + Morpheus architecture review) ran against the sec15 code on 2026-07-18, closing the gate gap the pivot left open. 266/266 tests passing.
+**Source:** `docs/USER_STORIES.md` (E11) + `docs/ARCHITECTURE.md` (§14, superseded by §15 mid-Phase-3)
+**Scope:** Direct user design session (2026-07-17) found the just-shipped E10's `URLScanner` resource identity (host-level) reproduces E10's own core defect — this sprint fixes that (shipped, §14.2/STORY-1101) and originally planned to split trust/sensitivity via unconditional content-scanning (§14.4) — **superseded by §15's access-control model before Phase 3 completed**.
+
+3 phases, hard-dependency-ordered like Sprint 4 (not Sprint 3's parallel-capable shape): rule schema must exist before rule matching can consume it; rule matching must exist before the masking engine can be wired to use its output.
+
+## Phase 1 — Resource Identity Fix & Rule Schema
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 1.1 | `URLScanner._URL_FALLBACK_RE`: capture the full URL span (scheme+host+path, query dropped), not just `host` — the actual STORY-1101 defect fix (§14.2) | STORY-1101 |
+| 1.2 | `PolicyRule` dataclass (`tool`/`jsonpath`/`pattern`/`sensitivity`/`mode`/`scanner`/`description`) in `policy_config.py`; `PolicyConfig.from_yaml` parses an optional top-level `rules:` list, validating `sensitivity`/`mode` against fixed value sets via the existing `PolicyConfigError` path (§14.5) | STORY-1102, STORY-1103 |
+| 1.3 | Rewrite this repo's own root `scalene_policy.yaml`: its pre-Sprint-4 `allowlist:` block has been silently dead since E10 shipped (found during architecture, §14.6) — replace with an equivalent `rules:` entry. Restore `docs/ARCHITECTURE.md` §4's class diagram `PolicyRule` box (carried forward a 4th time, close it for real this time) | STORY-1105 (real migration case) |
+
+**Exit criteria:** Trin UAT passes (URL identity is now per-path; two different paths under the same host get independent labels; `rules:` parses and validates correctly, rejects an invalid `sensitivity`/`mode` value with a clear error). Morpheus reviews. No Tank, no Smith gate — internal/config-schema only, no user-facing behavior change yet (`scg onboard`'s CLI surface is untouched, §14.3).
+
+---
+
+## Phase 2 — Rule Matching & `MatchResult` Extension
+*Chain: Neo → Trin → Morpheus*
+*Depends on: Phase 1 (rules must exist to be matched).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 2.1 | Rule-matching in `resource_verifier.py`: for each identified `Resource`, first rule (declaration order) where `tool` regex matches `tool_name` and `pattern` regex matches `resource.identity` (optionally filtered by `scanner` if present) wins; implicit default rule (any/any, `sensitivity: public`, `mode: <defaults.mode>`) always matches last, constructed in code not YAML (§14.1) | STORY-1102, STORY-1103 |
+| 2.2 | Extend `MatchResult` with `sensitivity`/`mode` fields; `evaluate()` resolves them per call using the existing most-restrictive-wins convention (`block` > `mask`, `restricted` > `internal` > `public`) when multiple resources' rule matches disagree (§14.4). `is_sensitive`/`is_trusted` keep their exact current meaning — do not touch their taint-tracking role | STORY-1102, STORY-1103 |
+| 2.3 | Real tests: (a) STORY-1101's defect fix — onboard/verify one path under a host, confirm a second unverified path under the same host is not trusted; (b) STORY-1105's migration fail-safe — seed an old-format `reputation:<host>` cache entry, confirm it does not leak trust to a new-format lookup on a different path under that host | STORY-1101, STORY-1105 |
+
+**Exit criteria:** Trin UAT passes on both real tests in 2.3 plus rule-precedence edge cases (no rule matches → default applies; multiple rules could match → declaration order + most-restrictive-wins is correct). Morpheus reviews. No Tank, no Smith gate — still no user-facing behavior change (nothing consumes `sensitivity`/`mode` yet).
+
+---
+
+## Phase 3 — Unconditional Masking & Docs
+*Chain: Neo → Trin → Morpheus → Smith (required)*
+*Depends on: Phase 2 (`MatchResult.mode` must exist to wire in).*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 3.1 | `MaskingEngine.decide()`: drop the `taint`/`provenance_risk` gate entirely; scan every non-null payload value unconditionally *unless* `match.mode == "allow"` (skip scanning entirely — the scoped suppression exception, §14.4 amendment); action driven by `match.mode` instead of a caller-supplied global `mode` argument | STORY-1104, STORY-1103 |
+| 3.2 | `hook_adapter.py`: update `pre_tool_use`'s `engine.decide(...)` call site for the new signature; `TaintState` load/save in `pre_tool_use`/`post_tool_use` stays exactly as-is (still feeds `scg monitor`'s Sessions panel, confirmed sole consumer) | STORY-1104 |
+| 3.3 | `NFR-Perf-UnconditionalScan` real verification test (provisional <10ms/call budget, §14.4) — measure, don't assume, same standard as Sprint 4 Phase 2/3's precedent | STORY-1104 |
+| 3.4 | Rework the suggested-onboard-command message (`hook_adapter._suggest_onboard_command`): drop the now-false "run this to stop future masking" framing; state plainly that scanning happens regardless of trust, and separately point to the `rules:`/`mode: allow` path (with an explicit warning it disables scanning for the matched pattern) as the real way to silence a known false positive. Rewrite `tests/test_onboard_suggestion_e2e.py`'s premise to match (an explicit `mode: allow` rule closes the loop now, not `scg onboard` alone) | STORY-1103 (§14.4 amendment) |
+| 3.5 | Update `docs/USER_GUIDE.md`'s policy-config reference section for the new `rules:`/`sensitivity`/`mode` (incl. `allow`) schema (currently documents the pre-E11 model) | STORY-1102, STORY-1103 |
+
+**Exit criteria:** Trin UAT passes (a call that previously would have been silently skipped now genuinely gets scanned and masked/blocked when it contains a real secret; a `mode: allow` rule genuinely suppresses scanning for its matched pattern and nothing else; the perf test in 3.3 passes for real). Morpheus reviews. **Smith `*user test` required** — this is the phase where a real behavior change becomes user-visible (masking now fires in cases it didn't before, and the false-positive-suppression story has fundamentally changed); Smith personally verifies the reworded messaging reads correctly and doesn't overstate what `scg onboard --target` alone still does (her Gate 1/2 condition — the flag stays single-purpose, it just means less than it used to).
+
+## Notes
+- No Tank phase — no daemon, no new port/service/env var (§14.7).
+- Phases are hard-dependency-ordered: Phase 2 cannot resolve rule matches without Phase 1's schema existing; Phase 3 cannot wire `match.mode` into masking without Phase 2 producing it.
+- STORY-1105's migration concern (§14.6) is fully addressed by Phase 1 (rewriting this repo's live config) + Phase 2's real fail-safe test — no separate migration-script task, per Morpheus's "no automatic re-keying" architecture decision.

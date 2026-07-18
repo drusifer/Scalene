@@ -9,10 +9,11 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scalene.policy_config import MatchResult, PolicyConfig
-from scalene.resource_verifier import evaluate
+from scalene.policy_config import MatchResult, PolicyConfig, PolicyRule
+from scalene.resource_verifier import decide_access, evaluate
 from scalene.scan_cache import ScanCache
 from scalene.scanner import Resource, ScanResult
+from scalene.taint_state import TaintState
 
 
 class TestNoResourcesIdentified(unittest.TestCase):
@@ -66,11 +67,14 @@ class TestCachedResourceResolution(unittest.TestCase):
             result = evaluate("Read", {"file_path": str(target)}, config, cache)
             self.assertTrue(result.is_sensitive)
 
-    def test_known_trusted_host_is_trusted(self):
+    def test_known_trusted_url_is_trusted(self):
+        # STORY-1101 (sec14.2): cache key is the full URL, not the bare
+        # host -- must match exactly what URLScanner.identify() extracts
+        # from this WebFetch call.
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             cache.put(
-                Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
+                Resource(kind="url", identity="https://internal.example.com/api", scanner_name="reputation"),
                 ScanResult(label="trusted"),
             )
 
@@ -79,17 +83,34 @@ class TestCachedResourceResolution(unittest.TestCase):
             self.assertTrue(result.is_trusted)
             self.assertFalse(result.fail_safe_triggered)
 
-    def test_known_untrusted_host_is_not_trusted(self):
+    def test_known_untrusted_url_is_not_trusted(self):
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             cache.put(
-                Resource(kind="url", identity="203.0.113.42", scanner_name="reputation"),
+                Resource(kind="url", identity="https://203.0.113.42/api", scanner_name="reputation"),
                 ScanResult(label="untrusted", reason="IP-literal targets are untrusted by default"),
             )
 
             config = PolicyConfig(untrusted_by_default=False)
             result = evaluate("WebFetch", {"url": "https://203.0.113.42/api"}, config, cache)
             self.assertFalse(result.is_trusted)
+
+    def test_verified_path_does_not_vouch_for_sibling_path_under_same_host(self):
+        # The actual STORY-1101 defect fix, at the evaluate() level: onboard/
+        # verify one path under a host, confirm a different, unverified path
+        # under that same host is NOT treated as trusted (pre-sec14.2, host-
+        # level identity would have silently trusted it).
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/known-good", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+
+            config = PolicyConfig(untrusted_by_default=True)
+            result = evaluate("WebFetch", {"url": "https://internal.example.com/never-verified"}, config, cache)
+            self.assertFalse(result.is_trusted)
+            self.assertTrue(result.fail_safe_triggered)
 
 
 class TestFailSafeTriggered(unittest.TestCase):
@@ -124,7 +145,7 @@ class TestFailSafeTriggered(unittest.TestCase):
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             cache.put(Resource(kind="file", identity=str(target), scanner_name="secrets"), ScanResult(label="public"))
             cache.put(
-                Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
+                Resource(kind="url", identity="https://internal.example.com/x", scanner_name="reputation"),
                 ScanResult(label="trusted"),
             )
             config = PolicyConfig()
@@ -191,6 +212,405 @@ class TestMultipleResourcesAnySemantics(unittest.TestCase):
 
             result = evaluate("Bash", {"command": f"cat {a} {b}"}, config, cache)
             self.assertFalse(result.is_sensitive)
+
+
+class TestRuleResolvedSensitivityAndMode(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec14.1/14.4 (STORY-1102, STORY-1103): a rule
+    decides sensitivity/mode for an already-identified Resource; the
+    implicit default rule (sensitivity=public, mode=config.mode) applies
+    when nothing more specific matches."""
+
+    def test_no_rules_and_no_resources_uses_implicit_default(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(mode="block")
+            result = evaluate("Bash", {"command": "echo hello"}, config, cache)
+            self.assertEqual(result.sensitivity, "public")
+            self.assertEqual(result.mode, "block")
+
+    def test_no_rules_but_resources_identified_uses_implicit_default(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(mode="mask")
+            result = evaluate("WebFetch", {"url": "https://never-seen.example.com/x"}, config, cache)
+            self.assertEqual(result.sensitivity, "public")
+            self.assertEqual(result.mode, "mask")
+
+    def test_matching_rule_overrides_sensitivity_and_mode(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://internal\.example\.com/.*",
+                        sensitivity="internal",
+                        mode="block",
+                    ),
+                ),
+            )
+            result = evaluate("WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache)
+            self.assertEqual(result.sensitivity, "internal")
+            self.assertEqual(result.mode, "block")
+
+    def test_non_matching_rule_falls_back_to_default(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://internal\.example\.com/.*",
+                        sensitivity="internal",
+                        mode="block",
+                    ),
+                ),
+            )
+            result = evaluate("WebFetch", {"url": "https://unrelated.example.org/x"}, config, cache)
+            self.assertEqual(result.sensitivity, "public")
+            self.assertEqual(result.mode, "mask")
+
+    def test_rule_tool_filter_is_respected(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(tool="Read", pattern=r".*/tests/.*", sensitivity="public", mode="allow"),
+                ),
+            )
+            # Same path pattern, different tool -- rule must not apply to Write.
+            target = Path(tmp) / "tests" / "fixture.md"
+            result = evaluate("Write", {"file_path": str(target)}, config, cache)
+            self.assertEqual(result.mode, "mask")
+
+    def test_rule_scanner_filter_disambiguates(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputation"),
+                ),
+            )
+            # A file resource matches the pattern too, but scanner="reputation"
+            # restricts the rule to URL resources only.
+            target = Path(tmp) / "anything.md"
+            target.write_text("x")
+            result = evaluate("Read", {"file_path": str(target)}, config, cache)
+            self.assertEqual(result.mode, "mask")
+
+    def test_most_restrictive_mode_wins_across_multiple_resources(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://safe\.example\.com/.*", sensitivity="public", mode="allow"),
+                    PolicyRule(tool=".*", pattern=r"https://risky\.example\.com/.*", sensitivity="restricted", mode="block"),
+                ),
+            )
+            result = evaluate(
+                "Bash",
+                {"command": "curl https://safe.example.com/a https://risky.example.com/b"},
+                config,
+                cache,
+            )
+            self.assertEqual(result.mode, "block")
+            self.assertEqual(result.sensitivity, "restricted")
+
+    def test_old_format_host_keyed_cache_entry_does_not_leak_trust(self):
+        # STORY-1105 (docs/ARCHITECTURE.md sec14.6): a pre-sec14.2 cache
+        # entry keyed by bare host (e.g. from before this epic's fix) must
+        # never be silently read as valid trust for a URL under that host
+        # now that the key scheme is per-URL. No auto-migration by design
+        # -- the old-format entry should simply be inert/unmatched.
+        import json
+
+        with TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "scan_cache.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "reputation:internal.example.com": {
+                            "label": "trusted",
+                            "reason": "",
+                            "scanned_at": 0.0,
+                        }
+                    }
+                )
+            )
+            cache = ScanCache(cache_path)
+            config = PolicyConfig(untrusted_by_default=True)
+
+            result = evaluate("WebFetch", {"url": "https://internal.example.com/some/path"}, config, cache)
+            self.assertFalse(result.is_trusted)
+            self.assertTrue(result.fail_safe_triggered)
+
+    def test_first_matching_rule_wins_by_declaration_order(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                mode="mask",
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="internal", mode="mask"),
+                    PolicyRule(tool=".*", pattern=".*", sensitivity="restricted", mode="block"),
+                ),
+            )
+            result = evaluate("WebFetch", {"url": "https://internal.example.com/x"}, config, cache)
+            # First rule matches -- must win, not the broader second rule.
+            self.assertEqual(result.sensitivity, "internal")
+            self.assertEqual(result.mode, "mask")
+
+
+class TestDecideAccess(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec15 (direct user design session, 2026-07-17):
+    rule-driven access control -- the core call-permission decision,
+    replacing sec14.4's content-scanning model for this correction. Masking
+    is explicitly out of scope."""
+
+    def test_no_resources_identified_proceeds_and_tags_unchanged(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Bash", {"command": "echo hello"}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+            self.assertTrue(taint.is_clean)
+
+    def test_clean_context_unmatched_resource_proceeds_then_taints_trust_low(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "WebFetch", {"url": "https://never-seen.example.com/x"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "low")
+            self.assertEqual(taint.sensitivity, "public")
+
+    def test_contaminated_context_unmatched_resource_is_blocked(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1", trust="low")
+            decision = decide_access(
+                "WebFetch", {"url": "https://never-seen.example.com/x"}, config, cache, taint
+            )
+            self.assertFalse(decision.allowed)
+            self.assertTrue(decision.reason)
+
+    def test_validated_allow_rule_proceeds_and_escalates_sensitivity(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://internal\.example\.com/.*",
+                        sensitivity="internal",
+                        mode="allow",
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "high")  # unaffected -- validated, not uncleared
+            self.assertEqual(taint.sensitivity, "internal")
+
+    def test_validated_allow_proceeds_even_from_contaminated_context(self):
+        # An explicitly validated+allowed resource bypasses the
+        # block-when-contaminated gate -- that's the whole point of
+        # declaring trust for it.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="public", mode="allow"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1", trust="low", sensitivity="restricted")
+            decision = decide_access(
+                "WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+
+    def test_scanner_confirmed_bad_blocks_unconditionally_even_from_clean_context(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://evil.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertTrue(taint.is_clean)  # blocked call, no tag mutation
+
+    def test_scanner_confirmed_bad_overrides_a_matching_allow_rule(self):
+        # "Known bad resources are always blocked" -- a rule can declare
+        # intent but never overrides a real, validated bad finding.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted"),
+            )
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern=r"https://evil\.example\.com/.*", sensitivity="public", mode="allow"),)
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://evil.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+
+    def test_explicit_non_allow_rule_blocks_unconditionally_even_from_clean_context(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://banned.example.com/x", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://banned\.example\.com/.*",
+                        sensitivity="restricted",
+                        mode="block",
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://banned.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertTrue(taint.is_clean)
+
+    def test_allow_rule_matched_but_not_yet_validated_is_treated_as_uncleared(self):
+        # Rule declares intent; the cache hasn't confirmed it clean yet
+        # (never scanned) -- sec15.2: a match only counts once validated.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertTrue(decision.allowed)  # clean context -- proceeds, same as unmatched
+            self.assertEqual(taint.trust, "low")
+
+    def test_confirmed_bad_wins_over_validated_allow_in_the_same_call(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://good.example.com/a", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            cache.put(
+                Resource(kind="url", identity="https://evil.example.com/b", scanner_name="reputation"),
+                ScanResult(label="untrusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://good\.example\.com/.*", sensitivity="public", mode="allow"),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "Bash",
+                {"command": "curl https://good.example.com/a https://evil.example.com/b"},
+                config,
+                cache,
+                taint,
+            )
+            self.assertFalse(decision.allowed)
+
+    def test_mixed_validated_allow_and_uncleared_in_one_call_from_clean_context(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/a", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="internal", mode="allow"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "Bash",
+                {"command": "curl https://internal.example.com/a https://unknown.example.net/b"},
+                config,
+                cache,
+                taint,
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "low")  # uncleared resource present
+            self.assertEqual(taint.sensitivity, "internal")  # from the validated-allow match
+
+    def test_sensitivity_escalation_is_most_restrictive_across_matched_rules(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://a.example.com/x", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            cache.put(
+                Resource(kind="url", identity="https://b.example.com/y", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://a\.example\.com/.*", sensitivity="internal", mode="allow"),
+                    PolicyRule(tool=".*", pattern=r"https://b\.example\.com/.*", sensitivity="restricted", mode="allow"),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "Bash", {"command": "curl https://a.example.com/x https://b.example.com/y"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.sensitivity, "restricted")
+
+    def test_rule_scanner_filter_still_respected(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            target = Path(tmp) / "anything.md"
+            target.write_text("x")
+            cache.put(Resource(kind="file", identity=str(target), scanner_name="secrets"), ScanResult(label="public"))
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputation"),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            # File resource matches pattern but not scanner="reputation" -- rule shouldn't apply.
+            decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
+            self.assertTrue(decision.allowed)  # clean context, unmatched -> proceeds
+            self.assertEqual(taint.trust, "low")  # NOT validated_allow -- fell through to uncleared
 
 
 if __name__ == "__main__":

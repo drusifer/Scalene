@@ -37,9 +37,13 @@ class TestUserGuideDocs(unittest.TestCase):
         for term in ("fail safe", "Troubleshooting", "malformed", "never crashes"):
             self.assertIn(term, self.text)
 
-    def test_documents_onboard_suggestion_workflow(self):
-        self.assertIn("systemMessage", self.text)
-        self.assertIn("suggested", self.text.lower())
+    def test_documents_the_two_step_clearing_workflow(self):
+        # docs/ARCHITECTURE.md sec15: clearing a destination always takes two
+        # explicit steps (a real scan via scg onboard, then a hand-authored
+        # rule) -- never a single auto-suggested command.
+        self.assertIn("scg onboard --target", self.text)
+        self.assertIn("mode: allow", self.text)
+        self.assertIn("two explicit steps", self.text)
 
     def test_readme_links_to_guide(self):
         self.assertIn("docs/USER_GUIDE.md", README_DOC.read_text())

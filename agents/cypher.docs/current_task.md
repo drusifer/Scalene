@@ -1,8 +1,8 @@
 # Current Task
 
-**Status:** NOT STARTED — user invoked `*sprint go` to start a new sprint. This is the actual next task on cold start: write E11's stories.
+**Status:** DRAFTED — E11 stories written, handed to Smith for Gate 1. Awaiting Smith's review.
 **Assigned to:** Cypher
-**Started:** (not yet)
+**Started:** 2026-07-17
 
 ## Task Description (next, unstarted): write E11 stories from Morpheus's §13.8 design
 A direct user design conversation (2026-07-16/17, after Sprint 4's close) found a real defect in shipped E10 code and worked through a full replacement design with Morpheus. **Read `docs/ARCHITECTURE.md` §13.1's revision note and §13.8 in full before starting** — the design is already written, this task is to formalize it as proper user stories so it goes through Smith's Gate 1 like every other sprint, not to invent it from scratch.
@@ -16,10 +16,18 @@ A direct user design conversation (2026-07-16/17, after Sprint 4's close) found 
 6. **Not in §13.8, flagged by Morpheus's own next_steps.md as a gap**: this changes a shipped, closed-sprint on-disk format (`scan_cache.json` key scheme) and `scalene_policy.yaml`'s schema — needs a real migration/compatibility story for existing projects, not just "re-onboard everything." Surface this explicitly as a story or an open question, don't let it get silently skipped.
 
 ## Progress
-- [ ] Not started.
+- [x] Wrote 5 stories (STORY-1101 through 1105) into `docs/USER_STORIES.md`, condensing §13.8's full design into testable ACs.
+- [x] STORY-1101 covers the core defect fix (host-level trust granularity).
+- [x] STORY-1102/1103 split trust vs. sensitivity and add per-rule `mode`, resolving the original mask/block proposal that opened this thread.
+- [x] STORY-1104 makes content-scanning an unconditional baseline (removes `MaskingEngine`'s current provenance-risk gate).
+- [x] STORY-1105 explicitly covers the scan-cache migration gap Morpheus flagged (not in §13.8 itself) — did not let it get silently skipped.
+- [x] Carried §13.8's own 4 explicit open questions forward as an "open questions for Morpheus" list in the epic header, not pre-decided.
+- [x] Updated `docs/PRD.md` epic table (added E11 row) + added Sprint 5 Goals section (14-17).
+- [x] Corrected `docs/USER_STORIES.md`'s header status line (was stale: said Sprint 3 unclosed / Sprint 4 draft-pending-gate1, both wrong by this point).
+- [x] Handed off to Smith for Gate 1 review.
 
 ## Blockers
-None — ready to start.
+None — awaiting Smith's Gate 1 verdict.
 
 ## Oracle Consultations
 None yet.
@@ -53,8 +61,18 @@ Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, M
 
 ## Task Description (prior): Sprint 4 (E10) stories drafted, approved at both Gate 1 and Gate 2, architected (Morpheus §13), phased (Mouse), and plan LOCKED (Morpheus).
 
-## Task Description
-Direct user design session (2026-07-14) identified a real gap in the just-shipped URI-scheme onboarding model (commit `df8eb08`): a rule's one-time scan of a representative `target` can vouch for an unbounded, never-rescanned future set matched by `pattern`. User specified a replacement in detail through conversation: named regex captures, per-scanner-type autonomous resource identification, a 24h mtime-keyed scan cache with background refresh, fail-safe-until-first-scan for never-seen resources, and fatal-non-zero-exit reserved for scanner-machinery failures (not scan findings). Wrote as E10 — Extensible Scanner Registry & Resource Verification — 5 stories (STORY-1001 through 1005) in `docs/USER_STORIES.md`, updated `docs/PRD.md` epic table + Sprint 4 goals, updated `task.md` header (Sprint 3 status was stale — implemented but never formally closed; noted honestly rather than silently marking it done).
+## Task Description (most recent): Sprint 5 (E11 → sec15) close — retro compile, `*pm launch`
+Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, Mouse, Smith). Central theme: this sprint's real defect was caught by a gate specifically designed to *run the software adversarially*, not review it on paper — every persona's retro independently converges on the same point from a different angle.
+
+## Retro Backlog (Sprint 5)
+1. **A mandatory "actually run it" gate is what caught this sprint's real defect** (Smith, Trin, Morpheus) — `mode: allow` passed code review, 2 Smith gates, and every unit test written against its own acceptance criteria; only Smith's adversarial live-test (a blanket `pattern:".*"` rule) found it reproduces the project's own core defect. Recommend: codify "try the laziest/broadest possible input, not just a contrived edge case" as a standing step in Smith's/Trin's testing protocol specifically for any trust/permission feature, not left to instinct each time (already started: `agents/oracle.docs/lessons.md`).
+2. **Docs/diagrams drift silently — nothing tests them** (Morpheus) — found 3 real stale references (`TaintState` fields, `MaskingEngine.decide()`'s signature, a whole sequence diagram) during architecture review that no automated check would have caught, since Mermaid diagrams and prose aren't executable.
+3. **No status bucket exists for "phase implemented+gated, then superseded by a finding in that same gate"** (Mouse) — a real, recurring gap-shape (echoes Sprint 3's retro flag about missing status buckets); still not built.
+4. **Reflexive backwards-compatibility instinct needs a check-first habit** (Neo) — defaulted to writing migration/fallback handling for an internal format change unprompted; user explicitly didn't want it. Saved as a durable feedback memory this session; worth reinforcing as a team habit, not just a one-off correction.
+5. **The append-only-correction convention scales to a mid-sprint pivot this large** (Oracle) — confirmed, not just a small-fix pattern.
+6. **CHAT.md hit the archive threshold mid-sprint** (Oracle) — archiving may need to become routine during a sprint, not just at close.
+
+## Task Description (prior): Direct user design session (2026-07-14) identified a real gap in the just-shipped URI-scheme onboarding model (commit `df8eb08`): a rule's one-time scan of a representative `target` can vouch for an unbounded, never-rescanned future set matched by `pattern`. User specified a replacement in detail through conversation: named regex captures, per-scanner-type autonomous resource identification, a 24h mtime-keyed scan cache with background refresh, fail-safe-until-first-scan for never-seen resources, and fatal-non-zero-exit reserved for scanner-machinery failures (not scan findings). Wrote as E10 — Extensible Scanner Registry & Resource Verification — 5 stories (STORY-1001 through 1005) in `docs/USER_STORIES.md`, updated `docs/PRD.md` epic table + Sprint 4 goals, updated `task.md` header (Sprint 3 status was stale — implemented but never formally closed; noted honestly rather than silently marking it done).
 
 ## Progress
 - [x] Captured the full design (already hashed out in conversation with the user, not something Cypher had to invent) as 5 testable stories.

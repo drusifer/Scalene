@@ -4,11 +4,19 @@
 session was tainted-sensitive + untrusted, regardless of what a given call's
 payload actually contained — every subsequent Bash command got masked and
 announced even when nothing sensitive was present (e.g. `ls -la`). Masking
-is now gated on real content detection (`secrets_scan.py`, `detect-secrets`)
-in addition to provenance: taint + untrusted-destination still decides
-*whether to bother checking content at all* (so untainted sessions pay zero
-scanning cost), but the actual mask/block action only fires when the
-specific value scans as a real secret.
+is gated on real content detection (`secrets_scan.py`, `detect-secrets`) —
+the action only fires when the specific value scans as a real secret.
+
+2026-07-17 (docs/ARCHITECTURE.md sec14.4, STORY-1104): the taint/
+provenance_risk gate that used to decide *whether to bother scanning at
+all* is removed entirely — every non-null payload value is scanned,
+unconditionally, so real-secret detection never silently depends on a
+session's taint state or a destination's trust classification being
+correct. `match.mode` (resolved per-call by resource_verifier.evaluate(),
+sec14.1) replaces the old caller-supplied global `mode` argument. The sole
+remaining way to skip scanning is `match.mode == "allow"` — a deliberate,
+narrow exception reachable only via an explicit hand-authored `PolicyRule`
+(sec14.4 amendment), never automatic and never based on session state.
 """
 
 from __future__ import annotations
@@ -19,7 +27,6 @@ from typing import Any
 
 from .policy_config import MatchResult
 from .secrets_scan import scan_text_for_secrets
-from .taint_state import TaintState
 
 logger = logging.getLogger("scalene.masking")
 
@@ -33,21 +40,19 @@ class Decision:
 class MaskingEngine:
     MASK_LITERAL = "[MASKED_BY_POLICY_PROVENANCE_GUARD]"
 
-    def decide(self, taint: TaintState, match: MatchResult, value: Any, mode: str = "mask") -> Decision:
-        """Provenance gate first (cheap, no scanning): session must already be
-        tainted-sensitive, tainted-untrusted, and this call's destination
-        must not be trust-listed. Only then is `value` actually scanned for
-        real secret content — untainted/trusted calls never pay that cost.
-        """
-        provenance_risk = taint.has_sensitive_data and taint.has_untrusted_data and not match.is_trusted
-        if not provenance_risk or value is None:
+    def decide(self, match: MatchResult, value: Any) -> Decision:
+        """Unconditional content scan (sec14.4): every non-null payload value
+        is checked for real secret content, regardless of taint or trust.
+        `match.mode == "allow"` is the sole, deliberate exception — skips
+        scanning entirely, only reachable via an explicit rule."""
+        if value is None or match.mode == "allow":
             return Decision(action="allow")
 
         findings = tuple(scan_text_for_secrets(str(value)))
         if not findings:
             return Decision(action="allow")
 
-        return Decision(action="block" if mode == "block" else "mask", findings=findings)
+        return Decision(action="block" if match.mode == "block" else "mask", findings=findings)
 
     def apply_mask(self, args: Any, payload_field: str | None) -> Any:
         """Structurally replace payload_field with the mask literal. Never raises."""

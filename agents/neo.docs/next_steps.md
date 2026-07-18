@@ -1,19 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-Nothing for Neo right now — Sprint 4 Phase 5 is handed off to Trin for UAT. **Mandatory Smith gate after Morpheus's review** — this is the last Sprint 4 phase, so clearing this gate moves the sprint to Stage 3 close.
+Nothing in-flight for Neo. The sec15 rework (rule-driven access control) is implemented and all 266 tests pass, but it happened as direct engineering work with the user, not through the Bloop chain — Phase 1-3's original Trin UAT / Morpheus review / Smith gate never re-ran against this replacement. If the sprint resumes through the formal protocol, that review debt is real and should be flagged, not silently treated as already covered.
 
 ## Waiting On
-Trin's UAT on Phase 5 → Morpheus's review → **Smith's gate (required)** → Sprint 4 close (Oracle groom → Smith end-to-end test → all-persona retro → Cypher launch).
+Nothing. Whoever picks this up next (any persona) should read `docs/ARCHITECTURE.md` §15 first — it's the actual current design, superseding §14.4 for the call-permission decision (§14's other sections — §14.1-14.3, 14.5-14.7 — still hold, only masking's role changed).
 
-## Planned Work (Sprint 4 — all 5 phases now implemented)
-- [x] Phase 1: Scanner protocol + FileScanner/URLScanner. Trin/Morpheus approved.
-- [x] Phase 2: scan cache store + background refresh. Trin/Morpheus approved (latency finding resolved by user decision).
-- [x] Phase 3: hook integration + first-sighting messaging + split NFR. Trin/Morpheus/Smith approved (onboard-suggestion regression accepted, closed in Phase 4).
-- [x] Phase 4: scg onboard re-scope + fatal exit (exit code verified empirically). Trin/Morpheus/Smith approved.
-- [x] Phase 5: scg monitor resource panel. **Implemented 2026-07-15, awaiting Trin UAT + Morpheus review + Smith's mandatory gate.**
-- [ ] Once Phase 5 clears: Sprint 4 (E10) implementation is complete. Stage 3 close begins — not Neo's job (Oracle grooms docs, Smith does end-to-end testing, all personas post retro, Cypher launches).
-- [ ] Loose end from Sprint 3 (not blocking, not forgotten, still open): Sprint 3 Phase 3's demo was never UAT'd by Trin, Sprint 3 was never formally closed. Worth resolving before or during Sprint 4's own close, since two open sprints stacking up gets confusing.
+## Planned Work
+- [x] Sprint 5 (E11) Phases 1-3 originally implemented against §14.4's masking model, all gated and approved.
+- [x] sec15 rework: full replacement of the call-permission mechanism (rule-driven access control), implemented 2026-07-17, `make test` 266/266.
+- [ ] **Not done, worth surfacing**: a real Trin UAT / Morpheus review / Smith gate pass specifically against the sec15 code (the original Phase 3 gates were for the now-superseded masking design). If this session's work needs to go through Stage 3 close formally, that gate gap should be closed first, not skipped.
+- [ ] `docs/USER_STORIES.md`/`task.md`'s STORY-1101-1105 descriptions still describe the masking-centric design — not updated to match sec15 (Cypher's domain, not done as part of this engineering pass).
 
 ---
-*Last updated: 2026-07-15*
+*Last updated: 2026-07-17*

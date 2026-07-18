@@ -118,3 +118,21 @@ For any TUI/UI change, "the data model has the right values" and "the rendered o
 
 ### References
 - **Files:** `src/scalene/monitor_app.py`, `tests/test_monitor_app.py` (`test_last_scanned_column_is_not_truncated_at_a_common_terminal_width`), `agents/smith.docs/phase5_bug_last_scanned_truncation.md`
+
+---
+
+## [2026-07-18] Sprint 5: A Gate That Actually Exercises the Feature Can Overturn the Feature
+
+> **Tags:** #Process #Smith #Trin #Morpheus #Architecture #Security
+
+### Context
+Sprint 5 (E11) built `mode: allow` as a scoped, hand-authored exception to unconditional content-scanning (STORY-1104), specifically to give a user a way to silence a known false positive. Smith's mandatory Phase 3 gate — required to actually run the software, not review it on paper — tried a deliberately broad rule (`pattern: ".*"`, `mode: allow`) as an adversarial check. It worked exactly as coded: a single rule silently disabled all content-scanning project-wide, with zero warning. That's the identical failure shape the entire project exists to prevent (the "lethal trifecta"/Triangle-of-Doom), just reintroduced through the newest feature meant to add flexibility.
+
+### The Issue
+The gap wasn't a coding bug — `mode: allow` did precisely what STORY-1103's acceptance criteria asked for. The gap was that the feature's *design* let a single declaration self-certify trust with no independent validation behind it, which nothing in code review or the unit-test suite (all of which tested narrow, well-scoped rules) was positioned to catch. Only running the software with a hostile, plausible input — not a contrived edge case, a single wildcard character — surfaced it. Talking through the fix with the user in real time didn't produce a patch to `mode: allow`; it produced a wholesale replacement of the sprint's core mechanism (`docs/ARCHITECTURE.md` §15: rule-driven access control, validated-trust-gates-permission instead of scan-then-maybe-mask), because the same self-certification gap existed one level up in how trust was granted at all.
+
+### The Rule (The "Lesson")
+A mandatory pre-ship gate that only reviews code or runs example-shaped tests will pass a feature that is fully correct against its own stated acceptance criteria and still reintroduces the exact defect the project exists to prevent — the ACs themselves can be too narrow to expose it. The gate has to include someone deliberately trying to break the *safety property*, not just confirm the *feature* works: for a permission/trust system specifically, always test the maximally broad, laziest-possible-to-write version of any new escape hatch (the blanket wildcard, the empty pattern, the config a rushed developer would actually paste) before approving it, not just the narrow example in the docs. When that test reveals the gap is structural, don't patch around it — the right response can be to reopen the design, even mid-gate, rather than ship a narrower version of the same hole.
+
+### References
+- **Files:** `docs/ARCHITECTURE.md` §15 (full corrected design), `src/scalene/resource_verifier.py` (`decide_access`), `agents/smith.docs/e11_gate1_review.md`/`e11_gate2_review.md` (the gates that approved the superseded design), `agents/neo.docs/current_task.md` (full implementation change list)

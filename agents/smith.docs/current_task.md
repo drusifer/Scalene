@@ -1,10 +1,19 @@
 # Current Task
 
-**Status:** Sprint 3 close, step 8 (full sprint end-to-end user test): PASSED. Handed to all personas for retro.
+**Status:** `*user test sec15` — PASSED. Closes the end-to-end test that got interrupted by my own mid-gate discovery (the blanket allow-rule gap that led to the whole sec15 pivot). Handed to all for retro.
 **Assigned to:** Smith
-**Started:** 2026-07-16
+**Started:** 2026-07-18
 
-## Task Description (most recent): Sprint 3 close — full sprint end-to-end user test (`*user test sprint3`)
+## Task Description (most recent): `*user test sec15` — real end-to-end test of the shipped access-control model
+Ran the actual `GETTING_STARTED.md` walkthrough command-by-command against the real binaries — output matched the doc byte-for-byte (block reason, then onboard, then rule, then allow). Confirmed the real state file (`{"trust": "low", "sensitivity": "public"}`) and audit log entry match what the docs/monitor panel claim to show. Verified `scalene-guard --help`/`scg onboard --help` still match `USER_GUIDE.md`'s documented flags. Triggered a real fatal-machinery path (corrupted cache file) — plain-language message, exit code 2, no raw traceback, matches the Troubleshooting table exactly. **Verdict: PASS**, no new bugs found — this sprint's real bug (the blanket allow-rule gap) was already caught and fixed at its own gate, which is the system working as intended, not a miss.
+
+## Task Description (prior): Sprint 5 (E11) Gate 2 — `*user feedback`
+Reviewed `docs/ARCHITECTURE.md` §14 against my Gate 1 hard requirement (scg onboard must stay single-flag) — verified directly, satisfied. Confirmed STORY-1104's unconditional-scanning behavior change gets free visibility coverage from the existing mask systemMessage/audit-log path (no new messaging code needed). Approved. Full review: `agents/smith.docs/e11_gate2_review.md`.
+
+## Task Description (prior): Sprint 5 (E11) Gate 1 — `*user review`
+Reviewed STORY-1101-1105 against Nielsen heuristics. Approved — testable ACs, correct reuse of existing mask/block vocabulary, appropriately small (3-level) sensitivity classification. Full review: `agents/smith.docs/e11_gate1_review.md`. One non-blocking flag carried forward to Gate 2: `scg onboard` must not regress from E10's single-`--target`-flag simplicity back into hand-authored `jsonpath`/`pattern`.
+
+## Task Description (prior): Sprint 3 close — full sprint end-to-end user test (`*user test sprint3`)
 Not a phase gate — confirming the 3 Sprint 3 artifacts (`GETTING_STARTED.md`, `USER_GUIDE.md`, the demo) cohere as one continuous new-user journey, not just individually correct. Checked cross-references: `GETTING_STARTED.md` points forward to `USER_GUIDE.md` and `make demo`; `USER_GUIDE.md` points back and specifically references "Getting Started step 4" — verified that step 4 genuinely exists and is genuinely where the masked-output/`systemMessage` example lives, not a stale reference; the demo's own closing narration points back to both docs; `README.md`'s table links correctly to both. **Verdict: PASS.** No broken links, no stale step references.
 
 ## Task Description (prior): Sprint 3 Phase 3 gate — Demo (`*user test phase-3`), never run back in Sprint 3

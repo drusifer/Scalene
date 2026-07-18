@@ -1,14 +1,14 @@
 # Scalene
 
-Tool call hooks that thwart the MCP triangle of death using provenance-based context labeling.
+Tool call hooks that thwart the MCP triangle of death using rule-driven access control.
 
-Scalene is a provenance-based DLP layer for AI coding agents. It tracks where data came from during an agent session and structurally masks payloads before tainted-sensitive data would flow to an untrusted destination — without blocking the agent's workflow.
+Scalene tracks trust and sensitivity during an agent session and blocks a tool call outright once the session has touched anything unrecognized, unless the specific destination has been explicitly verified (a real scan) and explicitly cleared (a hand-authored rule). Nothing is trusted by default; trust decisions are always explicit and validated, never automatic.
 
 ## Documentation
 
 | Doc | Purpose |
 |---|---|
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Clean-clone walkthrough — see Scalene mask a real call in under 5 minutes |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Clean-clone walkthrough — see Scalene block, then explicitly clear, a real call in under 5 minutes |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Full CLI reference, policy config, onboarding workflow, troubleshooting |
 | [docs/BRD.md](docs/BRD.md) | Business requirements (source of truth for scope) |
 | [docs/PRD.md](docs/PRD.md) | Product requirements |
@@ -21,7 +21,7 @@ Scalene is a provenance-based DLP layer for AI coding agents. It tracks where da
 
 ## Getting started
 
-New to Scalene? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — a clean-clone walkthrough that ends with you watching a real call get masked.
+New to Scalene? Start with [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — a clean-clone walkthrough that ends with you watching a real call get blocked, then explicitly cleared.
 
 Working on this repo itself:
 

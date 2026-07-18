@@ -40,7 +40,10 @@ class TestGuardCliDispatch(unittest.TestCase):
             result = json.loads(out)
             self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "allow")
 
-    def test_post_tool_use_dispatch_updates_state(self):
+    def test_post_tool_use_dispatch_returns_empty_and_writes_no_state(self):
+        # docs/ARCHITECTURE.md sec15: PostToolUse is a no-op now -- every
+        # resource a call touches is known pre-call, so PreToolUse already
+        # made the full access decision and updated state.
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             state_dir = tmp_path / "state"
@@ -54,6 +57,20 @@ class TestGuardCliDispatch(unittest.TestCase):
             exit_code, out, err = _run_guard(payload, tmp_path / "scalene_policy.yaml", state_dir)
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(out), {})
+            self.assertFalse((state_dir / "s1.json").exists())
+
+    def test_pre_tool_use_dispatch_updates_state(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            state_dir = tmp_path / "state"
+            payload = {
+                "hook_event_name": "PreToolUse",
+                "session_id": "s1",
+                "tool_name": "WebFetch",
+                "tool_input": {"url": "https://never-seen.example.com/x"},
+            }
+            exit_code, out, err = _run_guard(payload, tmp_path / "scalene_policy.yaml", state_dir)
+            self.assertEqual(exit_code, 0)
             self.assertTrue((state_dir / "s1.json").exists())
 
     def test_unknown_hook_event_fails_safe_and_allows(self):

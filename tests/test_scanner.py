@@ -121,26 +121,38 @@ class TestURLScannerIdentify(unittest.TestCase):
     def test_name_is_reputation(self):
         self.assertEqual(self.scanner.name, "reputation")
 
-    def test_webfetch_known_field_identity_is_host_only(self):
+    def test_webfetch_known_field_identity_is_full_url_query_stripped(self):
+        # STORY-1101 (docs/ARCHITECTURE.md sec14.2): identity is the full
+        # URL (scheme+host+path), not the bare host -- scanning one path
+        # must not vouch for every other path under the same host. Query
+        # string is dropped to keep cache keys bounded.
         resources = self.scanner.identify(
             "WebFetch", {"url": "https://internal.example.com/path?x=1", "prompt": "summarize this"}
         )
         self.assertEqual(len(resources), 1)
         self.assertEqual(resources[0].kind, "url")
-        self.assertEqual(resources[0].identity, "internal.example.com")
+        self.assertEqual(resources[0].identity, "https://internal.example.com/path")
         self.assertEqual(resources[0].scanner_name, "reputation")
 
-    def test_generic_fallback_finds_host_in_bash_command(self):
+    def test_generic_fallback_finds_full_url_in_bash_command(self):
         resources = self.scanner.identify("Bash", {"command": "curl https://evil.example.net/x"})
-        self.assertTrue(any(r.identity == "evil.example.net" for r in resources))
+        self.assertTrue(any(r.identity == "https://evil.example.net/x" for r in resources))
 
     def test_no_false_positive_on_unrelated_bash_command(self):
         resources = self.scanner.identify("Bash", {"command": "echo hello world"})
         self.assertEqual(resources, [])
 
-    def test_no_duplicate_resources_for_repeated_host(self):
-        resources = self.scanner.identify("Bash", {"command": "curl https://x.example.com/a https://x.example.com/b"})
+    def test_no_duplicate_resources_for_repeated_identical_url(self):
+        resources = self.scanner.identify("Bash", {"command": "curl https://x.example.com/a https://x.example.com/a"})
         self.assertEqual(len(resources), 1)
+
+    def test_distinct_paths_under_same_host_are_separate_resources(self):
+        # The actual STORY-1101 defect fix, at the identify() level: two
+        # different paths under one host must not collapse into a single
+        # resource identity the way host-only identity used to.
+        resources = self.scanner.identify("Bash", {"command": "curl https://x.example.com/a https://x.example.com/b"})
+        identities = {r.identity for r in resources}
+        self.assertEqual(identities, {"https://x.example.com/a", "https://x.example.com/b"})
 
 
 class TestURLScannerScan(unittest.TestCase):
@@ -156,6 +168,21 @@ class TestURLScannerScan(unittest.TestCase):
         result = self.scanner.scan(Resource(kind="url", identity="203.0.113.42", scanner_name="reputation"))
         self.assertEqual(result.label, "untrusted")
         self.assertTrue(result.reason)
+
+    def test_scan_extracts_host_from_full_url_identity(self):
+        # STORY-1101: identity is now a full URL (for cache-key granularity),
+        # but the underlying reputation heuristic still examines the host --
+        # a URL's path doesn't change whether its host is reputable.
+        result = self.scanner.scan(
+            Resource(kind="url", identity="https://internal.example.com/some/path", scanner_name="reputation")
+        )
+        self.assertEqual(result.label, "trusted")
+
+    def test_scan_ip_literal_full_url_is_untrusted(self):
+        result = self.scanner.scan(
+            Resource(kind="url", identity="https://203.0.113.42/path", scanner_name="reputation")
+        )
+        self.assertEqual(result.label, "untrusted")
 
 
 class TestScannerRegistry(unittest.TestCase):

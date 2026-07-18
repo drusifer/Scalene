@@ -19,7 +19,7 @@ options:
   --cache-path CACHE_PATH
 ```
 
-Reads one hook JSON payload from stdin, writes one JSON response to stdout, using Claude Code's real `PreToolUse`/`PostToolUse` hook contract (`hookSpecificOutput.permissionDecision`/`updatedInput` for `PreToolUse`; an empty response for `PostToolUse`, which is pure bookkeeping). You won't invoke this directly in normal use — see [docs/SETUP.md](SETUP.md) for wiring it into `.claude/settings.json`.
+Reads one hook JSON payload from stdin, writes one JSON response to stdout, using Claude Code's real `PreToolUse`/`PostToolUse` hook contract (`hookSpecificOutput.permissionDecision` for `PreToolUse` — the full allow/block decision; an empty response for `PostToolUse`, which is a no-op — every resource a call touches is knowable from its arguments alone, so `PreToolUse` already makes the complete decision before the call ever runs). You won't invoke this directly in normal use — see [docs/SETUP.md](SETUP.md) for wiring it into `.claude/settings.json`.
 
 ### `scg onboard`
 
@@ -49,63 +49,80 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 ### `scg monitor`
 
-Launches a live TUI over `.scalene/audit.log`, session taint state, and the resource cache — see mask events as they happen, act on suggested rules, and see what's actually in `.scalene/scan_cache.json` (resource, label, last-scanned time) without leaving the terminal. The resource panel reads the cache file directly — it's not a separate summary that could drift from what the live hook actually consults. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
+Launches a live TUI over `.scalene/audit.log`, session trust/sensitivity tags, and the resource cache — see block events as they happen, and see what's actually in `.scalene/scan_cache.json` (resource, label, last-scanned time) without leaving the terminal. The resource panel reads the cache file directly — it's not a separate summary that could drift from what the live hook actually consults. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
 
-## Onboarding workflow: the fast path
+## The access-control model
 
-**What onboarding actually buys you.** A brand-new, zero-config project is not unprotected — it's running at Scalene's *strictest* posture. `sensitive_by_default`/`untrusted_by_default` mean every resource is presumed sensitive/untrusted until a real scan says otherwise, so every outbound call in a tainted session gets checked against `detect-secrets` regardless of whether you've onboarded anything. That content scan — not the sensitive/trusted labels — is what actually catches a leaked credential.
+Scalene's core decision (docs/ARCHITECTURE.md §15) is whether a tool call is **permitted**, not whether its content gets scrubbed. Every session carries two independent, sticky tags, both clean at session start and only ever ratcheting toward more restrictive:
 
-Onboarding doesn't add protection on top of that; it's an *exemption* mechanism. Verifying a resource once (a real secrets scan or reputation check) lets Scalene skip re-checking it later — trading a little strictness for less friction on destinations you already know are fine. The system starts maximally cautious and only gets more permissive with evidence; it never starts permissive and hardens over time. Skip onboarding entirely and you're still protected — you'll just see more first-sighting messages, which is the cost of Scalene not yet having anything to skip, not a gap in coverage.
+- **`trust`**: `low` | `med` | `high` (starts `high`).
+- **`sensitivity`**: `public` | `internal` | `restricted` (starts `public`).
 
-Don't start by hand-writing `--target` — you don't need to know a destination's scheme from memory. Whenever a call gets masked, Scalene's response includes a `systemMessage` with a ready-to-run onboarding command built from the *exact call that was just masked*, e.g. `scg onboard --target https://<domain-this-call-reaches>` with the placeholder filled in from the real destination. You saw this in [Getting Started](GETTING_STARTED.md) step 4 — the `systemMessage` there is the actual output, not a mocked example.
+For each resource (file path or URL) a call touches:
 
-The same suggestion is also what `scg monitor`'s onboarding action runs when you select a mask event and apply it — the console is a UI shell over this exact command, not a separate code path.
+| Situation | Result |
+|---|---|
+| Matches a rule, cache confirms clean, `mode: allow` | Proceeds. `sensitivity` escalates to the rule's level if higher than current. Bypasses the block-when-tainted gate below entirely — this is what onboarding + a rule is *for*. |
+| Cache confirms the resource is actually bad (real scan finding), or a matching rule's `mode` isn't `allow` | **Blocked**, unconditionally — a rule can declare intent, but it never overrides a real, validated bad finding. |
+| No matching rule, and the session is still clean (`trust: high`, `sensitivity: public`) | Proceeds — nothing sensitive is at risk yet. Afterward, `trust` drops to `low` (fail-safe: an unrecognized resource could be anything). |
+| No matching rule, and the session is already tainted | **Blocked** — no explicit clearance exists for this destination while risk is already present. |
 
-**Masking is content-gated, not just session-gated.** A session touching sensitive data earlier is necessary but not sufficient — Scalene only actually masks (and only reports) a call when that specific value scans as a real secret via `detect-secrets`. An ordinary command like `ls -la` or `git status` in a tainted session is allowed through untouched; only a call whose argument actually looks like a credential gets masked. The message says exactly what was detected (e.g. "Possible AWS Access Key detected"), not just that the session was generically risky. It also says whether the destination was *known* to be untrusted (a real reputation finding) versus simply *not yet verified* (no scan has completed for it yet) — the two read differently on purpose, so a brand-new-but-probably-fine destination doesn't sound as alarming as a confirmed-bad one.
+Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session.
 
-Only fall back to hand-writing `--target` yourself if you want to pre-emptively verify something *before* it's ever been blocked (there's no prior call to generate a suggestion from):
+**Clearing a destination always takes two explicit steps** — never one:
 
-- `--target https://<host>` (or `http://`): runs a reputation check on that host now; on success, future calls to it are trusted immediately instead of paying the first-sighting cost.
-- `--target file://<path>`: runs a secrets scan on that path now; on success, future reads of it are marked non-sensitive immediately.
+1. **Verify it for real**: `scg onboard --target <uri>` runs an actual scan (secrets scan for `file://`, reputation check for `http(s)://`) and seeds the cache on success.
+2. **Write a rule** in `scalene_policy.yaml` saying what to do with a verified destination — onboarding alone only affects classification data, it never grants permission on its own.
 
-Both kinds of target run the same safety check the live hook would eventually run in the background anyway — `scg onboard` just runs it synchronously, right now, instead of waiting for a real call to trigger it. If the check fails, nothing is written to the cache — see [Troubleshooting](#troubleshooting) below.
+```
+usage: scg onboard [-h] --target TARGET [--cache-path CACHE_PATH]
+
+options:
+  -h, --help            show this help message and exit
+  --target TARGET       file://<path> (runs a secrets scan) or
+                        http(s)://<host> (runs a reputation check)
+  --cache-path CACHE_PATH
+```
+
+See [Getting Started](GETTING_STARTED.md) for a full worked example of both steps.
 
 ## Resource verification & the scan cache
 
-Scalene doesn't match calls against hand-authored rules — each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit):
+Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit):
 
 | Cache state for a resource | What happens |
 |---|---|
-| Never seen before | Falls back to the same fail-safe defaults as always (`sensitive_by_default`/`untrusted_by_default`) — no added latency for this call. A scan is kicked off in the background so the *next* call to the same resource is faster. |
+| Never seen before | Treated as unmatched (see the access-control table above) — no added latency for this call. A scan is kicked off in the background so the *next* call to the same resource is faster. |
 | Seen recently (within 24h, file unchanged) | Uses the cached, real result directly. |
 | Seen a while ago, or a file's content changed since | Uses the last-known result for this call, and re-scans in the background so the next call reflects reality. |
 
-`scalene_policy.yaml` still controls the two knobs that apply when nothing more specific is known:
+`scalene_policy.yaml` has no required fields — an empty (or missing) file means nothing has been explicitly claimed, so every unrecognized destination is subject to the block-when-tainted gate. An optional `rules:` list declares explicit, validated trust decisions:
 
 ```yaml
-defaults:
-  sensitive_by_default: true
-  untrusted_by_default: true
-  mode: mask   # or "block" — what to do when a real secret is detected (see below)
+rules:
+  - tool: "WebFetch"                              # regex against the tool name (".*" = any)
+    pattern: "https://internal\\.example\\.com/.*" # regex against the resource's identity (file path or URL)
+    sensitivity: internal                           # public | internal | restricted
+    mode: allow                                     # allow | block
+    scanner: reputation                             # optional — inferred otherwise
+    description: "Internal wiki — reviewed and trusted"
 ```
 
-**`mode`** controls what happens when a call is both provenance-risky (tainted-sensitive session, untrusted destination) *and* the specific value actually scans as a real secret:
+**Trust vs. sensitivity are independent.** Trust answers "could this source cause the agent to do something malicious" (verified per exact resource — onboarding one path never vouches for a whole host). Sensitivity answers "what's the blast radius if something does go wrong," exactly three levels (`public`/`internal`/`restricted`), set per-rule.
 
-- `mask` (default): the value is replaced with the mask literal and the call proceeds — the agent keeps working, just without the secret.
-- `block`: the call is denied outright (`permissionDecision: "deny"`) with a plain-language reason. Use this if you'd rather stop and reconsider than have the agent silently continue with a masked argument.
-
-Full field-level class model (`PolicyConfig`, `Scanner`, `MatchResult`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §13.
+Full field-level class model (`PolicyConfig`, `PolicyRule`, `Scanner`, `TaintState`, `AccessDecision`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §15.
 
 ## Troubleshooting
 
-Scalene is built to **fail safe** — an internal problem should degrade to "treat everything as sensitive/untrusted" (the safest default), never to a crash that blocks your agent session or, worse, silently allows something it shouldn't.
+Scalene is built to **fail safe** — an internal problem should degrade to blocking an ambiguous call, never to a crash that blocks your agent session or, worse, silently allows something it shouldn't.
 
 | Situation | What happens |
 |---|---|
-| No `scalene_policy.yaml` at all | Falls back to `PolicyConfig()` defaults (`sensitive_by_default`/`untrusted_by_default` both `true`). |
-| `scalene_policy.yaml` exists but is malformed (invalid YAML, wrong types, unreadable) | Falls back to the same fail-safe defaults as a missing file, with a warning logged (`scalene.guard` logger) — **never crashes** `scalene-guard`. |
+| No `scalene_policy.yaml` at all | Nothing has been claimed — every unrecognized destination is subject to the block-when-tainted gate, same as an empty `rules:` list. |
+| `scalene_policy.yaml` exists but is malformed (invalid YAML, wrong types, unreadable) | Falls back to the same as a missing file, with a warning logged (`scalene.guard` logger) — **never crashes** `scalene-guard`. |
+| A rule's `tool`/`pattern` isn't a valid regex | Rejected at config-load time with a clear `PolicyConfigError`, not deep in the hot path on the next matching call. |
 | Malformed hook input (bad JSON on stdin) or an unrecognized hook event | Returns `{}` — an empty response, which Claude Code's hook contract treats as "allow, no changes" — the call proceeds unmodified rather than blocking your agent. |
-| A resource has never been scanned yet | Falls back to the fail-safe defaults for that call (same as an unconfigured resource always has) — not an error, just "not yet verified." |
+| A resource has never been scanned yet | Treated as unmatched for this call (see the access-control table above) — not an error, just "not yet verified." |
 | The scan cache store itself is corrupted or unwritable, or a scanner's own scan couldn't run at all | This is the one case that's genuinely fatal, not fail-safe: `scalene-guard` exits non-zero with a plain-language reason on stderr (never a raw traceback) — this means the scanning machinery itself is broken, not that a scan found something bad. |
 | `scg onboard` blocked | Nothing is written to the scan cache. The failure reason is always plain language (e.g. `Onboarding blocked: secrets check failed — Possible AWS Access Key detected`) — never a raw library exception. |
 

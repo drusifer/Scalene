@@ -1,11 +1,13 @@
 # Current Task
 
-**Status:** Sprint 4 phase breakdown written to `task.md`. Handed to Morpheus for plan review.
+**Status:** Sprint 5 (E11) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
 **Assigned to:** Mouse
-**Started:** 2026-07-14
+**Started:** 2026-07-17
 
-## Task Description
-`*sm plan sprint` (Sprint 4), per the `*plan sprint` Bloop chain, following Smith's Gate 2 approval on Morpheus's E10 architecture (`docs/ARCHITECTURE.md` §13).
+## Task Description (most recent): `*sm plan sprint` (Sprint 5)
+Following Smith's Gate 2 approval on Morpheus's E11 architecture (`docs/ARCHITECTURE.md` §14). Broke into 3 hard-dependency-ordered phases (schema → matching → wiring, same shape as Sprint 4's chain, not Sprint 3's parallel-capable one): Phase 1 (resource identity fix + rule schema, no Smith gate — no user-facing surface yet, `scg onboard` explicitly untouched), Phase 2 (rule matching + `MatchResult` extension, no Smith gate — still nothing consumes the new fields), Phase 3 (unconditional masking wiring + docs, **Smith gate required** — this is where the actual user-visible behavior change lands). Folded Morpheus's real-migration-test-case finding (repo's own dead `allowlist:` block) into Phase 1 task 1.3 rather than a separate task. Folded the `NFR-Perf-UnconditionalScan` verification requirement into Phase 3 task 3.3 as a named task, not left as prose. No Tank phase (confirmed via §14.7 — no daemon/infra change).
+
+## Task Description (prior): `*sm plan sprint` (Sprint 4), per the `*plan sprint` Bloop chain, following Smith's Gate 2 approval on Morpheus's E10 architecture (`docs/ARCHITECTURE.md` §13).
 
 ## Progress
 - [x] Read Cypher's stories (E10, STORY-1001-1005), Morpheus's architecture (§13, incl. the full-replacement decision), and both Smith gate notes (first-sighting message wording; fatal-exit plain-language + verified exit code) plus her 2 Gate 2 watch-items (perf NFR re-verification, concurrent-scan dedup)

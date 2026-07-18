@@ -1,16 +1,15 @@
 # Next Steps
 
-## Immediate Next Action
-Waiting on Morpheus's `*lead review sprint plan` for Sprint 4. If approved, Phase 1 (`*swe impl phase-1`, Scanner Protocol & Built-in Scanners) goes to Neo.
+## Immediate Next Action (superseded — read this first on cold start)
+My 3-phase breakdown for Sprint 5 (`task.md`) was against §14.4's masking design and got fully implemented+gated through Phase 3 — but Phase 3's gate found a real gap that led to replacing the entire mechanism (`docs/ARCHITECTURE.md` §15, rule-driven access control). Implemented directly with the user, not phased through me. `task.md`'s Sprint 5 phase descriptions are now stale relative to what actually shipped.
 
 ## Waiting On
-Morpheus (plan review) → Neo (Phase 1 impl) whenever the user is ready.
+Nothing blocking. If this resumes formally, `task.md`'s Sprint 5 section needs a real update to reflect the sec15 rework (or an explicit note that it superseded the original 3-phase plan) — hasn't been done.
 
 ## Planned Work
-- [ ] Track all 3 required Smith gates this sprint (Phases 3, 4, 5) the same way Sprint 2/3's gates were tracked — confirm each actually ran, not just a prose mention.
-- [ ] Phases 1-2 have no Smith gate by design — confirm Trin's UAT covers the folded-in watch-items (dedup, orphaned-process check) instead of a reflexive gate.
-- [ ] Watch Phase 3's dependency ordering carefully — this is the first sprint where phases are hard-blocking rather than foundational-but-parallel-capable; don't let a later phase start early on a false assumption that an earlier one is "close enough."
-- [ ] Sprint 3 is still not formally closed (retro/launch pending) — flag again at Sprint 4 close whether to combine retros or close Sprint 3 first.
+- [ ] Track the single required Smith gate this sprint (Phase 3 only — Phases 1-2 are internal/schema-only, no user-facing surface changes).
+- [ ] Watch Phase 3 closely at UAT — Trin needs to confirm the existing mask systemMessage/audit-log signal still fires correctly for a newly-triggered mask (a call that used to be silently skipped), not just that new tests pass.
+- [ ] Sprint 3's prior "never formally closed" issue is resolved (closed 2026-07-16) — no longer a carry-forward item.
 
 ---
-*Last updated: 2026-07-14*
+*Last updated: 2026-07-17*

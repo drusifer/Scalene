@@ -47,13 +47,18 @@ def _resolve_resource(target: str) -> Resource:
     File identities are normalized via os.path.abspath -- the same
     normalization FileScanner.identify() applies during live evaluation --
     so a resource pre-seeded here uses the exact same cache key a real
-    hook call would look up."""
+    hook call would look up. URL identities (2026-07-17, docs/ARCHITECTURE.md
+    sec14.2 -- STORY-1101) are normalized the same way URLScanner.identify()
+    extracts them from live call text: scheme+host+path, query/fragment
+    dropped -- onboarding a specific path pre-seeds only that path, not the
+    whole host."""
     parsed = urlparse(target)
     if parsed.scheme == "file":
         path = target[len("file://") :]
         return Resource(kind="file", identity=os.path.abspath(path), scanner_name="secrets")
     if parsed.scheme in ("http", "https"):
-        return Resource(kind="url", identity=parsed.hostname or "", scanner_name="reputation")
+        identity = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        return Resource(kind="url", identity=identity, scanner_name="reputation")
     raise OnboardError(f"--target must be a file://, http://, or https:// URI (got {target!r})")
 
 

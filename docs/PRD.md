@@ -47,8 +47,9 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 | E8 | Category-Aware Secrets Scan | Upgrade onboarding secrets scan from 3 hand-rolled regexes to `detect-secrets` |
 | E9 | Documentation & Onboarding | `USER_GUIDE.md`, `GETTING_STARTED.md`, and a runnable demo of Scalene stopping a real exfiltration attempt |
 | E10 | Extensible Scanner Registry & Resource Verification | Replace one-time onboard-verification with autonomous per-scanner resource identification + a 24h-cached, continuously-refreshed scan-result store |
+| E11 | Trust/Sensitivity Model & Rule-Driven Resource Identity | Correct E10's host-level trust granularity defect; split trust (source legitimacy) and sensitivity (blast radius, 3 levels) into independent axes. **Superseded mid-sprint (2026-07-18, ARCHITECTURE.md §15):** originally planned unconditional content-scanning with per-rule `mode: mask\|block`; shipped as rule-driven access control instead (block/allow the call, not scan its content) after a real gap was found. |
 
-E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
 
 ## Sprint 2 Goals (added 2026-07-10)
 
@@ -66,3 +67,11 @@ E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. See `docs/USER_STORIES.md` 
 11. Close a real verification gap: an onboarded allow/trust rule should not be able to vouch, forever and unrefreshed, for a broader class of future values than what was actually checked at onboarding time.
 12. Make resource identification (file paths, URLs) automatic per scanner type instead of requiring a human to hand-author jsonpath+pattern extraction for every resource shape.
 13. Keep continuous re-verification affordable via a per-resource, time-bounded cache with background refresh — not a scan on every call. **Revised 2026-07-14** (Morpheus's Phase 2 review measured the real cost of the background-refresh spawn): the existing <15ms NFR holds unchanged for the steady-state (cached/fresh) path, since that's pure JSON-cache reads with no subprocess spawn. It does **not** hold for a resource's first sighting — spawning the background scan costs real, measured latency (~6.6ms avg / ~16ms max in testing) that a from-scratch <15ms budget can't absorb on top of the existing hook cost. Accepted as a one-time, per-newly-seen-resource cost rather than redesigning the spawn mechanism — see `docs/ARCHITECTURE.md` §13.3's `NFR-Perf-FirstSighting`.
+
+## Sprint 5 Goals (added 2026-07-17)
+
+14. Close a real defect found in shipped E10 code: `URLScanner`'s host-level resource identity reproduces the exact "one verification vouches for an unbounded future set" problem E10 exists to fix. A resource's trust identity must be scoped narrowly enough to distinguish the specific verified resource from every other resource sharing its host.
+15. Separate trust (could this source cause the agent to act maliciously) from sensitivity (blast radius if it does) as two independent axes, rather than treating them as parallel provenance signals. Sensitivity is exactly three levels: Public, Internal Only, Restricted.
+16. Make real-secret content-scanning an unconditional baseline for every call, not conditioned on a session already being classified tainted-sensitive-and-untrusted — so scanning coverage doesn't silently depend on classification being correct. **Superseded 2026-07-18** — replaced by the goal below (blocking the call outright, not scanning its content) once a real gap was found mid-sprint. See `docs/ARCHITECTURE.md` §15.
+17. Resolve the user's per-resource `mask`/`block` request as a `mode` field on the generalized `PolicyRule`, fired via the always-on default rule, rather than requiring trust itself to become "always scan." **Superseded 2026-07-18** — see goal 18.
+18. **(Added 2026-07-18, replaces 16-17)** Gate whether a call is *permitted at all* on validated, explicit trust decisions, not on scanning its content. Two independent session tags (`trust`: low/med/high, `sensitivity`: public/internal/restricted) escalate as a session touches unrecognized resources; a call proceeds only if every resource it touches is validated + explicitly allow-ruled, or the session is still clean. Content-scanning (`masking.py`) is kept but dormant, not required by this goal — see `docs/ARCHITECTURE.md` §15.
