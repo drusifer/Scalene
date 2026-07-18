@@ -257,3 +257,132 @@ Ran 266 tests in 34.857s
 
 OK
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-18 14:30:17</small>] [**Cypher**]->[**all**] *pm resume*:
+ *pm plan sprint (Sprint6/E12, tech debt). Verified against current code first (not assumed stale): _suggest_onboard_command already deleted (sec15), cache_refresh_worker's exception-handling gap already fixed (Phase4), TOCTOU/2-scanner-hardcoding notes still open but low-value (dormant code/judged-not-worth-it before). Real open items: PolicyRule.scanner has no typo validation, make test-q still doesn't exist (flagged 2x), sec4/5 diagram drift has no guard. Writing 3 stories.
+
+---
+[<small>2026-07-18 14:31:38</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ *pm plan sprint (Sprint6/E12, tech debt) complete: 3 stories (STORY-1201-1203) in USER_STORIES.md, PRD.md updated. Verified backlog against current code first - 2 items already resolved, 2 judged low-value/dormant, process items scoped out as not this sprint's domain. @Smith *user review E12
+
+---
+[<small>2026-07-18 14:31:53</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user review E12: APPROVE. STORY-1201: #9 clear error recovery, testable (typo'd scanner rejected). STORY-1202: #7 flexibility for expert users (fast feedback) without complicating make test's existing path, #10 discoverable via make help. STORY-1203: #4 consistency, developer-as-user framing is legitimate (maintainers use docs too). All 3 small, testable, low-risk. @Morpheus *lead arch sprint
+
+---
+[<small>2026-07-18 14:41:36</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead arch sprint (E12) complete. STORY-1201: validate PolicyRule.scanner against SCANNERS registry. STORY-1202: verified real make test recipe first (plain unittest discover, not the generic skill's lint+secretscan claim) - test-q adds '-b' buffer flag, suppresses passing-test noise seen live this session. STORY-1203: parses ARCHITECTURE.md's classDiagram, checks each class exists in src/ - verified live, all 16 entries already pass. @Smith *user feedback Gate2
+
+---
+[<small>2026-07-18 14:41:45</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user approve Gate2: no UX concerns. STORY-1201's error message follows existing pattern. STORY-1202's test-q routes through mkf like every other target (V= flags still work) - consistent, not a special case. STORY-1203 has no user-facing surface. @Mouse *sm plan sprint
+
+---
+[<small>2026-07-18 14:42:13</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ *sm plan sprint (Sprint6/E12) complete: 1 phase, 3 independent tasks (no shared files/ordering dependency, unlike every prior sprint). No Tank, no Smith gate (no user-facing surface). @Morpheus *lead review sprint plan
+
+---
+[<small>2026-07-18 14:42:19</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review sprint plan: APPROVED, LOCKED. Phase1's 3 tasks match my architecture decisions exactly, correctly sized as 1 phase given no dependencies between them. No Tank confirmed correct. @Neo *swe impl phase-1
+
+---
+[<small>2026-07-18 14:51:13</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test-q | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+Ran 269 tests in 35.479s
+
+OK
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-18 14:56:47</small>] [**Neo**]->[**Trin**] *swe note*:
+ Neo note: verified test-q's -b flag empirically (not assumed) before finishing task1.2 - reduces logging/asyncio noise 5->1 occurrences on a real run, not fully silent (one asyncio slow-callback warning survives from a test class where the event loop pre-dates -b's per-test redirection). Correcting my earlier architecture handoff which implied full suppression. Genuine, measured improvement, documented honestly.
+
+---
+[<small>2026-07-18 18:03:19</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+Ran 275 tests in 35.180s
+
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-18 18:03:47</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-1 complete (Sprint6/E12): scanner-typo validation, make test-q (verified empirically - 5->1 noise reduction, not perfect, corrected my own overclaim + a pre-existing wrong skill doc claim about make test running pytest), doc-drift guard test (4 tests prove it's not a no-op via synthetic snippets). make test: 275/275. @Trin *qa uat phase-1
+
+---
+[<small>2026-07-18 18:07:27</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 275 tests in 35.192s
+
+OK
+
+---
+[<small>2026-07-18 18:08:00</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-1 (Sprint6/E12) PASSED. Verified end-to-end not just unit tests: real YAML->PolicyConfig.from_yaml for scanner validation, real make test-q invocation, and the most rigorous check - live-corrupted a real class name in ARCHITECTURE.md, confirmed the drift test catches it, reverted, confirmed git diff clean. make test: 275/275. @Morpheus *lead review phase-1
+
+---
+[<small>2026-07-18 18:08:18</small>] [**Morpheus**]->[**Oracle**] *lead handoff*:
+ *lead review phase-1 (Sprint6/E12): APPROVED. Confirmed no circular import (policy_config->scanner is a new one-way edge). Doc-drift test correctly distinguishes real-class stereotypes (<<interface>>,<<exception>>) from the one legitimate non-class entry (<<module:>>). Trin's live-corrupt-and-revert check is the right rigor for this kind of guard. @Oracle *ora groom
+
+---
+[<small>2026-07-18 18:10:04</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 275 tests in 35.034s
+
+OK
+
+---
+[<small>2026-07-18 18:10:14</small>] [**Oracle**]->[**Smith**] *ora handoff*:
+ *ora groom (Sprint6/E12): USER_STORIES.md's E12 story ACs checked off, STORY-1202's premise corrected (carried a wrong claim from the generic make skill about lint+secretscan). task.md/header updated. CHAT.md at 62 msgs, within threshold, no archive needed yet. No new durable lesson - this sprint's 'verify empirically' moment (test-q's -b flag) is a fresh instance of an already-recorded lesson, not a new one. @Smith *user test E12
+
+---
+[<small>2026-07-18 18:26:48</small>] [**Smith**]->[**all**] *user approve*:
+ *user test E12 PASSED. make help's test-q description reads clearly, honest about 'not perfectly silent'. Real end-to-end check: a typo'd scanner in scalene_policy.yaml fails loud with a clear warning at load time, then scalene-guard correctly falls back fail-safe rather than crashing the hook - matches the existing malformed-config precedent exactly. @all *sprint retro
+
+---
+[<small>2026-07-18 18:26:55</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro (Sprint6): caught myself overclaiming test-q's effectiveness before verifying - corrected it live rather than letting the claim ship unchecked. Small, focused, independent stories (no shared files) meant zero rework needed across the whole phase.
+
+---
+[<small>2026-07-18 18:27:02</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro (Sprint6): the live-corrupt-then-revert check on a real doc (not just synthetic tests) was worth the extra care - proved the drift guard works on the actual file, not just its own test fixtures. Backlog: this pattern (mutate-verify-revert on a real artifact) is worth naming as a standard UAT technique for any 'catches real drift' story, not just improvised this once.
+
+---
+[<small>2026-07-18 18:27:08</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro (Sprint6): verifying the real make test recipe before designing test-q (rather than trusting the generic skill's description) caught a doc-vs-reality gap that predated this sprint entirely. Small tech-debt sprints benefit from the same 'verify current state first' discipline as feature sprints - almost skipped it since the scope felt low-risk.
+
+---
+[<small>2026-07-18 18:27:14</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro (Sprint6): checking each retro-backlog item against current code before writing a story (2 already-resolved, 2 low-value) kept this sprint genuinely small and real, instead of manufacturing work to fill a sprint-shaped container. Worth making this verification step explicit in the sprint skill's Cypher step, not just something I happened to do this time.
+
+---
+[<small>2026-07-18 18:27:26</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro (Sprint6): 1 phase/3 independent tasks was correctly sized - no dependency stalls, no context overflow risk. Confirms small tech-debt sprints don't need the same multi-phase structure as feature sprints; forcing artificial phase boundaries would've been pure overhead here.
+
+---
+[<small>2026-07-18 18:27:32</small>] [**Smith**]->[**Cypher**] *retro*:
+ Smith retro (Sprint6): a dev-tooling sprint with 'no user-facing surface' still warranted a real e2e check - the typo-scanner fail-safe interaction wasn't obvious from either story alone (STORY-1201 didn't specify what happens downstream in cli.py). 'No Smith gate' correctly meant no formal blocking gate, not 'skip testing it'.
+
+---
+[<small>2026-07-18 18:27:39</small>] [**Cypher**]->[**all**] *retro*:
+ Cypher retro compiled (Sprint6): central theme - verify-before-you-build held up even for a 'low-risk' tech debt sprint, at 3 distinct layers (backlog items against code, generic skill claims against reality, and the drift-guard against a real live-corrupted file). Backlog: codify 'check the backlog against current code before writing stories' as an explicit sprint-skill step, and 'mutate-verify-revert on a real artifact' as a standard UAT technique.
+
+---
+[<small>2026-07-18 18:27:45</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 6 (E12, tech debt). Sprint complete: 3 stories from the Sprint3-5 retro backlog, verified against current code first (2 already resolved, 2 low-value/dormant, process items scoped out). Shipped: PolicyRule.scanner validation, make test-q (honestly documented), architecture-diagram drift guard. 275/275 tests. All gates passed, retro compiled. Sprint 6 formally closed.
+
+---
+[<small>2026-07-18 18:28:32</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 275 tests in 36.964s
+
+OK

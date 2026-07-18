@@ -61,7 +61,10 @@ Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, M
 
 ## Task Description (prior): Sprint 4 (E10) stories drafted, approved at both Gate 1 and Gate 2, architected (Morpheus §13), phased (Mouse), and plan LOCKED (Morpheus).
 
-## Task Description (most recent): Sprint 5 (E11 → sec15) close — retro compile, `*pm launch`
+## Task Description (most recent): `*pm plan sprint` — Sprint 6 (E12, tech debt)
+Wrote 3 stories (STORY-1201-1203) from the Sprint 3-5 retro backlog. Deliberately verified each carried-forward item against current code *before* writing a story for it — 2 items were already resolved (`_suggest_onboard_command` deleted in the sec15 rework, `cache_refresh_worker.py`'s exception-handling gap closed in Sprint 4 Phase 4) and 2 were judged low-value/dormant (scan-cache TOCTOU, `evaluate()`'s hardcoded 2-scanner aggregation — the latter is dead code since sec15, not part of the live path). Explicitly scoped out the retro backlog's process/Bob-protocol items (3rd status bucket, standing hostile-input-testing protocol, cold-start handoff checks) as not this sprint's domain. Updated `docs/PRD.md` epic table + added Sprint 6 goals (19-21). Handed to Smith for Gate 1.
+
+## Task Description (prior): Sprint 5 (E11 → sec15) close — retro compile, `*pm launch`
 Compiled retro backlog from all 6 persona inputs (Neo, Trin, Morpheus, Oracle, Mouse, Smith). Central theme: this sprint's real defect was caught by a gate specifically designed to *run the software adversarially*, not review it on paper — every persona's retro independently converges on the same point from a different angle.
 
 ## Retro Backlog (Sprint 5)

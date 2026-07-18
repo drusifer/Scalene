@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test test-q setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -64,6 +64,10 @@ install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json
 
 test: ## Run unit tests
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+
+test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
+	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests -b; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 via_index: ## Build the via index required by the via MCP server
@@ -204,7 +208,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat demo test setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test test-q setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -258,6 +262,9 @@ demo: ## Run the Scalene demo - watch it mask a real exfiltration attempt (STORY
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 test: ## Run unit tests
+	@./agents/tools/mkf.py $(V) $@
+
+test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
 	@./agents/tools/mkf.py $(V) $@
 
 setup: ## Create project venv and install dependencies (editable install)

@@ -1,7 +1,16 @@
 # Current Task
 
-**Status:** `*qa uat sec15` — PASSED. Closes the UAT gap I flagged when the sprint got superseded (see prior next_steps.md note). Handed to Morpheus for architecture review.
+**Status:** `*qa uat phase-1` (Sprint 6/E12) — PASSED. Handed to Morpheus for review.
 **Assigned to:** Trin
+
+## Task Description (most recent): `*qa uat phase-1` (Sprint 6/E12)
+Verified end-to-end, not just via the unit tests Neo already wrote:
+- STORY-1201: wrote a real `scalene_policy.yaml` with a typo'd `scanner: reputatoin` and loaded it through `PolicyConfig.from_yaml` (the real config-loading path, not the direct `PolicyRule()` constructor) — clear error naming both the bad value and the valid options.
+- STORY-1202: ran `make test-q` for real (both with `V=-vvv` and default silent mode) — confirmed it behaves like every other `mkf`-wrapped target, no special-casing.
+- STORY-1203: the most rigorous check — temporarily renamed a real class (`TaintState` → `TaintStateXYZ`) directly in `docs/ARCHITECTURE.md`, ran the new test module directly, confirmed it failed with a clear message naming the exact stale class, then reverted immediately and confirmed `git diff` showed no residual change and the full suite was green again. Proves the guard actually works against the real file, not just synthetic snippets.
+- `make test`: 275/275. **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat sec15` — PASSED. Closes the UAT gap I flagged when the sprint got superseded (see prior next_steps.md note). Handed to Morpheus for architecture review.
 **Started:** 2026-07-18
 
 ## Task Description (most recent): `*qa uat sec15` — real adversarial UAT of the rule-driven access control rework

@@ -93,8 +93,8 @@ Common targets:
 | Command | Description |
 |---------|-------------|
 | `make help` | Show all targets |
-| `make test` | Run unit tests (full: lints + secret scan + verbose pytest) |
-| `make test-q` | Concise test run — quiet pytest with short tracebacks; **use this for quick feedback instead of piping make test** |
+| `make test` | Run the full unit test suite (`unittest discover`, default verbosity) |
+| `make test-q` | Same suite, quieter — adds `-b` (buffer), which reduces incidental logging/asyncio noise but isn't perfectly silent; **use this for quick feedback instead of piping make test** |
 | `make tldr` | Show TL;DR summaries from project files |
 | `make via_index` | Build the via symbol index |
 | `make install_bob TARGET=/path` | Install BobProtocol into a project |

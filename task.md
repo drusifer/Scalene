@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing.
 
 ---
 
@@ -332,3 +332,30 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 - No Tank phase — no daemon, no new port/service/env var (§14.7).
 - Phases are hard-dependency-ordered: Phase 2 cannot resolve rule matches without Phase 1's schema existing; Phase 3 cannot wire `match.mode` into masking without Phase 2 producing it.
 - STORY-1105's migration concern (§14.6) is fully addressed by Phase 1 (rewriting this repo's live config) + Phase 2's real fail-safe test — no separate migration-script task, per Morpheus's "no automatic re-keying" architecture decision.
+
+---
+
+# Sprint 6
+
+**Owner:** Mouse
+**Status:** ✅ **SPRINT CLOSED 2026-07-18** — Phase 1 (only phase) complete, every gate passed (Trin UAT with real end-to-end verification for all 3 tasks, Morpheus review). No Smith gate (no user-facing surface, correctly predicted). 275/275 tests passing.
+**Source:** `docs/USER_STORIES.md` (E12) + Morpheus's `*lead arch sprint` handoff (2026-07-18)
+**Scope:** Tech debt pulled from the Sprint 3-5 retro backlog, verified against current code before scoping — `PolicyRule.scanner` typo validation, a `make test-q` fast-feedback target, and an architecture-diagram drift guard.
+
+1 phase — all 3 stories are small and fully independent (no shared files, no ordering dependency), unlike every prior sprint's hard-dependency or foundational-parallel shape.
+
+## Phase 1 — Config Validation, Test Feedback Loop, Doc-Drift Guard
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new.*
+
+| Task | Description | Story Refs |
+|------|-------------|-----------|
+| 1.1 | `PolicyRule.__post_init__` validates a non-empty `scanner` field against the real `SCANNERS` registry, raising `PolicyConfigError` on a typo — consistent with the existing `tool`/`pattern` regex-validation pattern | STORY-1201 |
+| 1.2 | `make test-q`: real recipe is `unittest discover -s tests -b`. Verified empirically (not assumed): reduces logging/asyncio noise from 5 occurrences to 1 on a real run — genuinely quieter, not perfectly silent (one asyncio slow-callback warning survives from a test class whose event loop pre-dates `-b`'s per-test redirection). Stub routes through `mkf` like every other target; appears in `make help` | STORY-1202 |
+| 1.3 | New `tests/test_architecture_docs.py`: parses `docs/ARCHITECTURE.md`'s `classDiagram` block, confirms every referenced class exists in `src/scalene/` (or its `<<module: file.py>>` stereotype's file exists) | STORY-1203 |
+
+**Exit criteria:** Trin UAT passes (a real typo'd `scanner` value is rejected with a clear message; `make test-q` produces genuinely quieter output than `make test` on a real run; the doc-drift test both passes against the current, accurate diagram and fails with a clear message when a class is deliberately renamed to prove it's not a no-op). Morpheus reviews. No Tank, no Smith gate — no user-facing product surface (dev-tooling + internal docs only).
+
+## Notes
+- No Tank phase — no CI/infra changes, `make test-q` is a local dev convenience target using the same `mkf` wrapper every other target already uses.
+- All 3 tasks touch different files with no shared state — genuinely parallelizable if ever split across implementers, kept as one phase here since the whole sprint is small.

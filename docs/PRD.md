@@ -48,8 +48,9 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 | E9 | Documentation & Onboarding | `USER_GUIDE.md`, `GETTING_STARTED.md`, and a runnable demo of Scalene stopping a real exfiltration attempt |
 | E10 | Extensible Scanner Registry & Resource Verification | Replace one-time onboard-verification with autonomous per-scanner resource identification + a 24h-cached, continuously-refreshed scan-result store |
 | E11 | Trust/Sensitivity Model & Rule-Driven Resource Identity | Correct E10's host-level trust granularity defect; split trust (source legitimacy) and sensitivity (blast radius, 3 levels) into independent axes. **Superseded mid-sprint (2026-07-18, ARCHITECTURE.md §15):** originally planned unconditional content-scanning with per-rule `mode: mask\|block`; shipped as rule-driven access control instead (block/allow the call, not scan its content) after a real gap was found. |
+| E12 | Tech Debt: Config Validation, Test Feedback Loop, Doc-Drift Guard | Pulled from the Sprint 3-5 retro backlog, verified against current code before scoping (several flagged items were already resolved or moot). `PolicyRule.scanner` typo validation, `make test-q` for fast feedback, a real check that architecture diagrams reference symbols that actually exist. |
 
-E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. E12 is Sprint 6. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
 
 ## Sprint 2 Goals (added 2026-07-10)
 
@@ -75,3 +76,9 @@ E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. See `docs/
 16. Make real-secret content-scanning an unconditional baseline for every call, not conditioned on a session already being classified tainted-sensitive-and-untrusted — so scanning coverage doesn't silently depend on classification being correct. **Superseded 2026-07-18** — replaced by the goal below (blocking the call outright, not scanning its content) once a real gap was found mid-sprint. See `docs/ARCHITECTURE.md` §15.
 17. Resolve the user's per-resource `mask`/`block` request as a `mode` field on the generalized `PolicyRule`, fired via the always-on default rule, rather than requiring trust itself to become "always scan." **Superseded 2026-07-18** — see goal 18.
 18. **(Added 2026-07-18, replaces 16-17)** Gate whether a call is *permitted at all* on validated, explicit trust decisions, not on scanning its content. Two independent session tags (`trust`: low/med/high, `sensitivity`: public/internal/restricted) escalate as a session touches unrecognized resources; a call proceeds only if every resource it touches is validated + explicitly allow-ruled, or the session is still clean. Content-scanning (`masking.py`) is kept but dormant, not required by this goal — see `docs/ARCHITECTURE.md` §15.
+
+## Sprint 6 Goals (added 2026-07-18)
+
+19. Close the config-validation gap Trin's Sprint 5 UAT found: a rule's `scanner` field should be validated against the real scanner registry at load time, the same way `tool`/`pattern` already are — a typo shouldn't silently produce a rule that never matches.
+20. Give developers a fast, concise test-feedback loop (`make test-q`) distinct from `make test`'s full lint+secret-scan+verbose run — flagged twice across sprints, never built until now.
+21. Catch architecture-diagram drift automatically. Morpheus's Sprint 5 review found 3 stale references in `docs/ARCHITECTURE.md` §4/§5 that no test would have caught; a real check should verify diagram-referenced class names actually exist in the codebase.

@@ -20,6 +20,8 @@ from pathlib import Path
 
 import yaml
 
+from .scanner import SCANNERS
+
 
 class PolicyConfigError(ValueError):
     """Raised when scalene_policy.yaml is malformed or fails schema validation."""
@@ -91,6 +93,17 @@ class PolicyRule:
                 re.compile(getattr(self, field_name))
             except re.error as exc:
                 raise PolicyConfigError(f"'{field_name}' is not a valid regex: {getattr(self, field_name)!r} ({exc})") from exc
+        # E12/STORY-1201 (Trin's Sprint 5 UAT finding): a typo'd scanner name
+        # used to silently make a rule permanently ineffective (it would
+        # never pass resource_verifier's `rule.scanner != resource.scanner_name`
+        # check for any real resource) with no warning. Fail loud here
+        # instead, same precedent as the tool/pattern regex validation above.
+        # Empty/omitted is the common case (inferred from the matched
+        # resource) and is deliberately not validated.
+        if self.scanner and self.scanner not in SCANNERS:
+            raise PolicyConfigError(
+                f"'scanner' must be one of {tuple(SCANNERS)} or empty (inferred), got {self.scanner!r}"
+            )
 
 
 @dataclass

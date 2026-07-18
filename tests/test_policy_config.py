@@ -139,6 +139,22 @@ class TestPolicyRule(unittest.TestCase):
         rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow")
         self.assertEqual(rule.mode, "allow")
 
+    def test_valid_scanner_name_constructs(self):
+        rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputation")
+        self.assertEqual(rule.scanner, "reputation")
+
+    def test_empty_scanner_is_not_validated(self):
+        # The common case -- inferred from the matched resource, not required.
+        rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="")
+        self.assertEqual(rule.scanner, "")
+
+    def test_invalid_scanner_name_raises_clear_error(self):
+        # E12/STORY-1201 (Trin's Sprint 5 UAT finding): a typo'd scanner
+        # name must fail loud at rule-construction time -- previously it
+        # silently made the rule permanently ineffective with no warning.
+        with self.assertRaises(PolicyConfigError):
+            PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputatoin")
+
 
 class TestPolicyConfigModeExcludesAllow(unittest.TestCase):
     def test_global_default_mode_rejects_allow(self):

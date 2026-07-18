@@ -349,3 +349,43 @@ As an operator upgrading from Sprint 4, I want a defined, explicit migration pat
 - [ ] The chosen migration behavior (re-key vs. re-verify-on-expiry) is covered by a real test simulating an upgrade from an E10-era cache file, not just documented.
 
 ---
+
+## E12 — Tech Debt: Config Validation, Test Feedback Loop, Doc-Drift Guard
+
+**Origin:** `*sprint tech debt` — a dedicated sprint pulling from the retro backlog accumulated across Sprints 3-5, not a new user-facing feature request. Before writing stories, each carried-forward item was checked against the current codebase rather than assumed still open: `_suggest_onboard_command`'s adapter-layer-placement debt is moot (the function was deleted entirely in the sec15 rework); `cache_refresh_worker.py`'s cache-write exception-handling gap was already closed in Sprint 4 Phase 4; the scan-cache `os.stat()` TOCTOU gap and `resource_verifier.evaluate()`'s hardcoded 2-scanner aggregation are both still technically present but low-value (the TOCTOU gap was already judged "not worth a fix round" by Morpheus, and `evaluate()` is dormant code since sec15 — not part of the live decision path). Three items are real, open, and worth fixing:
+
+1. A rule's `scanner` field has no validation against the real scanner registry — a typo (Trin's Sprint 5 UAT finding, `agents/trin.docs/current_task.md`) silently makes the rule permanently ineffective with zero warning, the same shape of gap the regex-validation fix (Sprint 5 Phase 2) already closed for `tool`/`pattern`.
+2. `make test-q` (a concise/quick test target, distinct from `make test`'s full lint+secret-scan+verbose run) has been flagged twice across sprints (Trin's Sprint 4 and Sprint 5 retros) and never built.
+3. Architecture doc drift goes undetected — Morpheus's Sprint 5 architecture review found 3 stale references in §4/§5 (a class's fields, a method's signature, a whole sequence diagram) that no automated check would have caught, since Mermaid diagrams and prose aren't executable.
+
+Explicitly out of scope for this sprint (process/Bob-protocol items from the retro backlog, not code): "3rd status bucket for gated-then-superseded," "codify hostile-input testing as standing protocol," "cold-start should check for unresolved handoffs." These belong to Bob's (prompt-engineering persona) domain, not a software delivery sprint.
+
+### STORY-1201
+As a developer authoring a `scalene_policy.yaml` rule, I want an invalid `scanner` value to be rejected at config-load time with a clear error, so a typo doesn't silently produce a rule that never matches anything.
+
+**Acceptance Criteria**
+- [x] `PolicyRule.__post_init__` validates a non-empty `scanner` field against the real scanner registry (`SCANNERS` in `scanner.py`), raising `PolicyConfigError` with a clear message (naming the invalid value and, ideally, the valid options) if it doesn't match a registered scanner name.
+- [x] An empty/omitted `scanner` (the common case — inferred from the matched resource) is unaffected — validation only applies when a value is actually provided.
+- [x] Consistent with the existing `tool`/`pattern` regex-validation precedent: fails loud at rule-construction time, not silently or deep in `decide_access()`'s hot path.
+- [x] A real test constructs a rule with a plausible typo (e.g. `"reputatoin"`) and confirms it's rejected, not silently accepted — verified both via unit test and end-to-end through `PolicyConfig.from_yaml` against a real YAML file (Trin's UAT).
+
+### STORY-1202
+As a developer running the test suite frequently during iteration, I want a `make test-q` target that gives fast, concise feedback, so I don't have to wait for or scroll past incidental logging/asyncio noise on every quick check.
+
+**Revised 2026-07-18 (Neo, during implementation):** the story's original premise ("make test's full lint+secret-scan+verbose output") was carried over from the generic `make` skill's doc, which turned out to be wrong for this project — `make test`'s real recipe is plain `unittest discover`, no lint or secret-scan step (the project's secret-scanning is a separate pre-commit gitleaks hook, not part of `make test`). Corrected here and in the `make` skill rather than leaving a wrong premise in a "locked" doc.
+
+**Acceptance Criteria**
+- [x] `make test-q` runs the same test suite as `make test` but with quieter output (`unittest discover -s tests -b`) — routed through `mkf`/`build/build.out` the same way every other target is. **Measured, not assumed**: reduces incidental logging/asyncio noise from 5 occurrences to 1 on a real run — genuinely quieter, not perfectly silent (one asyncio slow-callback warning survives from a test class whose event loop pre-dates `-b`'s per-test redirection). Documented honestly rather than overclaiming full suppression.
+- [x] Appears in `make help`'s target list with a clear one-line description distinguishing it from `make test`.
+- [x] Documented in the `make` skill guidance so it isn't lost again after this sprint (this is the second time it's been flagged and not built) — also corrected the skill's own pre-existing wrong claim about `make test`'s contents in the same pass.
+
+### STORY-1203
+As a maintainer reviewing an architecture change, I want a real check that `docs/ARCHITECTURE.md`'s class diagrams reference symbols that actually exist in the codebase, so stale diagrams get caught automatically instead of only when someone happens to read closely during a review.
+
+**Acceptance Criteria**
+- [x] A test parses `docs/ARCHITECTURE.md`'s Mermaid `classDiagram` block and confirms every referenced class name corresponds to a real class (or documented module-level stereotype, e.g. `<<module: resource_verifier.py>>`) somewhere in `src/scalene/`.
+- [x] Deliberately scoped to class *existence*, not full method-signature fidelity — explicitly noted as a scope boundary, not silently underdelivered.
+- [x] The test fails loudly with a clear message naming the stale reference if the diagram and code diverge, not a vague assertion failure — verified live: Trin temporarily renamed a real class in the actual doc, confirmed the exact failure message, then reverted.
+- [x] Run as part of the normal `make test` suite (`tests/test_architecture_docs.py`), not a separate opt-in check that's easy to forget.
+
+---

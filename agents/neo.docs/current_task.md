@@ -1,9 +1,15 @@
-**Status:** DONE — full rework to `docs/ARCHITECTURE.md` sec15 (rule-driven access control), superseding Phase 1-3's masking-centric implementation. All 266 tests passing. This was direct engineering work with the user (design conversation → confirmed spec → implementation), not a Bloop-gated phase — no separate Trin/Morpheus/Smith review cycle ran for this specific change.
+**Status:** DONE — Sprint 6 (E12, tech debt) Phase 1, all 3 tasks. Handed to Trin for UAT.
 **Assigned to:** Neo
-**Started:** 2026-07-17
-**Finished:** 2026-07-17
+**Started:** 2026-07-18
+**Finished:** 2026-07-18
 
-## Task Description (most recent): sec15 rework — rule-driven access control replaces content-scanning
+## Task Description (most recent): `*swe impl phase-1` (Sprint 6/E12)
+- Task 1.1: `PolicyRule.__post_init__` validates `scanner` against the real `SCANNERS` registry (empty/omitted stays unvalidated — the common case). 3 new tests.
+- Task 1.2: `make test-q` — real recipe `unittest discover -s tests -b`. **Verified empirically before finishing, not assumed**: measured 5→1 occurrences of logging/asyncio noise on a real run — genuinely quieter, not perfectly silent (one asyncio slow-callback warning survives a test class whose event loop pre-dates `-b`'s per-test redirection). Corrected my own architecture handoff message and the `make` skill's doc, which both implied full suppression — also fixed the skill's pre-existing wrong claim that `make test` runs pytest+lint+secret-scan (it's plain `unittest discover`, always was).
+- Task 1.3: new `tests/test_architecture_docs.py` — parses `docs/ARCHITECTURE.md`'s `classDiagram` block, flags any class that doesn't exist in `src/scalene/` and has no valid `<<module: file.py>>` stereotype. Proved it's not a no-op with 4 tests against synthetic snippets (a renamed class is flagged, a valid/invalid module stereotype, a real class isn't flagged) rather than only asserting the real doc currently passes.
+- `make test`: 275/275 passing.
+
+## Task Description (prior): sec15 rework — rule-driven access control replaces content-scanning
 Trin's Phase 3 UAT flag (a blanket `pattern:".*"` + `mode:allow` rule could silently disable all scanning) led to a direct design conversation with the user that replaced the sprint's whole mechanism. New model: two sticky session tags (`trust`: low/med/high; `sensitivity`: public/internal/restricted), a call proceeds only if every resource it touches is either validated+explicitly-allow-ruled or the session is still clean, otherwise blocked. Full spec: `docs/ARCHITECTURE.md` §15.
 
 **What changed:**

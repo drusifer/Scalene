@@ -1,9 +1,10 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 5 fully closed 2026-07-18: sec15 rework re-reviewed (Trin UAT + Morpheus review), Oracle groomed (docs reconciled, CHAT.md archived), Smith's real end-to-end test passed, all-persona retro compiled, `*pm launch` posted. Nothing in-flight.
+Sprint 6 (E12, tech debt) stories written and handed to Smith for Gate 1.
 
 ## Waiting On
+Smith's Gate 1 verdict on STORY-1201-1203.
 Smith's Gate 1 verdict on E11 (`docs/USER_STORIES.md`).
 
 ## Planned Work
