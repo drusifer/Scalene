@@ -42,13 +42,31 @@ def _call_guard(payload: dict, state_dir: Path, policy_path: Path, cache_path: P
     return json.loads(result.stdout)
 
 
-def _onboard(target: str, cache_path: Path) -> str:
-    result = subprocess.run(
-        [str(SCG), "onboard", "--target", target, "--cache-path", str(cache_path)],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+def _onboard(
+    target: str,
+    cache_path: Path,
+    policy_path: Path,
+    mode: str,
+    sensitivity: str,
+    description: str = "",
+) -> str:
+    argv = [
+        str(SCG),
+        "onboard",
+        "--target",
+        target,
+        "--cache-path",
+        str(cache_path),
+        "--policy-path",
+        str(policy_path),
+        "--mode",
+        mode,
+        "--sensitivity",
+        sensitivity,
+    ]
+    if description:
+        argv += ["--description", description]
+    result = subprocess.run(argv, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
 
@@ -122,29 +140,25 @@ def run() -> int:
 
         print("--- Part 3: explicitly clearing a destination ---")
         print()
-        print("Step 3 — Verify it for real (an actual reputation check, not a declaration):")
-        onboard_output = _onboard("https://partner.example.com/api", cache_path)
-        print(f"    $ scg onboard --target https://partner.example.com/api")
-        print(f"    {onboard_output}")
-        print()
-        print("Step 4 — Verification alone isn't enough on its own — write a rule saying")
-        print("what to actually do with a verified destination:")
+        print("Step 3 — One command both verifies (a real reputation check) and declares")
+        print("what to do with the verified destination — scg onboard is the frontend for")
+        print("authoring a rule, not just a cache-seeding utility:")
         allow_policy_path = Path(tmp) / "scalene_policy_allow.yaml"
-        allow_policy_path.write_text(
-            "rules:\n"
-            "  - tool: \"WebFetch\"\n"
-            "    pattern: \"https://partner\\\\.example\\\\.com/api\"\n"
-            "    sensitivity: public\n"
-            "    mode: allow\n"
-            "    description: \"Reviewed and trusted partner API\"\n"
+        onboard_output = _onboard(
+            "https://partner.example.com/api",
+            cache_path,
+            allow_policy_path,
+            mode="allow",
+            sensitivity="public",
+            description="Reviewed and trusted partner API",
         )
-        print("    rules:")
-        print("      - tool: \"WebFetch\"")
-        print("        pattern: \"https://partner\\\\.example\\\\.com/api\"")
-        print("        sensitivity: public")
-        print("        mode: allow")
+        print("    $ scg onboard --target https://partner.example.com/api \\")
+        print("        --mode allow --sensitivity public \\")
+        print("        --description \"Reviewed and trusted partner API\"")
+        for line in onboard_output.splitlines():
+            print(f"    {line}")
         print()
-        print("Step 5 — Retry the exact same call:")
+        print("Step 4 — Retry the exact same call:")
         result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
@@ -166,7 +180,7 @@ def run() -> int:
 
         print("--- Part 4: the rule doesn't leak to a different destination ---")
         print()
-        print("Step 6 — Same policy file, a destination nobody reviewed:")
+        print("Step 5 — Same policy file, a destination nobody reviewed:")
         result = _call_guard(
             {
                 "hook_event_name": "PreToolUse",
@@ -187,7 +201,7 @@ def run() -> int:
 
         print("--- Part 5: a known-bad resource is always blocked, rule or not ---")
         print()
-        print("Step 7 — An IP-literal destination (Scalene's built-in reputation heuristic")
+        print("Step 6 — An IP-literal destination (Scalene's built-in reputation heuristic")
         print("flags these as untrusted — `scg onboard` correctly refuses to cache it as")
         print("trusted; this seeds the cache directly with that same real, refused result,")
         print("skipping the wait for the background scan a live session would trigger):")

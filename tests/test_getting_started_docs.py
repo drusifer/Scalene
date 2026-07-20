@@ -70,16 +70,9 @@ class TestGettingStartedDocs(unittest.TestCase):
             self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "deny")
             self.assertIn("systemMessage", second)
 
-            onboard("https://example.com", cache_path=cache_path)
-            allow_config = PolicyConfig.from_yaml(
-                Path(
-                    self._write_policy(
-                        tmp,
-                        'rules:\n  - tool: "WebFetch"\n    pattern: "https://example\\\\.com"\n'
-                        '    sensitivity: public\n    mode: allow\n    description: "test"\n',
-                    )
-                )
-            )
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            onboard("https://example.com", mode="allow", sensitivity="public", cache_path=cache_path, policy_path=policy_path)
+            allow_config = PolicyConfig.from_yaml(policy_path)
 
             third = pre_tool_use(
                 {
@@ -93,12 +86,6 @@ class TestGettingStartedDocs(unittest.TestCase):
                 cache_path=cache_path,
             )
             self.assertEqual(third["hookSpecificOutput"]["permissionDecision"], "allow")
-
-    @staticmethod
-    def _write_policy(tmp: str, text: str) -> str:
-        path = Path(tmp) / "scalene_policy.yaml"
-        path.write_text(text)
-        return str(path)
 
 
 if __name__ == "__main__":

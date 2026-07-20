@@ -1,10 +1,13 @@
 # Next Steps
 
 ## Immediate Next Action
-`*qa uat sec15` complete (2026-07-18) — the UAT debt flagged in the prior note is closed. Handed to Morpheus for architecture review.
+`*qa retest sec16 bug` complete (2026-07-20) — Neo's `--help` discoverability fix verified for real. Handed back to Smith for her re-gate.
 
 ## Waiting On
-Nothing. Next in the resumed close sequence: Morpheus review → Oracle groom → Smith end-to-end test → retro → Cypher launch.
+Smith's re-approval, then retro → Cypher launch (Sprint 7).
+
+## Resolved
+My earlier carried note (`--mode mask` rejection message unreachable from the real CLI) is now closed — Neo's epilog fix covers both my finding and Smith's, verified together.
 
 ## Planned Work (Sprint 5 close)
 - [ ] If Smith files a `*user bug`, triage per protocol (correctness → Neo, UX → Neo+Smith re-test).

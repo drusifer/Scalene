@@ -136,3 +136,21 @@ A mandatory pre-ship gate that only reviews code or runs example-shaped tests wi
 
 ### References
 - **Files:** `docs/ARCHITECTURE.md` §15 (full corrected design), `src/scalene/resource_verifier.py` (`decide_access`), `agents/smith.docs/e11_gate1_review.md`/`e11_gate2_review.md` (the gates that approved the superseded design), `agents/neo.docs/current_task.md` (full implementation change list)
+
+---
+
+## [2026-07-20] Sprint 7: A Well-Reasoned Validation Message Can Be Unreachable From the Real CLI
+
+> **Tags:** #Trin #UX #DX #Validation
+
+### Context
+`scg onboard`'s `--mode` flag rejects `mask` at two layers: `argparse`'s `choices=("allow", "block")` (generic "invalid choice" error) and `onboard()`'s own explicit check, which carries a carefully-written explanation of *why* — `mask` has no distinct effect under sec15's `decide_access`, and would silently behave like `block` while looking like it should do something else. Trin's UAT (real CLI invocation, not a direct library call) found that a real terminal user hitting `--mode mask` only ever sees argparse's generic message; the reasoned explanation is real, tested code, but structurally unreachable from the command line because the outer validation layer always fires first.
+
+### The Issue
+Layered validation (CLI-level `choices=` plus a library function's own deeper check) is a reasonable defense-in-depth pattern — the library function still protects direct/programmatic callers (tests, other code) that bypass argparse. But nobody had asked, for this specific case, *which* layer's message a real end user actually sees. The two messages weren't in tension or wrong — one was just silently unreachable in the one context (the real CLI) where a human is most likely to hit it. This wasn't caught by unit tests, since `test_onboard.py`'s own coverage calls `onboard()` directly, the same shortcut that made the gap invisible.
+
+### The Rule (The "Lesson")
+When a constraint is checked at more than one layer (CLI parsing vs. the underlying function, a form vs. its API, a decorator vs. the method it wraps), don't assume the "best" message wins — check which layer actually fires first for the audience that matters most, by running the real entry point, not just calling the function directly. If the inner layer's message carries real, non-obvious reasoning (not just "this value is invalid"), either surface a shortened version at the outer layer too, or confirm the outer layer's generic message is good enough that the inner one is genuinely just a safety net for callers who don't need the explanation.
+
+### References
+- **Files:** `src/scalene/onboard.py` (`_ONBOARD_VALID_MODES` check vs. `main()`'s `argparse` `choices=`), `agents/trin.docs/current_task.md` (`*qa uat sec16`, the real-CLI check that found this)

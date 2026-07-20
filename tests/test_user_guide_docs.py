@@ -37,13 +37,15 @@ class TestUserGuideDocs(unittest.TestCase):
         for term in ("fail safe", "Troubleshooting", "malformed", "never crashes"):
             self.assertIn(term, self.text)
 
-    def test_documents_the_two_step_clearing_workflow(self):
-        # docs/ARCHITECTURE.md sec15: clearing a destination always takes two
-        # explicit steps (a real scan via scg onboard, then a hand-authored
-        # rule) -- never a single auto-suggested command.
-        self.assertIn("scg onboard --target", self.text)
+    def test_documents_the_single_call_clearing_workflow(self):
+        # docs/ARCHITECTURE.md sec16: clearing a destination is validated and
+        # explicit, but as of the post-Sprint-6 correction it's one scg onboard
+        # call (real scan + declared rule together), not a hand-authored
+        # rule as a separate step.
+        self.assertIn("scg onboard", self.text)
+        self.assertIn("--target TARGET", self.text)
         self.assertIn("mode: allow", self.text)
-        self.assertIn("two explicit steps", self.text)
+        self.assertIn("does both halves", self.text)
 
     def test_readme_links_to_guide(self):
         self.assertIn("docs/USER_GUIDE.md", README_DOC.read_text())

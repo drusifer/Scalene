@@ -195,7 +195,19 @@ class TestScaleneMainCli(unittest.TestCase):
             target.write_text("ordinary docs")
             cache_path = tmp_path / "scan_cache.json"
 
-            exit_code = scalene_main(["onboard", "--target", f"file://{target}", "--cache-path", str(cache_path)])
+            exit_code = scalene_main(
+                [
+                    "onboard",
+                    "--target",
+                    f"file://{target}",
+                    "--mode",
+                    "allow",
+                    "--cache-path",
+                    str(cache_path),
+                    "--policy-path",
+                    str(tmp_path / "scalene_policy.yaml"),
+                ]
+            )
             self.assertEqual(exit_code, 0)
             self.assertTrue(cache_path.exists())
 

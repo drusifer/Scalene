@@ -1,9 +1,20 @@
 # Current Task
 
-**Status:** `*qa uat phase-1` (Sprint 6/E12) — PASSED. Handed to Morpheus for review.
+**Status:** `*qa retest sec16 bug` (onboard --help discoverability) — PASSED. Handed back to Smith for re-gate.
 **Assigned to:** Trin
 
-## Task Description (most recent): `*qa uat phase-1` (Sprint 6/E12)
+## Task Description (most recent): `*qa retest sec16 bug` — Neo's fix for Smith's `--help` discoverability finding
+Ran `scg onboard --help` for real against the installed binary — both new epilog lines present verbatim. Re-ran the exact naive command Smith's bug report used (`scg onboard --target https://internal-tool.example.com`, no `--sensitivity`/`--mode`) — still fails at runtime as designed (the fix is about discoverability, not making the naive form succeed), but a user who checked `--help` first now has no surprise. `make test`: 291/291 (2 new tests, both against real captured `--help` stdout via `main(["--help"])`, not just checking the epilog string exists in source). **Verdict: PASS.**
+
+## Task Description (most recent): `*qa uat sec16` — real adversarial UAT of `scg onboard` authoring a `PolicyRule` in one call
+Never got a formal gate when it shipped (direct user design session, picked up by Neo via bob-protocol). Ran real end-to-end checks against the actual installed `scg`/`scalene-guard` binaries in a scratch dir, not just unit tests:
+- Ran `docs/GETTING_STARTED.md`'s full §4 walkthrough verbatim (copy-pasted, same standing practice as Sprint 3's Phase 1 UAT) — output matched the doc byte-for-byte through onboard + retry.
+- Adversarial CLI checks: neither `--sensitivity`/`--mode` → real CLI error, matches documented message. `--mode allow` on a file with a real secret (`AKIA...`) → correctly blocked, nothing written. `--mode block` on that same file → succeeds, writes the rule, and a **fresh session's** `Read` on that file is genuinely blocked unconditionally afterward (real end-to-end confirmation of sec15's "rule matched but mode isn't allow → blocked unconditionally" row, not just read from the table).
+- Confirmed the "Known limitation" doc claim for real: hand-wrote a `# comment` line into a policy file with one existing rule, ran a second real `scg onboard --mode allow` against it — comment gone, the original rule content preserved, new rule appended. Matches what the docs promise, not overclaimed.
+- **Real, non-blocking UX finding for Smith**: `--mode mask` is rejected twice — `argparse`'s `choices=` catches it first with a generic "invalid choice: 'mask'" error; `onboard()`'s own carefully-worded rationale ("would silently behave exactly like 'block'") is real code but unreachable from the actual CLI, since argparse never lets that codepath fire for a real terminal user. Only unit tests calling `onboard()` directly ever see that message. Not a correctness bug — both layers correctly reject `mask` — but the well-reasoned explanation never reaches a human hitting this by hand.
+- `make test`: 289/289. **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-1` (Sprint 6/E12)
 Verified end-to-end, not just via the unit tests Neo already wrote:
 - STORY-1201: wrote a real `scalene_policy.yaml` with a typo'd `scanner: reputatoin` and loaded it through `PolicyConfig.from_yaml` (the real config-loading path, not the direct `PolicyRule()` constructor) — clear error naming both the bad value and the valid options.
 - STORY-1202: ran `make test-q` for real (both with `V=-vvv` and default silent mode) — confirmed it behaves like every other `mkf`-wrapped target, no special-casing.

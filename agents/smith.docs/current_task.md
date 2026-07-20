@@ -1,10 +1,31 @@
 # Current Task
 
-**Status:** `*user test sec15` — PASSED. Closes the end-to-end test that got interrupted by my own mid-gate discovery (the blanket allow-rule gap that led to the whole sec15 pivot). Handed to all for retro.
+**Status:** `*user test sec16` — **APPROVED** after 1 fix round. Handed to all for retro.
 **Assigned to:** Smith
-**Started:** 2026-07-18
+**Started:** 2026-07-20
+**Completed:** 2026-07-20
 
-## Task Description (most recent): `*user test sec15` — real end-to-end test of the shipped access-control model
+## Task Description (most recent): `*user approve sec16` — re-gate after Neo's `--help` fix
+Re-ran `scg onboard --help` myself against the real binary: both disclosures read exactly as I'd want them to — plain language, states the constraint before a user has to trigger it, and the `--mode mask` explanation is genuinely useful context, not boilerplate. The naive pre-sec16 command still fails at runtime (expected — the fix was never meant to make the old single-flag form succeed again, that's the whole point of §16), but now nothing about that failure is a surprise to anyone who checked `--help` first, which closes the Nielsen #1/#6 gap I flagged. `docs/USER_GUIDE.md`'s literal `--help` reproduction matches real output (STORY-902's own standing requirement). **Verdict: APPROVED.** This closes the gate my original §14.3 requirement put extra scrutiny on — the CLI surface did change, but the change is now fully self-documenting, which is the substance of what that requirement was protecting in the first place.
+
+## Task Description (most recent): `*user test sec16` — real end-to-end test of `scg onboard` authoring a `PolicyRule`
+This directly reverses my own §14.3 Gate 1/2 hard requirement ("`scg onboard`'s CLI surface does not change... no `--pattern`/`--sensitivity`/`--mode` flags added"), so I gave this more scrutiny than a routine phase gate, not just re-confirming Trin's/Morpheus's already-passing checks.
+- Ran `scg onboard --help` cold, read it the way a real user would before ever touching the docs. The usage line and option list never state that `--sensitivity`/`--mode` have an OR requirement (each is individually optional per argparse's own bracket notation) — nothing textually signals "you need at least one of these."
+- **Confirmed as a real, first-use-experience regression, not a hypothetical**: ran the exact naive invocation someone with the *old* single-`--target`-flag muscle memory would type — `scg onboard --target https://internal-tool.example.com` — and it fails. The runtime error message itself is good (clear, names both flags, explains why), but it only ever shows up *after* a failed attempt; nothing in `--help` prevents that first failure. Under the old §14.3 design, that same naive command always worked on the first try. This is the exact kind of thing my Gate 1/2 hard requirement existed to protect, so I'm not waving it through as non-blocking.
+- Verified the failure is cheap (no wasted network/file scan — the validation runs before `_resolve_resource`/`scan()`), so this is a discoverability/UX bug, not a correctness or performance one.
+- **Bundled in**: Trin's carried non-blocking note (`--mode mask`'s detailed rationale is unreachable from the real CLI, `argparse`'s `choices=` fires first with a generic message) — same root shape (a real constraint that only shows up as an error, never as documentation), worth having Neo fix both in one pass rather than two round trips.
+- Everything else matches the doc/architecture claims: flag names really do map 1:1 to `PolicyRule` fields (no separate vocabulary), `mode: block` on a real bad finding works and is honestly labeled, the comment-stripping known limitation is disclosed accurately in `USER_GUIDE.md`.
+
+**Filed `*user bug`, routed to Trin.** Not approving the gate until this is closed.
+
+```
+CMD: scg onboard --target <uri>   (no --sensitivity/--mode — the naive first attempt matching pre-sec16 muscle memory)
+EXPECTED: --help discloses that at least one of --sensitivity/--mode is required before the user ever runs the command, OR the command succeeds with a sensible default the way the pre-sec16 single-flag form did
+ACTUAL: --help shows both flags as independently optional (standard argparse brackets); the command fails at runtime with a good, clear message, but only after the fact — this is the first thing a returning user is likely to hit
+UX ISSUE: violates Nielsen #1 (visibility of system status) and #6 (recognition rather than recall) — a real constraint this command enforces is invisible until violated, on the exact naive form the CLI's own prior design (§14.3) trained users to expect. Bundle-fix with the related --mode mask finding: Trin found `--mode mask` is rejected by argparse's generic "invalid choice" message before onboard()'s own carefully-reasoned rejection message can ever fire for a real CLI user (`agents/trin.docs/next_steps.md`).
+```
+
+## Task Description (prior): `*user test sec15` — real end-to-end test of the shipped access-control model
 Ran the actual `GETTING_STARTED.md` walkthrough command-by-command against the real binaries — output matched the doc byte-for-byte (block reason, then onboard, then rule, then allow). Confirmed the real state file (`{"trust": "low", "sensitivity": "public"}`) and audit log entry match what the docs/monitor panel claim to show. Verified `scalene-guard --help`/`scg onboard --help` still match `USER_GUIDE.md`'s documented flags. Triggered a real fatal-machinery path (corrupted cache file) — plain-language message, exit code 2, no raw traceback, matches the Troubleshooting table exactly. **Verdict: PASS**, no new bugs found — this sprint's real bug (the blanket allow-rule gap) was already caught and fixed at its own gate, which is the system working as intended, not a miss.
 
 ## Task Description (prior): Sprint 5 (E11) Gate 2 — `*user feedback`

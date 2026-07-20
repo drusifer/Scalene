@@ -1,9 +1,23 @@
-**Status:** DONE — Sprint 6 (E12, tech debt) Phase 1, all 3 tasks. Handed to Trin for UAT.
+**Status:** DONE — sec16 `*swe fix` for Smith's `*user bug` (onboard --help discoverability). Handed to Trin for re-verification.
 **Assigned to:** Neo
-**Started:** 2026-07-18
-**Finished:** 2026-07-18
+**Started:** 2026-07-20
+**Finished:** 2026-07-20
 
-## Task Description (most recent): `*swe impl phase-1` (Sprint 6/E12)
+## Task Description (most recent): `*swe fix` — Smith's sec16 gate bug (`scg onboard --help` discoverability)
+Smith's `*user test sec16` found a real first-use regression: `--help` showed `--sensitivity`/`--mode` as independently optional (standard argparse brackets), so the naive pre-sec16 command (`--target` alone, matching old muscle memory) always failed on the first try with no way to know why beforehand. Bundled in Trin's related finding (`--mode mask` rejected by argparse's generic message before `onboard()`'s own detailed rationale could fire).
+- Added an `epilog=` to `main()`'s `ArgumentParser` (with `RawDescriptionHelpFormatter` so line breaks render) disclosing both constraints — the runtime error messages were already correct, this only makes them reachable via `--help` before a user has to trigger the error.
+- Updated `docs/USER_GUIDE.md`'s literal `scg onboard --help` reproduction to match (this doc's own convention, STORY-902, requires matching real `--help` output, not paraphrasing it).
+- Added `TestOnboardHelpDisclosesRealConstraints` (2 new tests) to `tests/test_onboard.py`, guarding both disclosures directly against `main(["--help"])`'s real captured stdout, not just the epilog string existing in source.
+- `make test`: 291/291 (289 + 2 new).
+
+## Task Description (prior): pick up uncommitted `scg onboard` rework, fix the one failing test, close the architecture-doc gap
+The user had already implemented (uncommitted, outside the formal Bloop chain) making `scg onboard` author a full `PolicyRule` in one call — see `onboard.py`'s own docstring for the full design rationale. `make test` was red on 1 failure when this session picked it up.
+- Fixed `tests/test_user_guide_docs.py::test_documents_the_two_step_clearing_workflow` (renamed to `test_documents_the_single_call_clearing_workflow`) — it asserted retired "two explicit steps" language; `docs/USER_GUIDE.md`/`docs/GETTING_STARTED.md` were already correctly updated, only this test lagged.
+- Added `docs/ARCHITECTURE.md` §16 — the uncommitted work reverses §14.3's Smith-Gate-locked "CLI surface does not change" hard requirement with no addendum recording it. Documented the reversal per this doc's established append-only-correction convention, and flagged the same review debt §15 flagged for itself (no Trin/Morpheus/Smith pass has run against this change yet).
+- `make test`: 289/289 (via the `make` skill, not raw unittest). Cross-checked call sites via `via` (`--via calls -mg '*onboard*'`) after `make via_index` — only `run_demo.py`/`onboard.py`'s own `main()` call it, both already consistent with the new signature.
+- **Not done**: the formal Trin UAT / Morpheus review / Smith gate this change needs — see §16's "Not yet reconciled" note and `next_steps.md`.
+
+## Task Description (prior): `*swe impl phase-1` (Sprint 6/E12)
 - Task 1.1: `PolicyRule.__post_init__` validates `scanner` against the real `SCANNERS` registry (empty/omitted stays unvalidated — the common case). 3 new tests.
 - Task 1.2: `make test-q` — real recipe `unittest discover -s tests -b`. **Verified empirically before finishing, not assumed**: measured 5→1 occurrences of logging/asyncio noise on a real run — genuinely quieter, not perfectly silent (one asyncio slow-callback warning survives a test class whose event loop pre-dates `-b`'s per-test redirection). Corrected my own architecture handoff message and the `make` skill's doc, which both implied full suppression — also fixed the skill's pre-existing wrong claim that `make test` runs pytest+lint+secret-scan (it's plain `unittest discover`, always was).
 - Task 1.3: new `tests/test_architecture_docs.py` — parses `docs/ARCHITECTURE.md`'s `classDiagram` block, flags any class that doesn't exist in `src/scalene/` and has no valid `<<module: file.py>>` stereotype. Proved it's not a no-op with 4 tests against synthetic snippets (a renamed class is flagged, a valid/invalid module stereotype, a real class isn't flagged) rather than only asserting the real doc currently passes.

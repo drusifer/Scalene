@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Immediate Next Action
-`*lead review sec15` complete (2026-07-18) — approved, one real duplication + 3 doc-drift issues found and fixed. Handed to Oracle for grooming.
+`*lead review sec16` complete (2026-07-20) — approved, no fix round; one non-blocking ordering observation flagged (cache write precedes rule write in `onboard()`). Handed to Oracle for grooming.
 
 ## Waiting On
 Nothing. Next in the resumed close sequence: Oracle groom → Smith end-to-end test → retro → Cypher launch.

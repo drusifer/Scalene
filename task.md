@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing. **Sprint 7 (E13, `scg onboard` sec16 correction) closed 2026-07-20** — direct user design session, post-Sprint-6, same shape as sec15: `scg onboard` re-scoped to author a full `PolicyRule` in one call instead of only pre-seeding the cache (`docs/ARCHITECTURE.md` §16, reversing §14.3's "CLI surface never changes" requirement). Re-gated after the fact (Trin UAT + Morpheus review + Smith end-to-end test against the shipped sec16 code; Smith's gate found a real `--help` discoverability gap, fixed and re-verified within the same close). 291/291 tests passing.
 
 ---
 
@@ -359,3 +359,27 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 ## Notes
 - No Tank phase — no CI/infra changes, `make test-q` is a local dev convenience target using the same `mkf` wrapper every other target already uses.
 - All 3 tasks touch different files with no shared state — genuinely parallelizable if ever split across implementers, kept as one phase here since the whole sprint is small.
+
+---
+
+# Sprint 7
+
+**Owner:** N/A (direct user design session, same shape as Sprint 5's sec15 correction — implemented outside the sprint framework, closing formally through the same after-the-fact gate chain)
+**Status:** ✅ **SPRINT CLOSED 2026-07-20** — implemented (picked up via bob-protocol), Trin UAT + Morpheus review both passed with no fix round. Smith's end-to-end test found 1 real bug (`--help` didn't disclose the `--sensitivity`/`--mode` requirement) — fixed by Neo, re-verified by Trin, re-approved by Smith, all within this close. Retro compiled, launched by Cypher. 291/291 tests passing.
+**Source:** `docs/ARCHITECTURE.md` §16 (2026-07-18 direct user design session)
+**Scope:** `scg onboard` becomes the single frontend for authoring a `PolicyRule` — one call now both runs the real scan (unchanged since §13.4) and writes a `rules:` entry to `scalene_policy.yaml` (`--tool`/`--pattern`/`--sensitivity`/`--mode`/`--scanner`/`--description`, one flag per `PolicyRule` field). This explicitly reverses §14.3's Smith-Gate-locked "CLI surface never changes" requirement — the reversal and its rationale are recorded in §16, not silently applied.
+
+## Phase 1 — `scg onboard` Rule Authoring (retroactive)
+*Chain: (implemented directly) → Trin → Morpheus*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `onboard()`/`main()` gain `--tool`/`--pattern`/`--sensitivity`/`--mode`/`--scanner`/`--description`/`--policy-path`; construct and validate a real `PolicyRule` (reusing its own `__post_init__` checks) before touching the cache; write it to `scalene_policy.yaml`'s `rules:` list without clobbering existing entries (comments excepted — documented known limitation) | §16 |
+| 1.2 | At least one of `--sensitivity`/`--mode` required; `--mode` restricted to `allow`/`block` (`mask` rejected — has no distinct effect under sec15's `decide_access`) | §16 |
+| 1.3 | Docs (`docs/USER_GUIDE.md`, `docs/GETTING_STARTED.md`) and tests (`test_onboard.py`, `test_user_guide_docs.py`, `test_getting_started_docs.py`, `test_cli.py`, `demo/run_demo.py`, `test_demo.py`) updated for the single-call workflow | §16 |
+
+**Exit criteria:** Trin UAT (real end-to-end via installed binaries: full `GETTING_STARTED.md` walkthrough, `mode: allow`/`mode: block` against a real secret finding, comment-stripping known limitation) — **PASSED**. Morpheus review (rule validation ordering, class-diagram drift, policy-path consistency) — **APPROVED**. Smith end-to-end test — pending (elevated priority: this phase reverses her own §14.3 Gate 1/2 hard requirement).
+
+## Notes
+- No Tank phase — no infra/CI change, same category as Sprint 6.
+- `docs/USER_STORIES.md` STORY-501's ACs predate this (and predate Sprint 4's original re-scope) — reconciled with a dated note, not rewritten (see USER_STORIES.md).

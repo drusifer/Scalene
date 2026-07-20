@@ -89,12 +89,14 @@ As an engineer, I want the system to automatically mask outbound payload data (n
 As an engineer, I want an interactive command to onboard a new allowlist or trust-list pattern when I hit a false-positive block, so I can unblock my own workflow without editing YAML by hand or waiting on a security team.
 
 **Acceptance Criteria**
-- [ ] Onboarding command accepts a narrow rule pattern (tool + jsonpath + pattern) and writes it to `scalene_policy.yaml` on success.
-- [ ] Allowlist onboarding runs a rapid credentials/secrets scan on the destination asset first; if secrets are found, onboarding fails with a clear reason.
-- [ ] Trust-list onboarding runs an automated reputation/threat-intel lookup on the target resource/domain first; failure blocks onboarding.
-- [ ] Successful onboarding is attributable (git-committed change) for compliance audit trail (BRD 1.2 Zero Overhead Compliance).
+- [x] Onboarding command accepts a narrow rule pattern (tool + jsonpath + pattern) and writes it to `scalene_policy.yaml` on success.
+- [x] Allowlist onboarding runs a rapid credentials/secrets scan on the destination asset first; if secrets are found, onboarding fails with a clear reason.
+- [x] Trust-list onboarding runs an automated reputation/threat-intel lookup on the target resource/domain first; failure blocks onboarding.
+- [ ] Successful onboarding is attributable (git-committed change) for compliance audit trail (BRD 1.2 Zero Overhead Compliance). Resolved differently than literally written: `scg onboard` never auto-commits on the developer's behalf (no git-write authority needed); attributability is satisfied by writing a clear, reviewable diff to `scalene_policy.yaml` for the developer to commit themselves. Left unchecked since the AC as written (git-committed) isn't literally what ships.
 
 **Tank flag:** Trust-list onboarding depends on an external reputation/threat-intel lookup service — needs a Tank review for what service/API this calls, auth/env vars required, and network egress implications.
+
+**Reconciled 2026-07-20 (Oracle, groom pass, sec16 close):** this story's premise went through 3 mechanism changes since it was written — Sprint 4/§13.4 re-scoped onboarding to cache-pre-seeding only (dropped rule-authoring entirely), then a direct user design session (`docs/ARCHITECTURE.md` §16, post-Sprint-6) restored rule-authoring in a more specific form than originally described here: CLI flags matching `PolicyRule`'s exact field names (`--tool`/`--pattern`/`--sensitivity`/`--mode`/`--scanner`/`--description`), not a single freeform "rule pattern." The first 3 ACs above are genuinely satisfied by what ships today — checked off against real, current behavior, not the original literal wording. Kept as historical record per this doc's append-only-correction convention, not rewritten.
 
 ---
 

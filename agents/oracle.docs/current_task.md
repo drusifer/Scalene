@@ -1,11 +1,18 @@
 # Current Task
 
-**Status:** `*ora groom` for Sprint 3 close complete
+**Status:** `*ora groom` (Sprint 7 / sec16 close) complete. Handed to Smith.
 **Assigned to:** Oracle
-**Started:** 2026-07-16
-**Completed:** 2026-07-16
+**Started:** 2026-07-20
+**Completed:** 2026-07-20
 
-## Task Description (most recent): Sprint 3 close groom
+## Task Description (most recent): `*ora groom` (Sprint 7 / sec16 close)
+- `CHAT.md` was at 80 messages (approaching the range past archives triggered at) — archived through Sprint 6's launch to `agents/chat_archive/CHAT-ARCHIVE-20260720.md` (extracted via `sed`, not retyped), kept the live sec16 sequence (build failure → now) plus a new summary paragraph, same convention as every prior archive.
+- Added a `# Sprint 7` section to `task.md` (retroactive single-phase entry, same treatment sec15 got in Sprint 5's table) and updated the top status line.
+- Reconciled `docs/USER_STORIES.md` STORY-501: checked off 3 of 4 ACs as genuinely satisfied by the shipped §16 design (the 4th — git-committed attributability — resolved differently than literally written, left unchecked with an explanation rather than force-checked). Added a dated Reconciled note explaining the 3-mechanism history (original design → Sprint 4 cache-only re-scope → sec16 restores rule-authoring), original text kept per this doc's append-only convention.
+- Recorded 1 durable lesson (`agents/oracle.docs/lessons.md`): layered validation (CLI `argparse.choices=` plus a library function's own deeper check) can leave a well-reasoned inner message unreachable from the real entry point — Trin's finding, generalized so it doesn't only apply to `scg onboard`.
+- `make test`: 289/289 (docs-only changes, confirmed unaffected).
+
+## Task Description (prior): Sprint 3 close groom
 CHAT.md at 47 messages — well under the archive threshold, no action needed. Checked STORY-901/902/903's ACs in `docs/USER_STORIES.md` for staleness (unlike E10's STORY-1001, none of these literally describe a mechanism that got replaced) — checked all off as genuinely satisfied, with 2 small in-place notes (STORY-902/903) pointing at where Sprint 4 kept the underlying doc/demo current rather than letting it drift. No new durable lessons this pass — this was process catch-up (a skipped UAT step run late), not a new discovery.
 
 ## Task Description (prior)

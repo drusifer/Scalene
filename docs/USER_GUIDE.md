@@ -24,16 +24,49 @@ Reads one hook JSON payload from stdin, writes one JSON response to stdout, usin
 ### `scg onboard`
 
 ```
-usage: scg onboard [-h] --target TARGET [--cache-path CACHE_PATH]
+usage: scg onboard [-h] --target TARGET [--tool TOOL] [--pattern PATTERN]
+                   [--sensitivity {public,internal,restricted}]
+                   [--mode {allow,block}] [--scanner SCANNER]
+                   [--description DESCRIPTION] [--policy-path POLICY_PATH]
+                   [--cache-path CACHE_PATH]
 
 options:
   -h, --help            show this help message and exit
   --target TARGET       file://<path> (runs a secrets scan) or
                         http(s)://<host> (runs a reputation check)
+  --tool TOOL           Regex against the tool name (default: any tool)
+  --pattern PATTERN     Regex against the resource identity (default: exact
+                        match on --target)
+  --sensitivity {public,internal,restricted}
+                        public|internal|restricted (default 'public' if --mode
+                        is given)
+  --mode {allow,block}  allow|block (default 'allow' if --sensitivity is
+                        given)
+  --scanner SCANNER     Optional disambiguating scanner name (usually
+                        inferred)
+  --description DESCRIPTION
+                        Why this rule exists (recommended)
+  --policy-path POLICY_PATH
   --cache-path CACHE_PATH
+
+At least one of --sensitivity/--mode is required -- onboarding is the moment you
+declare a trust decision, so it's never silently inferred. Whichever you omit
+defaults sensibly (mode: allow, sensitivity: public).
+
+--mode does not accept 'mask': under the live access-control decision
+(docs/ARCHITECTURE.md sec15), a rule's mode only ever distinguishes 'allow' from
+'not allow' -- mask would silently behave exactly like block.
 ```
 
-Pre-seeds the resource cache (`.scalene/scan_cache.json`) for a target you already know is fine, after running a safety check first (see [Onboarding workflow](#onboarding-workflow-the-fast-path) below — you should almost never need to type `--target` out by hand). `--target`'s URI scheme resolves which scanner runs: `file://` paths get a secrets scan, `http(s)://` hosts get a reputation check. There's nothing else to specify — no tool name, no JSONPath, no pattern — the cache is keyed by the resource itself (the file's path, or the host), not by which call touched it.
+The frontend for authoring a rule — effectively: "when a tool call matches these conditions, apply these context labels." One call does both halves: verifies `--target` for real (`file://` gets a secrets scan, `http(s)://` gets a reputation check) *and* writes a `rules:` entry to `scalene_policy.yaml` declaring what to do with it. Flag names match `PolicyRule`'s field names exactly — no separate vocabulary between the CLI and the YAML schema.
+
+`--pattern` defaults to an exact match on the resolved `--target` (narrow, safe); pass it explicitly for broader coverage. `--tool` defaults to `".*"` (any tool). **At least one of `--sensitivity`/`--mode` is required** — onboarding is the moment you declare a trust decision, so it's never silently inferred; whichever you omit defaults sensibly (`mode: allow`, `sensitivity: public`).
+
+`--mode` only accepts `allow`/`block`, not `mask` — under the live access-control decision (§15), a rule's `mode` only ever distinguishes "allow" from "not allow"; `mask` would silently behave identically to `block` while looking like it should do something different.
+
+A scan that comes back bad blocks onboarding when requesting `--mode allow` (can't claim something is safe when the scanner disagrees) — but not `--mode block`, which is the real use case for declaring a known-bad resource blocked, backed by the finding rather than despite it. The scan cache always reflects the real, honest result either way.
+
+**Known limitation:** writing the rule re-parses and re-serializes the whole policy file — any hand-added comments in an existing `scalene_policy.yaml` will not survive an onboard-triggered rewrite.
 
 ### `scg install-hooks`
 
@@ -69,22 +102,7 @@ For each resource (file path or URL) a call touches:
 
 Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session.
 
-**Clearing a destination always takes two explicit steps** — never one:
-
-1. **Verify it for real**: `scg onboard --target <uri>` runs an actual scan (secrets scan for `file://`, reputation check for `http(s)://`) and seeds the cache on success.
-2. **Write a rule** in `scalene_policy.yaml` saying what to do with a verified destination — onboarding alone only affects classification data, it never grants permission on its own.
-
-```
-usage: scg onboard [-h] --target TARGET [--cache-path CACHE_PATH]
-
-options:
-  -h, --help            show this help message and exit
-  --target TARGET       file://<path> (runs a secrets scan) or
-                        http(s)://<host> (runs a reputation check)
-  --cache-path CACHE_PATH
-```
-
-See [Getting Started](GETTING_STARTED.md) for a full worked example of both steps.
+Clearing a destination is always explicit and validated — one `scg onboard` call, covered above under [`scg onboard`](#scg-onboard), does both halves (a real scan, and declaring what to do with it) together. See [Getting Started](GETTING_STARTED.md) for a full worked example.
 
 ## Resource verification & the scan cache
 

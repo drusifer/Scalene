@@ -1,9 +1,12 @@
 # Next Steps
 
 ## Immediate Next Action
-`*user test sec15` complete (2026-07-18) — real end-to-end test against the shipped access-control model, PASS. Handed off for `*sprint retro`.
+`*user approve sec16` complete (2026-07-20) — Neo's `--help` epilog fix closes both my discoverability finding and Trin's bundled `--mode mask` finding. Handed to all for `*sprint retro` (Sprint 7).
 
 ## Waiting On
+Nothing blocking. My retro input: this sprint is the second time in a row (after sec15) that a direct-user-design correction shipped ahead of formal review, and the second time in a row the after-the-fact gate chain caught something real (sec15: a structural safety gap; sec16: a first-use discoverability regression against my own prior hard requirement). Worth naming as validation that "implement fast with the user, gate formally after" is a workable pattern here — but only because the gate chain is actually run every time, not skipped because the code already works.
+
+## Retro input carried from sec15 (for whenever `*sprint retro` happens next)
 Nothing blocking. My own retro input (for `*sprint retro`): the central lesson of this sprint is that my mandatory Phase 3 gate — specifically the instruction to *run the software adversarially*, not just review it — is what caught a defect that fully passed code review and every unit test written against its own acceptance criteria. Worth naming as validation that the gate's "actually run it" requirement isn't ceremony.
 
 ## My retro input (for `*sprint retro`)

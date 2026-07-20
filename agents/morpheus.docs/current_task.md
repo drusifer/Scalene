@@ -1,11 +1,22 @@
 # Current Task
 
-**Status:** `*lead review sec15` — **APPROVED (after 1 real cleanup).** Handed to Oracle for grooming.
+**Status:** `*lead review sec16` — **APPROVED, no fix round.** Handed to Oracle for grooming.
 **Assigned to:** N/A (Oracle next)
-**Started:** 2026-07-18
-**Completed:** 2026-07-18
+**Started:** 2026-07-20
+**Completed:** 2026-07-20
 
-## Task Description (most recent): `*lead review sec15` — architecture review of the rule-driven access control rework
+## Task Description (most recent): `*lead review sec16` — architecture review of `scg onboard` authoring a `PolicyRule` in one call
+Read `onboard.py` in full against §16 (which Neo added when picking this up via bob-protocol — I confirmed it accurately describes the shipped code, not just aspirationally). Checked:
+- Ordering is correct and safe: `mode` validity is checked before the scan runs (no wasted scan on an invalid request); the `PolicyRule` itself is constructed and validated (regex/sensitivity/mode/scanner membership, reusing `PolicyRule.__post_init__` — no duplicated validation logic) *before* the cache is touched, so an invalid rule request never pollutes the scan cache.
+- Confirmed §4's class diagram needs no changes — `onboard()`/`_write_rule()` are CLI-entrypoint functions, not classes, same treatment as the pre-existing (untouched) `PolicyRule`/`ScanCache` boxes; §13.4's original re-scope never added diagram nodes for onboard.py either, consistent precedent.
+- Confirmed `DEFAULT_POLICY_PATH`/`--policy-path` in `onboard.py` matches `cli.py`'s own default (`Path("scalene_policy.yaml")`, cwd-relative) — no drift between the two consumers of the same file.
+- Ran `tests/test_architecture_docs.py` directly after Neo's new §16 heading landed — still 6/6, the doc-drift guard tolerates a new section correctly.
+- **One real, non-blocking observation**: `onboard()` writes the scan-cache entry (`ScanCache.put`) *before* writing the policy rule (`_write_rule`) — if the rule-write step fails (e.g. a permissions error on `scalene_policy.yaml`) after the cache write already succeeded, the user sees "Onboarding blocked: could not write..." even though the real scan genuinely happened and is durably cached. Harmless under sec15's `decide_access` (a cache entry with no matching rule is inert — matching requires both), but the error framing slightly undersells that the scan itself succeeded. Not worth a fix round for this low-probability ordering nit; flagging for whoever next touches `onboard()`.
+- `make test`: 289/289 (unaffected, confirmed).
+
+**APPROVED.**
+
+## Task Description (prior): `*lead review sec15` — architecture review of the rule-driven access control rework
 This never got a formal review when it shipped (direct engineering with the user, mid-conversation). Found and fixed one real issue: `_resolve_rule_for_resource()` (feeds the dormant `evaluate()`/`MaskingEngine` path) and `_find_matching_rule()` (feeds the live `decide_access()` path) had **identical** rule-matching logic (scanner/tool/pattern checks) duplicated verbatim — consolidated so `_resolve_rule_for_resource` now calls `_find_matching_rule` and derives its return from the result. Behavior-preserving (`make test` 266/266 unchanged before/after).
 
 Also found and fixed real documentation drift in §4's class diagram, not caught by any test since diagrams aren't executable: `TaintState`'s fields still showed `has_sensitive_data`/`has_untrusted_data` (removed in this same rework), `MaskingEngine.decide()`'s signature still showed the old `(taint, match, value, mode)` args (it's `(match, value)` now, `taint` was dropped in Phase 3), and `MaskingEngine --> TaintState` was a stale relation. Fixed all three, added `AccessDecision`/updated `ResourceVerifier`'s relations. Replaced §5's sequence diagram (which only showed the old masking flow) with the real `decide_access()` flow, keeping the old one as marked historical record rather than deleting it — same convention as every other correction in this document.

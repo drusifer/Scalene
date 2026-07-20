@@ -35,7 +35,8 @@ class TestDemo(unittest.TestCase):
     def test_demo_shows_onboard_and_rule_clearing_a_destination(self):
         result = subprocess.run([sys.executable, str(DEMO_SCRIPT)], capture_output=True, text=True, timeout=30)
         self.assertIn("scg onboard --target", result.stdout)
-        self.assertIn("mode: allow", result.stdout)
+        self.assertIn("Rule written to", result.stdout)
+        self.assertIn("mode='allow'", result.stdout)
         self.assertIn("Allowed. Validated (real scan passed)", result.stdout)
 
     def test_demo_shows_rule_does_not_leak_to_other_destinations(self):

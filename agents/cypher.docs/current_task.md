@@ -1,8 +1,25 @@
 # Current Task
 
-**Status:** DRAFTED — E11 stories written, handed to Smith for Gate 1. Awaiting Smith's review.
+**Status:** Sprint 7 (E13, sec16 correction) closed. `*pm launch` posted.
 **Assigned to:** Cypher
-**Started:** 2026-07-17
+**Started:** 2026-07-20
+
+## Task Description (most recent): Sprint 7 (E13/sec16) close — retro compile, `*pm launch`
+Compiled retro backlog from all 6 persona inputs. Central theme: this is the 2nd sprint in a row (after sec15) where real engineering shipped directly with the user ahead of formal review — and the 2nd time in a row the after-the-fact gate chain caught something genuinely real rather than rubber-stamping already-working code (sec15: a structural safety gap; sec16: a first-use CLI discoverability regression against Smith's own prior hard requirement). Updated `docs/PRD.md` (new E13 epic row, Sprint 7 goals 22-23) and `task.md` (Sprint 7 section + top status line marked closed).
+
+## Retro Backlog (Sprint 7)
+1. **"Implement fast with the user, gate formally after" is validated as a working pattern here — but only because the gate chain actually runs every time** (Smith, Neo) — 2 sprints running now where this shape produced real findings, not theater. Worth naming explicitly rather than treating it as an exception each time it happens.
+2. **"Run the real `--help`/CLI output cold, like a first-time user" is a distinct UAT/gate technique from "CLI output matches the docs"** (Trin, Smith) — worth naming alongside the existing mutate-verify-revert and real-binary techniques already recorded from Sprint 6.
+3. **Stories can drift through multiple undocumented mechanism changes before anyone walks them back to source** (Oracle) — STORY-501 went through 3 changes across Sprints 1/4/7 before this groom reconciled it. Recommend a periodic full-story-sweep against current `ARCHITECTURE.md`, not only triggered by the sprint that happens to touch a given story.
+4. **Small, single-surface corrections correctly skip Mouse's phase-planning role** (Mouse) — confirms the pattern from sec15/Sprint 6, not a new finding, but worth reconfirming since Mouse sitting out 2 sprints in a row could otherwise look like an oversight rather than a deliberate scope fit.
+5. **A "hard requirement, carried forward" tag on an architecture decision reads as more permanent than intended** (Morpheus) — §14.3 was written as Smith-Gate-locked; reversing it needed a full new numbered section to feel legitimate. Worth a lighter tag for decisions genuinely expected to be revisited.
+
+## Progress
+- [x] Read all 6 persona retro posts in `agents/CHAT.md`.
+- [x] Compiled backlog above, no items invented — every line traces to a specific persona's post.
+- [x] `docs/PRD.md`: added E13 epic row, Sprint 7 Goals section (22-23), updated the Sprint-to-epic mapping line.
+- [x] `task.md`: Sprint 7 section marked closed, top status line updated, test count corrected to 291/291.
+- [x] `*pm launch` posted to CHAT.md.
 
 ## Task Description (next, unstarted): write E11 stories from Morpheus's §13.8 design
 A direct user design conversation (2026-07-16/17, after Sprint 4's close) found a real defect in shipped E10 code and worked through a full replacement design with Morpheus. **Read `docs/ARCHITECTURE.md` §13.1's revision note and §13.8 in full before starting** — the design is already written, this task is to formalize it as proper user stories so it goes through Smith's Gate 1 like every other sprint, not to invent it from scratch.
