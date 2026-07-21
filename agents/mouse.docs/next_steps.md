@@ -1,16 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 8 (E14) 3-phase breakdown written to `task.md`, handed to Morpheus for plan review.
+Sprint 8 (E14) formally closed 2026-07-21 (all 3 phases implemented+gated, retro compiled, launched by Cypher). Nothing in-flight for Mouse.
 
 ## Waiting On
-Morpheus's `*lead review sprint plan` verdict.
+Nothing. **User direction (2026-07-21): the next sprint will do more scanner work.** When Cypher plans it, I phase-break it the same way as every prior sprint — verify story scope against current code first, don't assume the Sprint 8 chain shape (identify → confirm/scan → reconcile) automatically repeats.
 
 ## Planned Work
-- [ ] Track the single required Smith gate this sprint (Phase 2 only — Phase 1 is internal, Phase 3 is doc/demo reconciliation with Trin re-verification instead of a full gate).
-- [ ] Watch Phase 2 closely at UAT — Trin needs to run the real interactive CLI (confirmation prompt, `--yes`, `--only` including a deliberately-wrong identity, the no-TTY fail-fast case, and the mixed-sensitivity `--only`-twice case Smith flagged at Gate 2), not just unit-test the library functions.
-- [ ] Watch Phase 3 at UAT: Trin re-runs `docs/GETTING_STARTED.md`'s onboarding section verbatim against the real installed binary — must match byte-for-byte, same standing practice as every prior doc-touching phase.
-- [ ] Prior Sprint 5 stale-phase-description issue (superseded mid-gate by sec15) is a closed, historical item now — Sprint 5 was formally closed 2026-07-18. No longer a carry-forward.
+- [x] Sprint 8's single required Smith gate (Phase 2) passed — confirmed via a real pty-driven interactive session, 1 fix round (Morpheus's axis-validation-ordering finding).
+- [x] Phase 3 UAT (Trin's verbatim `GETTING_STARTED.md` recheck) passed, byte-for-byte.
+- [ ] Earmarked for the next (scanner) sprint's planning, per Cypher's `next_steps.md`: STORY-1405/1406, Smith's CLI UX findings (`agents/smith.docs/e14_cli_ux_review.md`), and `docs/ARCHITECTURE.md` §5's stale diagram.
 
 ---
-*Last updated: 2026-07-20*
+*Last updated: 2026-07-21*
