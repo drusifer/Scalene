@@ -1,13 +1,10 @@
 # Next Steps
 
 ## Immediate Next Action
-`*qa retest sec16 bug` complete (2026-07-20) — Neo's `--help` discoverability fix verified for real. Handed back to Smith for her re-gate.
+Sprint 8 (E14) implementation complete (2026-07-21) — all 3 phases done, `make test` 331/331. Handed to Oracle for the Stage 3 groom pass.
 
 ## Waiting On
-Smith's re-approval, then retro → Cypher launch (Sprint 7).
-
-## Resolved
-My earlier carried note (`--mode mask` rejection message unreachable from the real CLI) is now closed — Neo's epilog fix covers both my finding and Smith's, verified together.
+Nothing. Next in the close sequence: Oracle groom → Smith end-to-end sprint test → all-persona retro → Cypher launch.
 
 ## Planned Work (Sprint 5 close)
 - [ ] If Smith files a `*user bug`, triage per protocol (correctness → Neo, UX → Neo+Smith re-test).

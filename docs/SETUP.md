@@ -48,13 +48,17 @@ Create `scalene_policy.yaml` at your project root (see `docs/ARCHITECTURE.md` §
 
 ## Onboarding a false positive
 
-```bash
-scg onboard --target file://path/to/file.md
+`scg onboard` identifies targets from a real tool call (the same shape `scalene-guard` reads on stdin), not a hand-typed URI:
 
-scg onboard --target https://internal.example.com
+```bash
+echo '{"tool_name": "Read", "tool_input": {"file_path": "path/to/file.md"}}' \
+  | scg onboard --yes --mode allow
+
+echo '{"tool_name": "WebFetch", "tool_input": {"url": "https://internal.example.com"}}' \
+  | scg onboard --yes --mode allow
 ```
 
-`--target`'s scheme decides what gets checked: a `file://` target runs a secrets scan on that path before writing (seeds the cache as "public" on success); an `http(s)://` target runs a reputation check on that host (seeds the cache as "trusted" on success). Both run in an isolated subprocess before writing anything, directly into `.scalene/scan_cache.json` — the same cache the live hook consults. On success it prints the resolved label. On failure, nothing is written — you get a clear reason instead.
+Every registered scanner's `identify()` runs against the call; a `file_path`-shaped value gets a secrets scan, a URL gets a reputation check. `--yes` accepts every identified target without an interactive confirmation prompt (drop it for a real terminal session and you'll see a numbered list + `[Y/n/s(elect)]` prompt first). Each scan runs in an isolated subprocess before anything is written — on success, both the resource cache (`.scalene/scan_cache.json`) and a `rules:` entry in `scalene_policy.yaml` are written; on failure, nothing is written and you get a clear per-target reason instead. Full reference: [docs/USER_GUIDE.md](USER_GUIDE.md#scg-onboard).
 
 ## State and audit files
 

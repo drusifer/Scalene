@@ -104,8 +104,10 @@ classDiagram
         +str scanner_name
     }
     class ScanResult {
+        <<sec17, 2026-07-20: reputation added, additive>>
         +str label
         +str reason
+        +float reputation
     }
     class ScannerMachineryError {
         <<exception>>
@@ -667,3 +669,74 @@ Direct user design session, same category as §15 (identified outside the sprint
 `--mode` accepts only `allow`/`block`, not `mask` — under §15's decision, `decide_access()` (what an onboard-authored rule feeds) never distinguishes `mask` from `block`, so exposing it here would produce a rule that silently behaves like `block` while reading like it should do something else. A scan finding that comes back bad blocks onboarding when `--mode allow` is requested (unchanged: can't declare something safe when the scanner disagrees), but not `--mode block` — a known-bad resource, blocked and backed by the finding, is a real, intended use case, not an error path.
 
 **Not yet reconciled:** this section documents the corrected `scg onboard` surface; a real Trin UAT / Morpheus review / Smith gate pass against it (closing out §14.3's now-superseded hard requirement formally, the same way §15 flagged its own review debt) has not run. `docs/USER_STORIES.md`'s STORY-501/STORY-1101-1105 descriptions have not been updated to match.
+
+**Resolved 2026-07-20 — see §17.** §16 is superseded for the *target-identification* half (`--target` is retired), not for rule-authoring (`--sensitivity`/`--mode`/`--scanner`/`--description` survive unchanged, applied per-target). §16's UAT/review/Smith-gate debt above was formally closed in Sprint 7 before §17 was designed — see `task.md`'s Sprint 7 entry.
+
+## 17. E14 Architecture — Tool-Call-Driven Onboarding via the Scanner Framework
+
+Direct user request (2026-07-20, post-Sprint-7): `--target` — a manually-typed `file://`/`https://` URI, unchanged in shape since §13.4 even through §16's rework — is retired in favor of reusing the scanner framework's own `identify()` logic (§13.2, unchanged), the same mechanism `pre_tool_use`/`decide_access()` already run live on every hook call. Formalized here per `docs/USER_STORIES.md` E14 (STORY-1401-1405) and Smith's Gate 1 review (`agents/smith.docs/e14_gate1_review.md`), resolving the open questions Cypher carried forward.
+
+### 17.1 New invocation contract: a tool call, not a URI
+
+`scg onboard` reads a tool-call payload — `{"tool_name": "...", "tool_input": {...}}` — from **stdin** by default, or from a file via `--call PATH`. This deliberately reuses the exact field names `scalene-guard`'s own hook contract already uses (`docs/USER_GUIDE.md`'s `scalene-guard` section) — a developer who already understands "one JSON payload in, one decision out" from that doc needs no second mental model here (Smith's Gate 1 #2/#4 framing). It is not the full hook envelope (no `hook_event_name`/`session_id` needed — onboarding isn't a live hook call) — just the two fields every `Scanner.identify()` call actually consumes.
+
+Resolves OQ2 (Cypher): this *is* the contract. `--call PATH` exists specifically so the common ad-hoc case doesn't require constructing a shell pipe by hand — `scg onboard --call /tmp/call.json` reads the same shape from a file.
+
+### 17.2 Target identification: traverse the registry, don't hand-roll resolution
+
+```python
+identified: list[Resource] = []
+for scanner in SCANNERS.values():
+    identified.extend(scanner.identify(tool_name, tool_input))
+```
+
+This is `onboard.py`'s entire target-discovery step (STORY-1401) — `_resolve_resource()`'s hand-rolled URI-scheme dispatch (§13.4, unchanged since Sprint 4) is deleted, not kept alongside the new path. `Resource`s are deduplicated by `(kind, identity)` before confirmation (STORY-1402) — the same generic-fallback-plus-known-field detection that can flag one string via two paths (e.g. a `Bash` command's known field and its generic-fallback scan) must not surface the same target twice in the confirmation list.
+
+### 17.3 Confirmation: interactive by default, two explicit non-interactive escapes
+
+Resolves OQ3 and Smith's Gate 1 hard requirement.
+
+- **Interactive (TTY, default):** every identified `Resource` is printed as a numbered list (kind, identity, claiming scanner). Prompt: `Onboard all N targets? [Y/n/s(elect)]`. `Y`/Enter proceeds with all; `n` aborts as a clean no-op (no scan, no write — STORY-1402 AC3); `s` accepts a comma-separated exclude list before proceeding.
+- **Non-interactive escape 1 — `--yes`/`-y`:** skips the prompt, proceeds with every identified target. For automation that trusts its own input shape.
+- **Non-interactive escape 2 — `--only IDENTITY[,IDENTITY...]`:** skips the prompt, proceeds only with the named identities (exact match against `Resource.identity`). For automation that wants to assert *which* targets it expects, not just "however many there are" — fails loudly (`OnboardError`) if a named identity wasn't actually identified, so a stale/wrong expectation doesn't silently onboard the wrong resource.
+- **Fail-fast, not hang:** if stdin is not a TTY (piped/redirected — the shape every test in this repo uses) and neither `--yes` nor `--only` is given, `main()` raises a clear `OnboardError` ("no TTY for interactive confirmation — pass --yes or --only") instead of blocking on a read that will never resolve. This is what makes the test suite's existing non-interactive call pattern (`tests/test_onboard.py` calling `onboard()` directly, never through `main()`'s prompt) safe by construction, and gives a real, scriptable path through `main()` itself for `demo/run_demo.py` and any future CI use.
+
+### 17.4 Per-target scanning and rule-authoring (STORY-1403)
+
+Unchanged mechanism from §16 per confirmed target: `scan()` runs, a clean result (or an explicit `--mode block` request) writes a `PolicyRule` via `_write_rule()`. **Batch semantics, not all-or-nothing** (Smith's Gate 1 note): each confirmed target is scanned and decided independently; one target failing (`--mode allow` requested, scan came back bad) does not abort the others. `main()` reports a clear per-target result line and a summary (`N onboarded, M blocked`), non-zero exit only if every target failed.
+
+`--sensitivity`/`--mode`/`--scanner`/`--description` (§16) survive as **batch-level flags** — applied identically to every target onboarded in this invocation, since confirming a tool call is confirming one coherent trust decision about it. **`--tool`/`--pattern` are dropped** — they don't compose across N auto-identified targets each with their own natural identity, and hand-authoring a custom pattern/tool filter is still available directly via `scalene_policy.yaml` (§16's power-user path, unchanged) for anyone who needs it. `--pattern` for each written rule defaults to an exact match on that target's own resolved identity (unchanged default from §16), `--tool` defaults to `.*`.
+
+### 17.5 Inventory (STORY-1404): a view, not a new store
+
+Resolves OQ4. **No new on-disk store.** `ScanCache` (§13.3, unchanged) already durably records every scanned resource, keyed `scanner_name:identity`, with label/reason/scanned_at/mtime — this already *is* the per-scanner record of what's been checked. Adding a 3rd store duplicating this would risk exactly the kind of drift Morpheus has flagged against elsewhere in this document (§16's own review). `scg onboard --list [--scanner NAME]` is a new, read-only mode: groups `ScanCache.all_entries()` by `scanner_name`, printing identity/label/last-scanned per entry — mutually exclusive with the onboarding flow (providing `--list` never reads a tool call from stdin). Satisfies Smith's Gate 1 ask for a concrete visible surface without inventing new state.
+
+### 17.6 Reputation score (STORY-1405): real signal, not manufactured precision
+
+Resolves OQ5. `ScanResult` gains one new field:
+
+```python
+@dataclass(frozen=True)
+class ScanResult:
+    label: str               # unchanged: "public" | "sensitive" | "trusted" | "untrusted"
+    reason: str = ""          # unchanged
+    reputation: float | None = None   # NEW — 0.0 (worst) .. 1.0 (best), None where no graded signal exists
+```
+
+Additive, not a breaking change to `label`/`reason` — every existing `decide_access()`/`onboard()` code path that reads `.label` is untouched. STORY-1405's "sensitivity classification" turns out to already be solved: `PolicyRule.sensitivity` (public/internal/restricted, chosen by the developer at onboarding per §16) is the sensitivity axis this project already has — the genuinely new piece is only the reputation score.
+
+**`reputation.py`'s `LocalHeuristicChecker.check()` changes from first-match-wins to evaluate-all-three:** today it returns on the *first* heuristic that trips (IP-literal, punycode, suspicious-length label), discarding whether the others would have too. To produce a real graded score instead of a relabeled boolean, `check()` now runs all 3 unconditionally, collects every triggered reason (joined, not just the first), and `reputation = 1.0 - (triggered_count / 3)`. `is_trusted` (hence `label`) is unchanged in meaning — still `False` if *any* heuristic trips (this project's existing ANY-match-is-unsafe convention, §13.1.1) — only the score is new granularity layered on top, computed from the same real evaluation, not fabricated.
+
+**`FileScanner`'s secrets scan keeps `reputation: None`.** `detect-secrets`' finding set isn't drawn from a small fixed heuristic list the way `reputation.py`'s 3 checks are — inventing a fractional score from an open-ended findings list would be precision the underlying scan doesn't actually support. `None` is honest; a future scanner (or a future revision of `secrets_scan.py`) can populate it once there's a real basis to. `onboard()`'s printed confirmation (`Verified: ...`) includes the reputation score when present (`Verified: reputation:https://x.com -> trusted (score 1.00)`), satisfying Smith's Gate 1 ask that it not be display-invisible.
+
+### 17.7 STORY-1406 — explicitly deferred, not designed here
+
+Scanning a tool call's *response* (as opposed to its pre-call arguments) is not scoped into this architecture. It would directly revisit §15's stated rationale that `post_tool_use` is a no-op because every resource is knowable from `tool_input` before the call runs. Reversing that is a decision on the same order as §15 itself and deserves its own design pass — including its own Cypher story, Smith Gate 1, and architecture section — not a rider on E14. `hook_adapter.post_tool_use` is untouched by this section.
+
+### 17.8 Class diagram / breaking-change surface
+
+`ScanResult` gains `reputation` (§4's class diagram, updated in the same pass as this section — see below). `_resolve_resource()` is deleted from `onboard.py`, not deprecated-in-place. Real call sites needing updates (confirmed via `grep`, not assumed — Smith's Gate 1 flag): `demo/run_demo.py`, `tests/test_demo.py`, `docs/GETTING_STARTED.md`, `docs/SETUP.md`, and `onboard()`'s own direct callers in `tests/test_onboard.py`/`tests/test_getting_started_docs.py` (these call the library function directly, not `main()`, so they're unaffected by the CLI-flag changes but must still pass `tool_name`/`tool_input` instead of `target`).
+
+### 17.9 Not yet decided / explicitly deferred
+
+Whether `--only`'s identity-matching should support globs/regex instead of exact strings (kept exact for v1 — simplest thing that satisfies "assert exactly what I expect," extend only if a real scripting need shows up). Whether `scg monitor`'s TUI should also surface the `--list` inventory view as a 4th panel, or whether the CLI's own `--list` output is sufficient for now — left to whoever implements Phase 1/2, not pre-decided. Exact wording of `main()`'s per-target success/failure summary lines — implementation detail, not an architecture decision.

@@ -24,7 +24,7 @@ Reads one hook JSON payload from stdin, writes one JSON response to stdout, usin
 ### `scg onboard`
 
 ```
-usage: scg onboard [-h] --target TARGET [--tool TOOL] [--pattern PATTERN]
+usage: scg onboard [-h] [--call CALL] [--yes] [--only ONLY] [--list]
                    [--sensitivity {public,internal,restricted}]
                    [--mode {allow,block}] [--scanner SCANNER]
                    [--description DESCRIPTION] [--policy-path POLICY_PATH]
@@ -32,22 +32,30 @@ usage: scg onboard [-h] --target TARGET [--tool TOOL] [--pattern PATTERN]
 
 options:
   -h, --help            show this help message and exit
-  --target TARGET       file://<path> (runs a secrets scan) or
-                        http(s)://<host> (runs a reputation check)
-  --tool TOOL           Regex against the tool name (default: any tool)
-  --pattern PATTERN     Regex against the resource identity (default: exact
-                        match on --target)
+  --call CALL           Path to a JSON {tool_name, tool_input} file (default:
+                        read from stdin)
+  --yes, -y             Onboard every identified target without an interactive
+                        prompt
+  --only ONLY           Comma-separated identities to onboard, skipping the
+                        prompt (fails if a named identity wasn't identified)
+  --list                List onboarded targets from the scan cache (optionally
+                        filtered by --scanner) instead of onboarding
   --sensitivity {public,internal,restricted}
                         public|internal|restricted (default 'public' if --mode
                         is given)
   --mode {allow,block}  allow|block (default 'allow' if --sensitivity is
                         given)
   --scanner SCANNER     Optional disambiguating scanner name (usually
-                        inferred)
+                        inferred); also filters --list
   --description DESCRIPTION
                         Why this rule exists (recommended)
   --policy-path POLICY_PATH
   --cache-path CACHE_PATH
+
+Reads a tool call ({"tool_name": ..., "tool_input": ...}) from stdin by default,
+or --call PATH -- the same field names scalene-guard's own hook contract already
+uses. Every scanner's identify() runs against it; identified targets are confirmed
+(interactively, or via --yes/--only) before anything is scanned or written.
 
 At least one of --sensitivity/--mode is required -- onboarding is the moment you
 declare a trust decision, so it's never silently inferred. Whichever you omit
@@ -58,15 +66,17 @@ defaults sensibly (mode: allow, sensitivity: public).
 'not allow' -- mask would silently behave exactly like block.
 ```
 
-The frontend for authoring a rule — effectively: "when a tool call matches these conditions, apply these context labels." One call does both halves: verifies `--target` for real (`file://` gets a secrets scan, `http(s)://` gets a reputation check) *and* writes a `rules:` entry to `scalene_policy.yaml` declaring what to do with it. Flag names match `PolicyRule`'s field names exactly — no separate vocabulary between the CLI and the YAML schema.
+`scg onboard` identifies targets automatically from a real tool call by traversing the same scanner registry `pre_tool_use` already runs live — you no longer resolve or type a `file://`/`https://` URI by hand. Give it a tool call (piped as JSON on stdin, or `--call PATH`), and it runs every registered scanner's `identify()` against it, collecting every distinct resource found across all scanner types in one pass.
 
-`--pattern` defaults to an exact match on the resolved `--target` (narrow, safe); pass it explicitly for broader coverage. `--tool` defaults to `".*"` (any tool). **At least one of `--sensitivity`/`--mode` is required** — onboarding is the moment you declare a trust decision, so it's never silently inferred; whichever you omit defaults sensibly (`mode: allow`, `sensitivity: public`).
+**Confirmation always happens before anything is scanned or written.** With a real terminal attached, you get a numbered list of what was identified and a `[Y/n/s(elect)]` prompt (`Y` accepts everything, `n` aborts as a clean no-op, `s` lets you exclude specific numbered entries). For scripts and automation, two non-interactive escapes exist: `--yes` accepts every identified target, `--only <identity,...>` accepts exactly a named subset (and fails loudly, naming what's missing, if an identity you named wasn't actually identified). If neither is given and there's no real terminal to prompt, `scg onboard` fails immediately with a clear error rather than hanging.
 
-`--mode` only accepts `allow`/`block`, not `mask` — under the live access-control decision (§15), a rule's `mode` only ever distinguishes "allow" from "not allow"; `mask` would silently behave identically to `block` while looking like it should do something different.
+Once targets are confirmed, each one is scanned for real and, on a clean result (or an explicit `--mode block`), a `rules:` entry is written to `scalene_policy.yaml` — the frontend for authoring a rule, effectively: "when a tool call matches these conditions, apply these context labels." Flag names match `PolicyRule`'s field names exactly — no separate vocabulary between the CLI and the YAML schema. `--sensitivity`/`--mode`/`--scanner`/`--description` apply once, to every confirmed target in the batch, since confirming a tool call is confirming one coherent trust decision about it; each written rule's `pattern` defaults to an exact match on that target's own identity, `tool` to `".*"` (there's no `--tool`/`--pattern` override in this flow — hand-author a `rules:` entry directly in `scalene_policy.yaml` if you need a broader pattern or tool filter than a specific confirmed target).
 
-A scan that comes back bad blocks onboarding when requesting `--mode allow` (can't claim something is safe when the scanner disagrees) — but not `--mode block`, which is the real use case for declaring a known-bad resource blocked, backed by the finding rather than despite it. The scan cache always reflects the real, honest result either way.
+**Batch semantics, not all-or-nothing**: one target failing (e.g. `--mode allow` requested but the scan found something) doesn't abort the others — you get a clear per-target result line and a final `N onboarded, M blocked` summary. A scan that comes back bad blocks that target when requesting `--mode allow` (can't claim something is safe when the scanner disagrees) — but not `--mode block`, the real use case for declaring a known-bad resource blocked, backed by the finding rather than despite it. When a scanner reports a graded reputation score (currently `reputation`'s 3 local heuristics), it's shown alongside the label (`-> trusted (score 1.00)`).
 
-**Known limitation:** writing the rule re-parses and re-serializes the whole policy file — any hand-added comments in an existing `scalene_policy.yaml` will not survive an onboard-triggered rewrite.
+**`scg onboard --list [--scanner NAME]`** shows what's already been onboarded — a read-only view grouped by scanner, reading `.scalene/scan_cache.json` directly rather than a second store that could drift from it.
+
+**Known limitation:** writing a rule re-parses and re-serializes the whole policy file — any hand-added comments in an existing `scalene_policy.yaml` will not survive an onboard-triggered rewrite.
 
 ### `scg install-hooks`
 

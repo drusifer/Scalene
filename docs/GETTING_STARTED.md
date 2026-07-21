@@ -61,18 +61,20 @@ cat .scalene/audit.log
 
 ## 4. Explicitly clear a destination you trust
 
-Trust decisions in Scalene are always explicit and validated — never automatic. `scg onboard` is the frontend for this: one command both verifies a destination for real (an actual reputation check, not just a declaration) *and* declares what to do with it. Effectively: "when a tool call matches this, apply these labels."
+Trust decisions in Scalene are always explicit and validated — never automatic. `scg onboard` is the frontend for this: it identifies targets from a real tool call (the same shape `scalene-guard` reads on stdin, via the same scanner registry `pre_tool_use` already runs live), confirms them, then verifies each for real (an actual reputation check, not just a declaration) *and* declares what to do with it. Effectively: "when a tool call matches this, apply these labels."
 
 ```bash
-scg onboard --target https://example.com --mode allow --sensitivity public --description "Reviewed and trusted example.com endpoint"
+echo '{"tool_name": "WebFetch", "tool_input": {"url": "https://example.com", "prompt": "summarize this"}}' \
+  | scg onboard --yes --mode allow --sensitivity public --description "Reviewed and trusted example.com endpoint"
 ```
 
 ```
-Verified: reputation:https://example.com -> trusted
+Verified: reputation:https://example.com -> trusted (score 1.00)
 Rule written to scalene_policy.yaml: tool='.*' pattern='https://example\\.com' sensitivity='public' mode='allow'
+1 onboarded, 0 blocked
 ```
 
-That writes a real `rules:` entry, matching the same field names you just used on the command line:
+`--yes` accepts the identified target without an interactive prompt — drop it in a real terminal session and you'll see a numbered target list and a `[Y/n/s(elect)]` confirmation first. That writes a real `rules:` entry, matching the same field names you just used on the command line:
 
 ```yaml
 rules:
@@ -83,7 +85,7 @@ rules:
   description: Reviewed and trusted example.com endpoint
 ```
 
-`--pattern` defaults to an exact match on `--target` (as above) — pass `--pattern`/`--tool` explicitly for broader coverage (e.g. every path under a host). At least one of `--mode`/`--sensitivity` is required; whichever you omit defaults sensibly (`mode: allow`, `sensitivity: public`) — onboarding is the moment you declare a trust decision, so it's never silently inferred for you.
+Each written rule's `pattern` defaults to an exact match on the target's own resolved identity — there's no `--pattern`/`--tool` override in this flow (hand-author a `rules:` entry directly for broader coverage, e.g. every path under a host). At least one of `--mode`/`--sensitivity` is required; whichever you omit defaults sensibly (`mode: allow`, `sensitivity: public`) — onboarding is the moment you declare a trust decision, so it's never silently inferred for you.
 
 Retry the exact same call from step 3:
 
@@ -96,7 +98,7 @@ echo '{"hook_event_name":"PreToolUse","session_id":"demo","tool_name":"WebFetch"
 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}}
 ```
 
-That's the whole loop: an unrecognized destination is blocked once a session has touched anything unverified, and one `scg onboard` call — a real scan plus a declared rule together — is what clears it. Neither half works alone: a scan with no rule doesn't grant permission, and (per the CLI's own validation) you can't write a rule without stating what to do with it.
+That's the whole loop: an unrecognized destination is blocked once a session has touched anything unverified, and one `scg onboard` call — targets identified from the tool call, confirmed, then a real scan plus a declared rule together — is what clears it. Neither half works alone: a scan with no rule doesn't grant permission, and (per the CLI's own validation) you can't write a rule without stating what to do with it.
 
 ## Next steps
 

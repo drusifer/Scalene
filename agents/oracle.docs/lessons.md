@@ -154,3 +154,21 @@ When a constraint is checked at more than one layer (CLI parsing vs. the underly
 
 ### References
 - **Files:** `src/scalene/onboard.py` (`_ONBOARD_VALID_MODES` check vs. `main()`'s `argparse` `choices=`), `agents/trin.docs/current_task.md` (`*qa uat sec16`, the real-CLI check that found this)
+
+---
+
+## [2026-07-21] Sprint 8: A "Delete This" Line in a Phase Plan Is Also a Hypothesis
+
+> **Tags:** #Neo #Morpheus #Mouse #Testing #Refactoring
+
+### Context
+Mouse's Sprint 8 (E14) plan, approved by Morpheus at plan-review, explicitly scheduled Phase 3 to delete `onboard()`/`_resolve_resource()` once their last real callers (the demo, `main()`'s old flags) were gone. Attempting that deletion, Neo found `onboard()`'s own dedicated test suite exercised real, distinct behavior — `_resolve_resource()`'s URI-scheme validation — with no equivalent in the new `identify_targets()` flow (an unrecognized scheme there just identifies nothing, silently; it was never designed to raise an error). Migrating the test to the new API would have either silently dropped that coverage or fabricated an artificial-feeling test that doesn't reflect real usage.
+
+### The Issue
+The phase plan's "delete this" line was written before anyone had tried the deletion — reasonable at the time (both functions looked fully superseded from the outside), but its correctness was never actually verified until implementation forced the question. This is structurally the same shape as this project's earlier "an architecture claim is a hypothesis until measured" lesson, but applied to a different kind of claim: not a runtime/performance number, but "this code is now redundant and safe to remove." A cleanup plan is exactly as unverified as a performance estimate until someone actually attempts it.
+
+### The Rule (The "Lesson")
+When a plan calls for deleting code (a function, a whole module, a config path) because something newer supersedes it, don't execute the deletion as a checklist item — first check whether the old code's *own test suite* asserts anything the new code doesn't. If it does, that's real signal the two aren't actually equivalent, and the right response is to keep the old code (documented as a deliberate, distinct, still-useful path) and correct the plan, not force a mechanical migration that erases real coverage to make the checklist item true. Report the plan correction transparently (what changed and why), the same discipline already applied to scope adjustments elsewhere this project.
+
+### References
+- **Files:** `src/scalene/onboard.py` (`onboard()`/`_resolve_resource()`, kept), `tests/test_onboard.py` (`TestOnboardUrlTarget.test_unknown_scheme_blocks_with_no_cache_write`, the test that surfaced this), `task.md`'s Sprint 8 Phase 1/3 notes, `agents/neo.docs/current_task.md` (the Phase 3 handoff documenting the revision)

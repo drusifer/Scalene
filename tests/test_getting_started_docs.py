@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scalene.hook_adapter import pre_tool_use
-from scalene.onboard import onboard
+from scalene.onboard import identify_targets, onboard_targets
 from scalene.policy_config import PolicyConfig
 
 GETTING_STARTED_DOC = Path(__file__).resolve().parent.parent / "docs" / "GETTING_STARTED.md"
@@ -70,8 +70,13 @@ class TestGettingStartedDocs(unittest.TestCase):
             self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "deny")
             self.assertIn("systemMessage", second)
 
+            # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): the doc's real step 4
+            # now identifies the target from the tool call itself (via
+            # identify_targets(), the same mechanism pre_tool_use just ran
+            # live above) rather than a hand-typed --target URI.
             policy_path = Path(tmp) / "scalene_policy.yaml"
-            onboard("https://example.com", mode="allow", sensitivity="public", cache_path=cache_path, policy_path=policy_path)
+            targets = identify_targets("WebFetch", {"url": "https://example.com", "prompt": "summarize this"})
+            onboard_targets(targets, mode="allow", sensitivity="public", cache_path=cache_path, policy_path=policy_path)
             allow_config = PolicyConfig.from_yaml(policy_path)
 
             third = pre_tool_use(

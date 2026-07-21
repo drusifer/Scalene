@@ -38,14 +38,23 @@ class TestUserGuideDocs(unittest.TestCase):
             self.assertIn(term, self.text)
 
     def test_documents_the_single_call_clearing_workflow(self):
-        # docs/ARCHITECTURE.md sec16: clearing a destination is validated and
-        # explicit, but as of the post-Sprint-6 correction it's one scg onboard
-        # call (real scan + declared rule together), not a hand-authored
-        # rule as a separate step.
+        # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): clearing a destination
+        # is validated and explicit, and it's one scg onboard call -- targets
+        # identified from a real tool call, confirmed, then a real scan +
+        # declared rule together, not a hand-authored rule as a separate
+        # step (unchanged in spirit from sec16, only how targets are found
+        # changed).
         self.assertIn("scg onboard", self.text)
-        self.assertIn("--target TARGET", self.text)
+        self.assertIn("--call CALL", self.text)
         self.assertIn("mode: allow", self.text)
         self.assertIn("does both halves", self.text)
+
+    def test_documents_confirmation_and_non_interactive_escapes(self):
+        # STORY-1402/Smith's Gate 1 hard requirement: the confirmation step
+        # and its two non-interactive escapes must be documented, not just
+        # implemented.
+        for term in ("--yes", "--only", "[Y/n/s(elect)]"):
+            self.assertIn(term, self.text)
 
     def test_readme_links_to_guide(self):
         self.assertIn("docs/USER_GUIDE.md", README_DOC.read_text())
@@ -58,7 +67,7 @@ class TestUserGuideDocs(unittest.TestCase):
 
     def test_onboard_flags_match_real_help_output(self):
         real_help = _help_output(onboard_main)
-        for flag in ("--target", "--cache-path"):
+        for flag in ("--call", "--yes", "--only", "--list", "--cache-path"):
             self.assertIn(flag, real_help)
             self.assertIn(flag, self.text)
 

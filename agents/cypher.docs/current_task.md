@@ -1,8 +1,45 @@
 # Current Task
 
-**Status:** Sprint 7 (E13, sec16 correction) closed. `*pm launch` posted.
+**Status:** Sprint 8 (E14) closed. `*pm launch` posted.
 **Assigned to:** Cypher
-**Started:** 2026-07-20
+**Started:** 2026-07-21
+
+## Task Description (most recent): Sprint 8 (E14) close — retro compile, `*pm launch`
+Compiled retro backlog from all 6 persona inputs. Central theme: two persona-boundary disciplines got tested for real this sprint and held up — Neo correctly revised a "delete this" plan when its own tests revealed real distinct coverage (now a durable lesson), and Smith caught herself repeating an ad-hoc-verification shortcut at full-sprint-close scale after already being corrected mid-sprint, converting the whole E14 user journey into a permanent test instead.
+
+**Decided on Oracle's carried item** (STORY-1405's "decision weighs both signals" AC, unmet — the reputation score displays but doesn't yet drive the allow/block gate): not dropping it silently, not forcing it into this sprint either. Recorded as an explicit backlog item below for whenever E14's reputation-scoring work gets revisited — a real, open product question (what threshold, whose call) that deserves its own story/architecture pass, not a rushed addendum here.
+
+## Retro Backlog (Sprint 8)
+1. **A "delete this" line in a phase plan is also a hypothesis, verified by attempting it, not by writing it down** (Neo, Morpheus) — now a durable lesson (`agents/oracle.docs/lessons.md`). Worth watching for in future sprint plans that call for removing "superseded" code.
+2. **Ad-hoc bash verification needs to be resisted at every scale, not just for single bugs** (Smith) — corrected twice in one session, once mid-sprint and once at full-sprint-close scale. The existing standing feedback memory already covered single-repro cases; reinforced this session specifically for whole-epic e2e closes.
+3. **Driving a real pseudo-terminal (`pty.openpty()`) is a distinct, worth-naming UAT/gate technique for any new interactive CLI prompt** (Trin, Smith) — alongside the existing real-binary and mutate-verify-revert techniques from prior sprints.
+4. **Reviewing UX-adjacent control flow benefits from "run it, don't just read it"** (Morpheus) — the axis-validation-ordering bug was found by mocking a real run, not by tracing `main()`'s logic on paper.
+5. **`docs/ARCHITECTURE.md` diagram drift keeps recurring** (Morpheus) — sec5's stale Onboarding sequence diagram is the 4th instance found across sprints. `test_architecture_docs.py` only guards the classDiagram block; worth a real story for extending it (or an equivalent guard) to sequence diagrams too.
+6. **Open product question, explicitly carried, not resolved here**: should a scan's reputation score ever influence the allow/block decision itself (a threshold), not just display alongside the label? STORY-1405 shipped the display-only version deliberately; revisit as its own story if a real need for graded trust decisions shows up.
+
+## Progress
+- [x] Read all 6 persona retro posts in `agents/CHAT.md`.
+- [x] Compiled backlog above.
+- [x] `*pm launch` posted to CHAT.md.
+
+## Task Description (prior): `*pm req` — write E14 stories, handed to Smith for Gate 1.
+
+## Task Description (most recent): `*pm req` — write E14 stories (Tool-Call-Driven Onboarding)
+User request (verbatim, via `*chat`): retire `--target`, derive onboard targets from a real tool call by traversing the scanner registry's own `identify()` logic, confirm identified targets with the developer before scanning, onboard on a clean first scan into a per-scanner inventory, and have scans report both sensitivity and a reputation score.
+
+Read `src/scalene/scanner.py` (the real `Scanner.identify()`/`ScanResult` shapes) and `hook_adapter.py`'s `post_tool_use` (confirmed it's an intentional no-op under §15, not just unimplemented) before writing stories, so ACs are grounded in what actually exists today, not assumed. Wrote 6 stories as E14 in `docs/USER_STORIES.md`:
+- STORY-1401: target identification moves from manual `--target` to traversing `SCANNERS` + each scanner's own `identify()`.
+- STORY-1402: developer confirms the identified target list before anything is scanned/written.
+- STORY-1403: confirmed targets are scanned for real, per-target pass/fail (not all-or-nothing across a batch).
+- STORY-1404: each scanner tracks its own onboarded-target inventory ("dependencies").
+- STORY-1405: scan results carry sensitivity + a real reputation score, not just today's single label.
+- STORY-1406: **flagged, not committed** — "evaluate results from the tool call" would mean scanning a tool's *response*, which directly revisits §15's explicit post_tool_use-is-a-no-op rationale. Did not silently fold this into scope; left for Morpheus to weigh in on first.
+
+Carried 6 explicit open questions to Morpheus rather than pre-deciding mechanism myself (sec16 flag overlap, onboard's new invocation contract, the confirmation UX mechanism — flagged for Smith too, whether the inventory is a new store or a reframing of existing `ScanCache`/`PolicyConfig.rules`, reputation score scale given `reputation.py` currently has only 3 coarse heuristics, and STORY-1406's §15 conflict).
+
+Updated `docs/PRD.md` (new E14 epic row) and `docs/USER_STORIES.md`'s header status line (was stale since Sprint 5, now reflects Sprints 6/7 closing and E14 as the active draft). `make test`: 291/291 (docs-only, confirmed unaffected).
+
+## Task Description (prior): Sprint 7 (E13, sec16 correction) closed. `*pm launch` posted.
 
 ## Task Description (most recent): Sprint 7 (E13/sec16) close — retro compile, `*pm launch`
 Compiled retro backlog from all 6 persona inputs. Central theme: this is the 2nd sprint in a row (after sec15) where real engineering shipped directly with the user ahead of formal review — and the 2nd time in a row the after-the-fact gate chain caught something genuinely real rather than rubber-stamping already-working code (sec15: a structural safety gap; sec16: a first-use CLI discoverability regression against Smith's own prior hard requirement). Updated `docs/PRD.md` (new E13 epic row, Sprint 7 goals 22-23) and `task.md` (Sprint 7 section + top status line marked closed).

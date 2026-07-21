@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11) — Draft v1, pending Smith Gate 1.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. **Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped 2026-07-21** — full formal cycle (Cypher→Smith→Morpheus→Smith→Mouse→Morpheus→Bloop→Smith gate), 3 phases, 1 fix round. STORY-1406 remains flagged, not committed.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -389,5 +389,67 @@ As a maintainer reviewing an architecture change, I want a real check that `docs
 - [x] Deliberately scoped to class *existence*, not full method-signature fidelity — explicitly noted as a scope boundary, not silently underdelivered.
 - [x] The test fails loudly with a clear message naming the stale reference if the diagram and code diverge, not a vague assertion failure — verified live: Trin temporarily renamed a real class in the actual doc, confirmed the exact failure message, then reverted.
 - [x] Run as part of the normal `make test` suite (`tests/test_architecture_docs.py`), not a separate opt-in check that's easy to forget.
+
+---
+
+## E14 — Tool-Call-Driven Onboarding via the Scanner Framework
+
+**Origin:** Direct user request (2026-07-20, post-Sprint-7): `--target` (a manually-typed `file://`/`https://` URI, unchanged since Sprint 4's §13.4 and still the sole input `scg onboard` accepts even after sec16's rule-authoring rework) should be retired in favor of re-using the scanner framework already doing this same identification work, live, on every hook call. Each `Scanner.identify(tool, args)` (`scanner.py`, unchanged since Sprint 4) already knows how to recognize the resources *its own* scanner type cares about in a real tool call — onboarding should call that directly instead of asking a human to hand-resolve and type a URI. User's own framing: run onboarding against the tool call itself, let each scanner claim what it recognizes, confirm the resulting target list with the developer, then scan and onboard only what's confirmed.
+
+This is additive to sec16 (`docs/ARCHITECTURE.md` §16) — sec16's per-target rule-authoring (`--sensitivity`/`--mode`/etc.) is not being removed, only how a target gets *identified* changes. Genuinely new concepts this epic introduces (a per-scanner "inventory" of onboarded targets, a reputation score alongside the existing sensitivity label, an interactive confirmation step) don't have prior architecture decisions to build on — several mechanism questions are carried to Morpheus explicitly below rather than pre-decided here.
+
+### STORY-1401
+As a developer onboarding a resource, I want `scg onboard` to identify targets automatically from a real tool call instead of me typing a `--target` URI by hand, so that onboarding uses the exact same recognition logic already trusted to make live pre-call decisions, instead of a second, hand-maintained resolution path that can drift from it.
+
+**Acceptance Criteria**
+- [x] `--target` is removed from `scg onboard`'s CLI surface.
+- [x] Onboard accepts a description of a real tool call (tool name + args) as its new input.
+- [x] Onboard traverses the full `SCANNERS` registry — not one hardcoded scanner — calling each registered scanner's own `identify(tool_name, args)` and collecting every distinct `Resource` found across *all* scanner types in one pass. A call touching both a file and a URL (e.g. a `Bash` command with both) is fully covered by one invocation, not one per resource.
+- [ ] No separate/duplicated target-resolution logic in `onboard.py` — identification is exactly `Scanner.identify()`, unchanged, the same call `pre_tool_use` already makes live. **Partially true, reconciled 2026-07-21 (Oracle):** the CLI's own resolution is exactly `identify_targets()`/`Scanner.identify()`, as written. But `_resolve_resource()` (the old single-URI resolver) was deliberately *kept*, not deleted — Neo's Phase 3 implementation found its dedicated test (`test_unknown_scheme_blocks_with_no_cache_write`) exercises real URI-scheme-validation behavior with no equivalent in the new flow. It now serves a distinct, still-tested library entry point (`onboard()`), not a competing/duplicated path the real CLI could drift against — but the AC as literally written implied full removal, which didn't happen.
+
+### STORY-1402
+As a developer onboarding a resource, I want to see and confirm exactly which targets `scg onboard` identified before anything is scanned or written, so an incidental path- or URL-shaped string the tool call happened to also contain doesn't get onboarded as a side effect of a target I actually meant to trust.
+
+**Acceptance Criteria**
+- [x] Before any scan runs, onboard shows every identified `Resource` (kind, identity, which scanner claimed it) as a reviewable list.
+- [x] The developer can confirm the full list or exclude individual targets before proceeding — no scan and no write happens for an excluded target.
+- [x] Declining every identified target exits cleanly with no scan, no cache write, no rule write — a deliberate no-op, not an error.
+- [x] Non-interactive/scripted invocation (tests, CI, automation) stays possible — resolved as `--yes` (accept all) and `--only <identity,...>` (accept a named subset, fails loud on a name that wasn't identified); fails fast (no hang) if neither is given and stdin isn't a TTY.
+
+### STORY-1403
+As a developer onboarding a resource, I want each confirmed target scanned for real before it's onboarded, so onboarding keeps Scalene's existing "never claim safety without a real check" guarantee even though target discovery is now automatic instead of manually typed.
+
+**Acceptance Criteria**
+- [x] Each confirmed target is scanned via its owning scanner's `scan()` — unchanged mechanism from today, only how the target was found is new.
+- [x] A clean scan result onboards that target (added to its scanner's inventory, per STORY-1404); a bad result blocks that specific target with a clear, plain-language reason. Other confirmed targets in the same batch are unaffected — partial success across a batch is real, not all-or-nothing. Verified live by Trin (1 clean + 1 real fake-secret target in one batch: exactly 1 onboarded, 1 blocked, exit 0).
+- [x] sec16's existing `mode: allow`/`mode: block` semantics still apply per target — a bad finding can still be explicitly declared blocked, same as today.
+
+### STORY-1404
+As a developer, I want each scanner to track which resources it has actually onboarded (its "dependencies"), so I can see, per scanner type, exactly what's been explicitly vetted and trusted — not have to infer it indirectly from the scan cache or the policy file.
+
+**Acceptance Criteria**
+- [ ] Each scanner exposes a queryable inventory of the targets it has onboarded (identity, when, scan result). **Resolved differently than literally written, reconciled 2026-07-21 (Oracle):** §17.5 deliberately chose *not* to add a per-scanner inventory API or a new store — `scg onboard --list` is a read-only CLI view grouping the existing `ScanCache.all_entries()` by scanner name. The developer-facing value (see what's been vetted, per scanner type) is delivered; "each scanner exposes" as an object-level API is not. Left unchecked since the AC's literal mechanism wasn't built, by a considered architecture decision, not an oversight.
+- [x] The inventory is visible somewhere a developer can actually check it — `scg onboard --list [--scanner NAME]`, reading `ScanCache` directly (no new store, so nothing here can drift from what `decide_access()` actually consults).
+- [x] Onboarding a target updates only its own scanner's inventory, never another scanner's (cache keys are `scanner_name:identity`-prefixed by construction).
+
+### STORY-1405
+As a developer relying on a scan result to make a trust decision, I want the result to carry both a sensitivity classification and a reputation score, so onboarding (and any future evaluation of a tool call's actual results, per STORY-1406) has more signal than today's single pass/fail label.
+
+**Acceptance Criteria**
+- [x] A scan result carries a sensitivity classification and a reputation score, not just today's single `label`. **Reconciled 2026-07-21 (Oracle):** "sensitivity classification" turned out to already be solved — `PolicyRule.sensitivity` (developer-chosen at onboarding, per sec16) is this project's sensitivity axis; `ScanResult` itself only needed the genuinely new piece, `reputation: float | None`, additive alongside the unchanged `label`/`reason`.
+- [x] The reputation score is computed for real from the scan — not a placeholder/stub value. `LocalHeuristicChecker.check()` was changed from first-match-wins to evaluate-all-3-heuristics specifically so the score reflects real evaluated signal; `FileScanner` deliberately stays `None` (no fixed-heuristic-count basis to build a fraction from), not silently defaulted to something that would look precise but isn't.
+- [ ] Onboarding's allow/block decision can weigh both signals, not only a single pass/fail label. **Not done, honestly unchecked:** the shipped decision (`_onboard_resource()`) still gates purely on `result.label` — the reputation score is displayed (`-> trusted (score 1.00)`) but does not itself influence whether a target is blocked. Real, open follow-on work if a graded threshold is ever wanted, not silently claimed as done.
+
+### STORY-1406 — Flagged, not committed this epic
+"Scans... [may be] used to evaluate the results from the tool call if applicable" (user's own framing) — genuinely new scope, not a refinement of an existing decision: `post_tool_use` (`hook_adapter.py`) is currently an intentional no-op under §15, on the explicit rationale that every resource a call touches is knowable from `tool_input` alone before the call ever runs, so there's no tool-*response*-derived signal left to add. Scanning a tool's actual output would directly revisit that rationale. Not writing this as a committed story until Morpheus has weighed in on whether/how it coexists with §15 — flagged here so it isn't silently dropped, not pre-scoped by Cypher.
+
+## Open Questions for Architecture (Morpheus) — E14
+
+1. Does removing `--target` retire sec16's other flags (`--tool`/`--pattern`/`--sensitivity`/`--mode`/`--scanner`/`--description`) too, or do they still apply per-confirmed-target as an overlay on top of scanner-identified targets? The user only asked to remove `--target`.
+2. What exactly is "a tool call" as onboard's new input — the same JSON shape `scalene-guard` already reads from stdin? A path to a saved audit-log entry? Something typed inline on the CLI? This is the shape of `scg onboard`'s entire new invocation contract.
+3. Interactive confirmation mechanism (STORY-1402) — a blocking TTY prompt vs. a `--yes`/`-y` flag for scripts vs. piped input. This is a real UX design decision, not just a mechanism detail — needs Smith's input directly during Gate 1/2, not assumed here.
+4. Is the "inventory of onboarded targets" (STORY-1404) a genuinely new on-disk store, or a reframing of the existing `ScanCache` + `PolicyConfig.rules` combination sec16 already writes? Both already durably record every scanned/onboarded resource — worth confirming a 3rd store adds real value rather than duplicating state that could drift from it.
+5. Reputation score's scale/units (STORY-1405), and which scanners currently have enough real signal to compute one meaningfully — `reputation.py`'s `LocalHeuristicChecker` has exactly 3 heuristics (IP-literal, punycode, suspicious-length label) today; worth confirming a numeric score is meaningful now vs. starting coarse (e.g. a 0-2 count of heuristics triggered) and refining later.
+6. STORY-1406 above — whether scan results ever apply to a tool call's *response*, and if so how that coexists with §15's post_tool_use no-op rationale.
 
 ---

@@ -1,9 +1,18 @@
 # Current Task
 
-**Status:** `*ora groom` (Sprint 7 / sec16 close) complete. Handed to Smith.
+**Status:** `*ora groom` (Sprint 8 / E14 close) complete. Handed to Smith.
 **Assigned to:** Oracle
-**Started:** 2026-07-20
-**Completed:** 2026-07-20
+**Started:** 2026-07-21
+**Completed:** 2026-07-21
+
+## Task Description (most recent): `*ora groom` (Sprint 8 / E14 close)
+- `CHAT.md` at 50 messages — within threshold, no archive needed.
+- Reconciled `docs/USER_STORIES.md`'s E14 stories carefully, not just checking everything off: STORY-1401's "no separate resolution logic" AC honestly left partially-unchecked with a note (kept `_resolve_resource()`, a deliberate revision, not full removal); STORY-1404's "each scanner exposes an inventory" AC left unchecked (shipped as a CLI `--list` view over `ScanCache` instead — the developer-facing value landed, the literal per-scanner-object mechanism didn't); STORY-1405's "decision can weigh both signals" AC left unchecked and honestly flagged as real, open follow-on work — the reputation score displays but doesn't yet drive the allow/block gate. Everything else checked off against real, verified behavior.
+- `task.md`: Sprint 8 marked implementation-complete, each phase's exit criteria updated with real PASSED outcomes (not just "done"), Phase 3's scope revision and the carried-forward stale-diagram flag both recorded in Notes.
+- Recorded 1 durable lesson (`agents/oracle.docs/lessons.md`): "A 'Delete This' Line in a Phase Plan Is Also a Hypothesis" — Neo's `onboard()`-keeping decision, generalized.
+- `make test`: 331/331 (docs-only changes this pass, confirmed unaffected).
+
+## Task Description (prior): `*ora groom` (Sprint 7 / sec16 close) complete.
 
 ## Task Description (most recent): `*ora groom` (Sprint 7 / sec16 close)
 - `CHAT.md` was at 80 messages (approaching the range past archives triggered at) — archived through Sprint 6's launch to `agents/chat_archive/CHAT-ARCHIVE-20260720.md` (extracted via `sed`, not retyped), kept the live sec16 sequence (build failure → now) plus a new summary paragraph, same convention as every prior archive.

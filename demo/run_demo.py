@@ -43,31 +43,43 @@ def _call_guard(payload: dict, state_dir: Path, policy_path: Path, cache_path: P
 
 
 def _onboard(
-    target: str,
+    tool_call: dict,
     cache_path: Path,
     policy_path: Path,
     mode: str,
     sensitivity: str,
     description: str = "",
 ) -> str:
-    argv = [
-        str(SCG),
-        "onboard",
-        "--target",
-        target,
-        "--cache-path",
-        str(cache_path),
-        "--policy-path",
-        str(policy_path),
-        "--mode",
-        mode,
-        "--sensitivity",
-        sensitivity,
-    ]
-    if description:
-        argv += ["--description", description]
-    result = subprocess.run(argv, capture_output=True, text=True, check=True)
-    return result.stdout.strip()
+    # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): onboard identifies targets
+    # from a real tool call via the scanner registry, not a hand-typed
+    # --target URI. --yes accepts every identified target non-interactively
+    # -- the demo runs unattended, same reasoning as every other automated
+    # caller in this project (tests, CI).
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as call_file:
+        json.dump(tool_call, call_file)
+        call_path = call_file.name
+    try:
+        argv = [
+            str(SCG),
+            "onboard",
+            "--call",
+            call_path,
+            "--yes",
+            "--cache-path",
+            str(cache_path),
+            "--policy-path",
+            str(policy_path),
+            "--mode",
+            mode,
+            "--sensitivity",
+            sensitivity,
+        ]
+        if description:
+            argv += ["--description", description]
+        result = subprocess.run(argv, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    finally:
+        Path(call_path).unlink(missing_ok=True)
 
 
 def _decision(result: dict) -> str:
@@ -140,19 +152,23 @@ def run() -> int:
 
         print("--- Part 3: explicitly clearing a destination ---")
         print()
-        print("Step 3 — One command both verifies (a real reputation check) and declares")
-        print("what to do with the verified destination — scg onboard is the frontend for")
-        print("authoring a rule, not just a cache-seeding utility:")
+        print("Step 3 — scg onboard identifies targets from the real tool call itself (via")
+        print("the same scanner registry pre_tool_use already runs live), confirms them,")
+        print("then verifies (a real reputation check) and declares what to do with each:")
         allow_policy_path = Path(tmp) / "scalene_policy_allow.yaml"
+        blocked_call = {
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://partner.example.com/api", "prompt": "summarize this"},
+        }
         onboard_output = _onboard(
-            "https://partner.example.com/api",
+            blocked_call,
             cache_path,
             allow_policy_path,
             mode="allow",
             sensitivity="public",
             description="Reviewed and trusted partner API",
         )
-        print("    $ scg onboard --target https://partner.example.com/api \\")
+        print("    $ scg onboard --call blocked-call.json --yes \\")
         print("        --mode allow --sensitivity public \\")
         print("        --description \"Reviewed and trusted partner API\"")
         for line in onboard_output.splitlines():
@@ -246,9 +262,10 @@ def run() -> int:
         print()
 
     print("That's the model: nothing is trusted by default, unrecognized destinations")
-    print("get blocked once a session is no longer clean, and clearing one always takes")
-    print("two explicit steps — a real scan, and a rule saying what to do about it. A")
-    print("validated bad finding overrides any rule, no matter how broad.")
+    print("get blocked once a session is no longer clean, and clearing one is one")
+    print("onboard call — targets identified from the real tool call, confirmed, then")
+    print("verified and ruled together. A validated bad finding overrides any rule,")
+    print("no matter how broad.")
     print()
     print("Next: docs/GETTING_STARTED.md to try this yourself, or docs/USER_GUIDE.md")
     print("for the full command reference.")

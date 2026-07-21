@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing. **Sprint 7 (E13, `scg onboard` sec16 correction) closed 2026-07-20** — direct user design session, post-Sprint-6, same shape as sec15: `scg onboard` re-scoped to author a full `PolicyRule` in one call instead of only pre-seeding the cache (`docs/ARCHITECTURE.md` §16, reversing §14.3's "CLI surface never changes" requirement). Re-gated after the fact (Trin UAT + Morpheus review + Smith end-to-end test against the shipped sec16 code; Smith's gate found a real `--help` discoverability gap, fixed and re-verified within the same close). 291/291 tests passing.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing. **Sprint 7 (E13, `scg onboard` sec16 correction) closed 2026-07-20** — direct user design session, post-Sprint-6, same shape as sec15: `scg onboard` re-scoped to author a full `PolicyRule` in one call instead of only pre-seeding the cache (`docs/ARCHITECTURE.md` §16, reversing §14.3's "CLI surface never changes" requirement). Re-gated after the fact (Trin UAT + Morpheus review + Smith end-to-end test against the shipped sec16 code; Smith's gate found a real `--help` discoverability gap, fixed and re-verified within the same close). 291/291 tests passing. **Sprint 8 (E14, Tool-Call-Driven Onboarding) closed 2026-07-21** — full formal cycle including Smith's mandatory Phase 2 gate (verified live via a real pty-driven interactive session, 1 fix round for an axis-validation ordering bug) and a full sprint end-to-end test encoded as a permanent test (`TestE14EndToEndUserJourney`). 332/332 tests passing. Retro compiled, launched by Cypher.
 
 ---
 
@@ -383,3 +383,56 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 ## Notes
 - No Tank phase — no infra/CI change, same category as Sprint 6.
 - `docs/USER_STORIES.md` STORY-501's ACs predate this (and predate Sprint 4's original re-scope) — reconciled with a dated note, not rewritten (see USER_STORIES.md).
+
+---
+
+# Sprint 8
+
+**Owner:** Mouse
+**Status:** ✅ **SPRINT CLOSED 2026-07-21** — all 3 phases done (Phase 2 needed 1 fix round, an axis-validation ordering bug Morpheus caught live). Smith's mandatory Phase 2 gate passed via a real pty-driven interactive session. Full sprint end-to-end test passed, encoded as a permanent test rather than an ad-hoc check. 332/332 tests passing. Retro compiled (6 backlog items), launched by Cypher.
+**Source:** `docs/USER_STORIES.md` E14 (STORY-1401-1405) + `docs/ARCHITECTURE.md` §17 (Morpheus's `*lead arch sprint`, 2026-07-20) + Smith's Gate 1/2 reviews (`agents/smith.docs/e14_gate1_review.md`/`e14_gate2_review.md`)
+**Scope:** `scg onboard` retires `--target` in favor of traversing the scanner registry's own `identify()` against a real tool call, adds developer confirmation before scanning, per-target batch scan/write, a `--list` inventory view, and a reputation score alongside the existing sensitivity label.
+
+3 phases, hard-dependency-ordered (§17.1/17.2's rewrite is load-bearing for everything downstream — matches Sprint 4/5's chain shape, not Sprint 3's parallel-capable one).
+
+## Phase 1 — Reputation Score & New Target-Identification Core
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new. No Smith gate — internal/library-level only, no usable CLI flow change yet.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `ScanResult` gains `reputation: float \| None = None` (additive — `label`/`reason` unchanged, zero blast radius on existing `decide_access()`/`onboard()` callers). `LocalHeuristicChecker.check()` changes from first-match-wins to evaluate-all-3-heuristics, collecting every triggered reason and computing `reputation = 1.0 - (triggered_count / 3)`. `is_trusted`'s truth table must be provably unchanged (any-trip-fails, same as before) — a real test matrix, not just the happy path. `FileScanner` stays `reputation: None` (documented as deliberate, not a gap). | §17.6, STORY-1405 |
+| 1.2 | `onboard.py` gains `identify_targets(tool_name, tool_input)` (traverses `SCANNERS`, dedupes by `(kind, identity)`) and `load_tool_call(call_path=None)` (reads `{"tool_name", "tool_input"}` from stdin or `--call PATH`) as new, standalone, fully tested functions. **Revised during implementation (Neo, endorsed by Morpheus's Phase 1 review)**: `_resolve_resource()`/`onboard()`/`main()` are deliberately left untouched this phase — deleting `_resolve_resource()` before Phase 2 replaces its only caller would break `onboard()` or leave dead code, either way abandoning "every phase stays green." Deletion moves to Phase 2, where it actually becomes dead code. | §17.1, §17.2, STORY-1401 |
+
+**Exit criteria — PASSED (2026-07-20):** Trin UAT confirmed `is_trusted`'s behavior unchanged across a real trigger matrix, and target identification against a real multi-resource `Bash` call produced the correct deduplicated `Resource` list. Trin also found and closed 3 real gaps (stdin-reading had zero coverage, single-heuristic score only checked one of 3 heuristics, non-object JSON wasn't guarded) — see `agents/trin.docs/current_task.md`.
+
+## Phase 2 — Confirmation, Per-Target Scan/Write, `--list`
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: Phase 1 (needs the identified-target list and `reputation`-carrying `ScanResult`).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 2.1 | Confirmation step: interactive numbered-list prompt (`Onboard all N targets? [Y/n/s(elect)]`) by default; `--yes` and `--only IDENTITY,...` as non-interactive escapes (the hard requirement from Smith's Gate 1); fail-fast `OnboardError` (not a hang) when stdin isn't a TTY and neither escape is given. | §17.3, STORY-1402 |
+| 2.2 | Per-target scan + rule-write with batch semantics (one target failing doesn't abort the others; clear per-target result lines + an `N onboarded, M blocked` summary; non-zero exit only if every target failed). `--sensitivity`/`--mode`/`--scanner`/`--description` survive as batch-level flags; `--tool`/`--pattern` removed from the CLI (still available via a hand-authored `scalene_policy.yaml` rule, unchanged). Confirmation/success output includes the reputation score when present (`... -> trusted (score 1.00)`). | §17.4, §17.6, STORY-1403, STORY-1405 |
+| 2.3 | `scg onboard --list [--scanner NAME]`: read-only view grouping `ScanCache.all_entries()` by `scanner_name` — no new store. Mutually exclusive with the onboarding flow (never reads a tool call from stdin). | §17.5, STORY-1404 |
+
+**Exit criteria — PASSED (2026-07-21), after 1 fix round:** Trin UAT ran the real CLI end-to-end — interactive confirm, `--yes`, `--only` (incl. a deliberately-wrong identity), no-TTY fail-fast, the mixed-sensitivity 2×`--only` case, `--list` — all verified live. Morpheus's review caught a real ordering bug (axis validation ran after the interactive prompt, not before — a user could answer the prompt and only then be told they'd forgotten a required flag); fixed, re-verified by Morpheus. **Smith gate PASSED**: drove the real interactive confirmation through a genuine pty (`pty.openpty()`), not a mock — see `agents/smith.docs/e14_gate_phase2.md`.
+
+## Phase 3 — Breaking-Change Surface: Demo, Docs, Existing Tests
+*Chain: Neo → Trin (no separate Smith gate — reconciling already-gated Phase 2 behavior into docs/demo, not new behavior; Trin's UAT specifically re-runs every doc example verbatim, same standing practice as every prior doc-touching phase)*
+*Depends on: Phase 2 (needs the real, final CLI surface to document/demo against).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 3.1 | `demo/run_demo.py`/`tests/test_demo.py` updated for the new invocation contract (stdin/`--call` instead of `--target`). | §17.8 |
+| 3.2 | `docs/GETTING_STARTED.md`/`docs/SETUP.md`/`docs/USER_GUIDE.md` updated — real `--help` output, real confirmation-flow transcript (not fabricated), matching this project's standing "verify against real output" convention (STORY-902). | §17.8 |
+| 3.3 | `tests/test_getting_started_docs.py`'s direct call site updated to mirror the doc's real new flow (`identify_targets()` + `onboard_targets()`). **Revised during implementation** — see Notes: `onboard()`/`_resolve_resource()` were kept, not deleted, so `tests/test_onboard.py`'s own dedicated tests for them needed no migration. | §17.8 |
+
+**Exit criteria — PASSED (2026-07-21):** Trin re-ran `docs/GETTING_STARTED.md`'s onboarding section verbatim against the real installed binary — matched byte-for-byte. `make test`: 331/331, zero references to `--target` in any real (non-historical) doc or code path.
+
+## Notes
+- No Tank phase — no infra/CI/daemon change.
+- Real breaking-change surface confirmed via `grep` at Smith's Gate 1 (not assumed): `demo/run_demo.py`, `tests/test_demo.py`, `docs/GETTING_STARTED.md`, `docs/SETUP.md`, `tests/test_onboard.py`, `tests/test_getting_started_docs.py` — all explicitly covered above, none left to be discovered mid-implementation. One more surfaced during implementation and fixed the same day, not named here originally: `tests/test_cli.py::test_onboard_subcommand_dispatches` (fixed in Phase 2, since it tests `main()` directly).
+- **Scope revision (Neo, endorsed by Trin's Phase 3 recheck):** `onboard()`/`_resolve_resource()` were **not deleted** as originally planned. `onboard()`'s dedicated test suite exercises real, distinct URI-scheme-validation behavior with no equivalent in `identify_targets()` — deleting it would have lost real coverage, not just renamed it. Kept as a legitimate, still-tested, single-URI library convenience function; `main()`/the demo no longer call it, but its own test suite is a legitimate caller. Recorded as a durable lesson: `agents/oracle.docs/lessons.md`, "A 'Delete This' Line in a Phase Plan Is Also a Hypothesis."
+- **Carried forward, not fixed this sprint:** `docs/ARCHITECTURE.md` §5's "Onboarding" sequence diagram is stale (pre-dates even sec16 — still shows the removed `jsonpath`/`pattern`/`allowlist` flow). Not caught by `test_architecture_docs.py` (classDiagram-only). Flagged by Neo, not fixed — belongs to whoever next touches §5 or a future Morpheus review, per this project's precedent that diagram-drift calls are architecture's to make.
+- STORY-1406 (scanning a tool call's *response*) is explicitly out of scope for this sprint — §17.7.

@@ -189,17 +189,23 @@ class TestGuardCliDispatch(unittest.TestCase):
 
 class TestScaleneMainCli(unittest.TestCase):
     def test_onboard_subcommand_dispatches(self):
+        # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): --target is gone --
+        # onboard now reads a tool call and identifies targets via the
+        # scanner registry, confirmed non-interactively via --yes.
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             target = tmp_path / "clean.md"
             target.write_text("ordinary docs")
             cache_path = tmp_path / "scan_cache.json"
+            call_path = tmp_path / "call.json"
+            call_path.write_text(f'{{"tool_name": "Read", "tool_input": {{"file_path": "{target}"}}}}')
 
             exit_code = scalene_main(
                 [
                     "onboard",
-                    "--target",
-                    f"file://{target}",
+                    "--call",
+                    str(call_path),
+                    "--yes",
                     "--mode",
                     "allow",
                     "--cache-path",

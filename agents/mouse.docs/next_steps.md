@@ -1,15 +1,16 @@
 # Next Steps
 
-## Immediate Next Action (superseded — read this first on cold start)
-My 3-phase breakdown for Sprint 5 (`task.md`) was against §14.4's masking design and got fully implemented+gated through Phase 3 — but Phase 3's gate found a real gap that led to replacing the entire mechanism (`docs/ARCHITECTURE.md` §15, rule-driven access control). Implemented directly with the user, not phased through me. `task.md`'s Sprint 5 phase descriptions are now stale relative to what actually shipped.
+## Immediate Next Action
+Sprint 8 (E14) 3-phase breakdown written to `task.md`, handed to Morpheus for plan review.
 
 ## Waiting On
-Nothing blocking. If this resumes formally, `task.md`'s Sprint 5 section needs a real update to reflect the sec15 rework (or an explicit note that it superseded the original 3-phase plan) — hasn't been done.
+Morpheus's `*lead review sprint plan` verdict.
 
 ## Planned Work
-- [ ] Track the single required Smith gate this sprint (Phase 3 only — Phases 1-2 are internal/schema-only, no user-facing surface changes).
-- [ ] Watch Phase 3 closely at UAT — Trin needs to confirm the existing mask systemMessage/audit-log signal still fires correctly for a newly-triggered mask (a call that used to be silently skipped), not just that new tests pass.
-- [ ] Sprint 3's prior "never formally closed" issue is resolved (closed 2026-07-16) — no longer a carry-forward item.
+- [ ] Track the single required Smith gate this sprint (Phase 2 only — Phase 1 is internal, Phase 3 is doc/demo reconciliation with Trin re-verification instead of a full gate).
+- [ ] Watch Phase 2 closely at UAT — Trin needs to run the real interactive CLI (confirmation prompt, `--yes`, `--only` including a deliberately-wrong identity, the no-TTY fail-fast case, and the mixed-sensitivity `--only`-twice case Smith flagged at Gate 2), not just unit-test the library functions.
+- [ ] Watch Phase 3 at UAT: Trin re-runs `docs/GETTING_STARTED.md`'s onboarding section verbatim against the real installed binary — must match byte-for-byte, same standing practice as every prior doc-touching phase.
+- [ ] Prior Sprint 5 stale-phase-description issue (superseded mid-gate by sec15) is a closed, historical item now — Sprint 5 was formally closed 2026-07-18. No longer a carry-forward.
 
 ---
-*Last updated: 2026-07-17*
+*Last updated: 2026-07-20*

@@ -25,6 +25,12 @@ class TestResourceAndScanResult(unittest.TestCase):
         result = ScanResult(label="public")
         self.assertEqual(result.reason, "")
 
+    def test_scan_result_reputation_defaults_to_none(self):
+        # docs/ARCHITECTURE.md sec17.6: additive field, None where a scanner
+        # has no graded signal to offer.
+        result = ScanResult(label="public")
+        self.assertIsNone(result.reputation)
+
 
 class TestFileScannerIdentify(unittest.TestCase):
     def setUp(self):
@@ -113,6 +119,16 @@ class TestFileScannerScan(unittest.TestCase):
         with self.assertRaises(ScannerMachineryError):
             self.scanner.scan(Resource(kind="file", identity="/no/such/path/here.md", scanner_name="secrets"))
 
+    def test_reputation_stays_none_deliberately(self):
+        # sec17.6: detect-secrets' open-ended finding list has no fixed-
+        # heuristic-count basis for a fraction the way reputation.py's 3
+        # checks do -- inventing one would be false precision.
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "clean.md"
+            target.write_text("just some ordinary docs")
+            result = self.scanner.scan(Resource(kind="file", identity=str(target), scanner_name="secrets"))
+            self.assertIsNone(result.reputation)
+
 
 class TestURLScannerIdentify(unittest.TestCase):
     def setUp(self):
@@ -164,10 +180,20 @@ class TestURLScannerScan(unittest.TestCase):
         self.assertIsInstance(result, ScanResult)
         self.assertEqual(result.label, "trusted")
 
+    def test_ordinary_domain_has_a_perfect_reputation_score(self):
+        # sec17.6: the score travels the real isolated-subprocess boundary
+        # (scan_worker.py), not just the in-process LocalHeuristicChecker.
+        result = self.scanner.scan(Resource(kind="url", identity="internal.example.com", scanner_name="reputation"))
+        self.assertEqual(result.reputation, 1.0)
+
     def test_ip_literal_is_untrusted(self):
         result = self.scanner.scan(Resource(kind="url", identity="203.0.113.42", scanner_name="reputation"))
         self.assertEqual(result.label, "untrusted")
         self.assertTrue(result.reason)
+
+    def test_ip_literal_reputation_score_reflects_the_single_triggered_heuristic(self):
+        result = self.scanner.scan(Resource(kind="url", identity="203.0.113.42", scanner_name="reputation"))
+        self.assertAlmostEqual(result.reputation, 2 / 3)
 
     def test_scan_extracts_host_from_full_url_identity(self):
         # STORY-1101: identity is now a full URL (for cache-key granularity),

@@ -1,9 +1,32 @@
 # Current Task
 
-**Status:** `*qa retest sec16 bug` (onboard --help discoverability) — PASSED. Handed back to Smith for re-gate.
+**Status:** `*qa recheck phase-3` (Sprint 8/E14) — PASSED, sprint implementation complete. Handed to Oracle for groom.
 **Assigned to:** Trin
 
-## Task Description (most recent): `*qa retest sec16 bug` — Neo's fix for Smith's `--help` discoverability finding
+## Task Description (most recent): `*qa recheck phase-3` (Sprint 8/E14) — verbatim doc recheck, no separate gate
+Re-ran `docs/GETTING_STARTED.md`'s full onboarding section verbatim against the real installed binaries in a fresh scratch dir — matched byte-for-byte (the block/onboard/rule/retry-allow sequence, including the exact `Verified:`/`Rule written to`/summary lines). Also spot-checked `docs/SETUP.md`'s rewritten example for real (both a file and a URL target) — both work as documented. Agree with Neo's scope revision (keeping `onboard()`/`_resolve_resource()`): independently confirmed `test_unknown_scheme_blocks_with_no_cache_write` tests real, undeleted behavior with no equivalent in `identify_targets()` — not stale coverage. `make test`: 331/331. **Verdict: PASS.** Sprint 8 (E14) implementation is now fully complete across all 3 phases.
+
+## Task Description (prior): `*qa uat phase-2` (Sprint 8/E14) — the Smith-gated phase
+Real end-to-end via the installed `scg` binary in a scratch dir, not just unit tests:
+- `--yes` single-target flow: real file onboarded, rule written, matches expected output.
+- Multi-target identification confirmed real: a `Bash` command touching both a file and a URL, `--only` correctly isolates just the URL by identity.
+- `--only` with a deliberately wrong identity: fails loud, names exactly the missing identity, nothing written.
+- **No-TTY fail-fast, run for real** (`< /dev/null`, `timeout 5`, neither `--yes` nor `--only`): exits 1 immediately with a clear message — confirmed it's a real fail-fast, not a hang that happened to finish before the timeout (checked the exit code is 1, not 124).
+- **Smith's Gate 2 mixed-sensitivity note, verified for real**: same tool call, two separate `--only` invocations with different `--sensitivity` values — both rules land correctly in one policy file (`public`/`allow` and `restricted`/`allow`), confirming the documented workaround genuinely works, not just plausible on paper.
+- **Real batch partial-failure**: a call touching one clean file and one file with a real fake AWS key — `--yes` onboards the clean one, blocks the bad one with a clear per-target message, exit 0 (at least one succeeded), only 1 rule written. Matches §17.4's batch semantics exactly.
+- `--list` (unfiltered and `--scanner`-filtered): both show correct real cache contents.
+- Confirmed `make test`'s 5 known failures are exactly what Neo flagged — all in `tests/test_demo.py`/`tests/test_user_guide_docs.py`, all Mouse's Phase 3 scope, none of them a Phase 2 regression. `make test`: 324/329 (unchanged from Neo's handoff — didn't add new failures, and didn't need to add new tests myself this round, real-CLI checks above found no new gaps). **Verdict: PASS.**
+
+## Task Description (prior): `*qa uat phase-1` (Sprint 8/E14)
+Independently adversarial-tested rather than trusting Neo's own tests alone:
+- **Verified stdin reading for real** — Neo's tests only exercised `load_tool_call(call_path=...)` (the file variant); the default stdin path (`sys.stdin.read()`) had zero direct test coverage. Piped a real payload through a real subprocess (`echo '...' | python -c "..."`) and confirmed it works — this is the path a real `scg onboard` invocation without `--call` would actually use, and it was genuinely unverified until now.
+- **Found a real coverage gap and closed it myself** (same pattern as Sprint 4 Phase 1/2): the score assertion for a single-triggered heuristic was only ever checked against the IP-literal case. Independently verified the punycode-only and suspicious-length-only single-trigger cases also score 2/3 — real, not assumed from the IP-literal case generalizing. Added both as permanent regression tests.
+- **Adversarial `load_tool_call` input**: valid JSON that isn't an object (`[1, 2, 3]`) — confirmed it fails loud with a clear `OnboardError`, not an `IndexError`/`TypeError` from unguarded dict-key access. Added as a permanent test.
+- Confirmed `identify_targets()` doesn't crash on mixed-type args (int/None/bool alongside strings) — same adversarial-input standard I've applied to `identify()` itself since Sprint 4 Phase 1.
+- Reviewed Neo's scope note (deferred `_resolve_resource()` deletion to Phase 2) — agree with the reasoning: every phase stays independently green, no half-rewritten CLI state to accidentally ship.
+- `make test`: 310/310 (307 + 3 new). **Verdict: PASS.**
+
+## Task Description (prior): `*qa retest sec16 bug` — Neo's fix for Smith's `--help` discoverability finding
 Ran `scg onboard --help` for real against the installed binary — both new epilog lines present verbatim. Re-ran the exact naive command Smith's bug report used (`scg onboard --target https://internal-tool.example.com`, no `--sensitivity`/`--mode`) — still fails at runtime as designed (the fix is about discoverability, not making the naive form succeed), but a user who checked `--help` first now has no surprise. `make test`: 291/291 (2 new tests, both against real captured `--help` stdout via `main(["--help"])`, not just checking the epilog string exists in source). **Verdict: PASS.**
 
 ## Task Description (most recent): `*qa uat sec16` — real adversarial UAT of `scg onboard` authoring a `PolicyRule` in one call

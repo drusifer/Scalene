@@ -1,9 +1,34 @@
 # Current Task
 
-**Status:** `*user test sec16` — **APPROVED** after 1 fix round. Handed to all for retro.
+**Status:** `*user consult` — post-close CLI UX pass on `scg onboard`. 3 real findings, added to Cypher's backlog.
 **Assigned to:** Smith
-**Started:** 2026-07-20
-**Completed:** 2026-07-20
+**Started:** 2026-07-21
+**Completed:** 2026-07-21
+
+## Task Description (most recent): post-close CLI UX review, per direct user feedback
+User feedback (2026-07-21): Smith should critique CLI tools as full UX surfaces (arg naming, defaults, ergonomics) even when they already work and are documented — not just verify function/discoverability. Saved as a standing feedback memory (`feedback_smith_cli_ux_review.md`) and applied immediately: reviewed the shipped `scg onboard` interface fresh. 3 real, non-blocking findings, full writeup `agents/smith.docs/e14_cli_ux_review.md`:
+1. `--scanner` is overloaded — disambiguates a rule's scanner in the onboarding flow, but filters `--list`'s output; same flag, two meanings (Nielsen #4).
+2. The interactive `s(elect)` sub-prompt asks which targets to *exclude*, which requires more typing than asking which to *include* in the common case (a multi-target call where the user wants only 1-2) — Nielsen #7.
+3. `--sensitivity`/`--mode` both default toward the more *permissive* value when the other is omitted, which cuts against this project's own established restrictive-by-default posture elsewhere. Flagged as a conscious carry-forward from sec16 needing an explicit team decision, not silently re-inherited.
+None filed as `*user bug` (nothing is broken) — routed to Cypher's backlog for a future tech-debt pass instead.
+
+## Task Description (prior): `*user test E14` (Sprint 8 full end-to-end close) — **PASSED**.
+
+## Task Description (most recent): `*user test E14` — full sprint end-to-end, as a real repeatable test
+User correction mid-task (2026-07-21): I was about to verify the whole-epic user journey (tainted session → mixed multi-target call → `--only` selects one → retry allowed → `--list` shows it) via an ad-hoc bash scratch-dir transcript, the same shortcut I'd already been warned about earlier this session for individual findings. Corrected: wrote it as `tests/test_onboard.py::TestE14EndToEndUserJourney`, a real test with real assertions covering the exact story — `pre_tool_use` block→onboard→allow through the real hook adapter, `identify_targets`/`onboard_targets` for the mixed-batch-then-selective-onboard step, `main(["--list", ...])` for the closing check. This stays in the suite catching regressions on every future `make test`, not just this one session's verification. `make test`: 332/332 (331 + this 1 new test). **Verdict: PASS** — no new bugs found; every phase's own gate already did its job.
+
+## Task Description (prior): `*user test phase-2` (Sprint 8/E14 mandatory gate) — **APPROVED**.
+
+## Task Description (most recent): `*user test phase-2` — the mandatory gate on the real interactive CLI
+Full review: `agents/smith.docs/e14_gate_phase2.md`. Trin's UAT already covered `--yes`/`--only` for real; the actual TTY confirmation prompt had only been exercised through mocked `input()` until now. Drove it through a genuine pseudo-terminal (`pty.openpty()`), not a mock — the numbered target list, the `s(elect)` sub-flow, and the exclusion all read clearly and behave correctly (verified against the real written `policy.yaml`, not just terminal output). Cross-checked my Gate 1 reputation-score-visibility ask and Gate 2 mixed-sensitivity note — both already confirmed by Trin, not re-litigated. **APPROVED.**
+
+## Task Description (prior): `*user feedback E14` (Gate 2) — **APPROVED**.
+
+## Task Description (most recent): `*user feedback E14` — Gate 2 on ARCHITECTURE.md §17
+Full review: `agents/smith.docs/e14_gate2_review.md`. My Gate 1 hard requirement (non-interactive confirmation path) is concretely satisfied — `--yes`/`--only` plus a real fail-fast-not-hang behavior when stdin isn't a TTY, exactly the failure mode that would otherwise silently wedge a CI run. Both non-blocking Gate 1 asks (inventory surface, reputation-score visibility) landed as designed. One new non-blocking note carried to Trin: batch-level `--sensitivity`/`--mode` means a mixed-sensitivity tool call needs `--only` run twice, not automatic per-target classification — real UAT should try this case, not just single-target happy paths.
+
+## Task Description (most recent): `*user review E14` — Gate 1 on STORY-1401-1405
+Full review: `agents/smith.docs/e14_gate1_review.md`. Approved — testable, user-facing, correctly resolves the user's own request without overreaching into architecture Morpheus should own. **Hard requirement carried to Gate 2** (same weight as my §14.3 precedent): STORY-1402's confirmation step must support a genuinely non-interactive path, not just a blocking TTY prompt — this project's test suite and `demo/run_demo.py` both call onboarding in CI-shaped ways, and an interactive-only design would break that pattern. Also flagged (not blocking): grepped for real `--target` call sites myself before approving — `demo/run_demo.py`, `tests/test_demo.py`, `docs/GETTING_STARTED.md`, `docs/SETUP.md`, plus `onboard()`'s own test call sites all need updating; Mouse's phasing needs to cover this explicitly, not treat it as incidental cleanup.
 
 ## Task Description (most recent): `*user approve sec16` — re-gate after Neo's `--help` fix
 Re-ran `scg onboard --help` myself against the real binary: both disclosures read exactly as I'd want them to — plain language, states the constraint before a user has to trigger it, and the `--mode mask` explanation is genuinely useful context, not boilerplate. The naive pre-sec16 command still fails at runtime (expected — the fix was never meant to make the old single-flag form succeed again, that's the whole point of §16), but now nothing about that failure is a surprise to anyone who checked `--help` first, which closes the Nielsen #1/#6 gap I flagged. `docs/USER_GUIDE.md`'s literal `--help` reproduction matches real output (STORY-902's own standing requirement). **Verdict: APPROVED.** This closes the gate my original §14.3 requirement put extra scrutiny on — the CLI surface did change, but the change is now fully self-documenting, which is the substance of what that requirement was protecting in the first place.

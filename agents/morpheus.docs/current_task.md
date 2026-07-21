@@ -1,9 +1,48 @@
 # Current Task
 
-**Status:** `*lead review sec16` — **APPROVED, no fix round.** Handed to Oracle for grooming.
-**Assigned to:** N/A (Oracle next)
-**Started:** 2026-07-20
-**Completed:** 2026-07-20
+**Status:** `*lead review phase-2` (Sprint 8/E14) — **APPROVED after 1 fix round.** Handed to Smith for the mandatory gate.
+**Assigned to:** N/A (Smith next)
+**Started:** 2026-07-21
+**Completed:** 2026-07-21
+
+## Task Description (most recent): `*lead review phase-2` re-review after Neo's ordering fix
+Independently re-verified the fix myself (not just trusting Neo's report): mocked the exact same real run (`isatty=True`, `input` mocked) with the axis flags missing — confirmed `input()` is called **0** times now (was 1 before the fix) and the error surfaces immediately. **APPROVED.** No other issues found this round. `make test`: same 5 known Phase-3-scoped failures, no new ones.
+
+## Task Description (most recent): `*lead review phase-2` (Sprint 8/E14)
+Verified `_confirm_targets()`/`onboard_targets()`/`_list_inventory()` against §17.3/17.4/17.5. Reviewed Neo's self-caught bug fix (the `_onboard_resource()` tool/pattern override) — correct, and confirmed by re-reading the diff that `onboard()`'s custom `tool`/`pattern` now flow into the *one* real write, not a cosmetic post-hoc patch on the returned dict.
+
+**Found a real UX/ordering bug myself, verified live (my own standing habit, not just reading code)**: `main()` calls `_confirm_targets()` — which runs the interactive prompt — *before* `onboard_targets()` validates `--sensitivity`/`--mode`. Mocked a real interactive run (`isatty=True`, `input` returns `'y'`) with neither flag set: the user answers the confirmation prompt (`input()` called once), and only *after* that gets "At least one of 'sensitivity' or 'mode' must be provided." A batch-level precondition that's checked *after* asking the user to do something is backwards — it should fail before wasting their input, the same way `--yes`'s non-interactive path already fails immediately (confirmed via Trin's UAT). **Sending back to Neo**: move `_validate_axis()`'s call to the top of `main()`, right after `argparse`, before `load_tool_call`/`identify_targets`/`_confirm_targets` — a one-line reordering, not a design change.
+
+Not blocking on anything else: `--list`'s grouping/filtering matches §17.5 exactly, batch semantics (Trin's real partial-failure test) match §17.4. `make test`: 324/329, same 5 known Phase-3-scoped failures Neo/Trin already confirmed — no new failures from this review.
+
+## Task Description (prior): `*lead review phase-1` (Sprint 8/E14) — **APPROVED.**
+
+## Task Description (most recent): `*lead review phase-1` (Sprint 8/E14)
+Verified against §17.1/17.2/17.6 exactly. `identify_targets()` is a literal match for §17.2's pseudocode — traverses `SCANNERS`, dedupes by `(kind, identity)`. Confirmed the reputation score plumbing is genuinely additive end-to-end: `subprocess_isolation.py` needed zero changes (it JSON-round-trips the whole worker response transparently, so a new `"reputation"` key just flows through), `ScanResult.reputation` defaults to `None`, and `FileScanner.scan()` was correctly left untouched rather than wired to a `.get("reputation")` that would always be `None` anyway — no dead code added for a key that's never present in that path.
+
+**Endorsing Neo's scope deviation** (task.md literally said "delete `_resolve_resource()` entirely" as a Phase 1 line item — Neo deferred it): correct call, not a shortcut. `_resolve_resource()`'s only caller is `onboard()`, which Phase 2 is what actually replaces; deleting it in Phase 1 would have either broken `onboard()`/`main()` immediately (before their replacement exists) or left it as orphaned dead code with nothing calling it, neither of which serves "every phase stays green." Corrected `task.md`'s Phase 1 task wording to match reality (`--` a phase plan describing something that didn't literally happen would itself become exactly the kind of doc drift this project treats as a real defect, not cosmetic).
+
+No class-diagram changes needed — `identify_targets()`/`load_tool_call()` are module-level functions, same treatment as every other CLI-entrypoint helper in `onboard.py`, consistent with precedent. `make test`: 310/310 (unaffected by my one doc correction). **APPROVED.**
+
+## Task Description (prior): `*lead review sprint plan` (Sprint 8/E14) — **APPROVED, LOCKED.**
+
+## Task Description (most recent): `*lead review sprint plan` (Sprint 8/E14)
+Verified Mouse's 3-phase breakdown against §17 exactly: Phase 1 = §17.1/17.2 (invocation contract + traversal) + §17.6 (reputation, sequenced first since Phase 2's output formatting depends on `ScanResult.reputation` existing) — correctly no Smith gate, no usable CLI change yet. Phase 2 = §17.3/17.4/17.5 (confirmation, per-target scan/write, `--list`) — correctly the one gated phase, this is where my hard-requirement design (non-interactive escapes) becomes real code Smith can actually run. Phase 3 = §17.8's named breaking-change files, correctly not re-gated (reconciling already-approved Phase 2 behavior into docs, not new behavior) but held to Trin's verbatim-doc-reread standard instead. Confirmed `_resolve_resource()` has zero direct test references (grepped myself before approving Phase 1's "delete entirely" task) — safe to remove outright, not deprecate-in-place. §17.7's deferral (STORY-1406) correctly produced zero tasks, not silently absorbed into Phase 2 or 3. No Tank confirmed correct — no infra/daemon change. **APPROVED. Sprint 8 plan LOCKED.**
+
+## Task Description (prior): `*lead arch sprint` (E14) — architecture written as ARCHITECTURE.md §17.
+
+## Task Description (most recent): `*lead arch sprint` (E14) — Tool-Call-Driven Onboarding
+Resolved all 6 of Cypher's open questions plus Smith's Gate 1 hard requirement into `docs/ARCHITECTURE.md` §17:
+- **Invocation contract**: `scg onboard` reads `{"tool_name", "tool_input"}` from stdin (or `--call PATH`) — deliberately reuses `scalene-guard`'s own hook-JSON field names rather than inventing a second vocabulary.
+- **Confirmation (Smith's hard requirement)**: interactive TTY prompt by default, `--yes` and `--only IDENTITY,...` as two explicit non-interactive escapes, fail-fast (not hang) if stdin isn't a TTY and neither escape is given.
+- **`--tool`/`--pattern` dropped**, `--sensitivity`/`--mode`/`--scanner`/`--description` kept as batch-level flags — the former don't compose across N auto-identified targets, the latter still express one coherent trust decision about the confirmed batch.
+- **Inventory (STORY-1404)**: no new store — `scg onboard --list [--scanner NAME]` is a read-only view over `ScanCache.all_entries()`, which already durably records exactly this. Deliberately avoided introducing state that could drift from what already exists.
+- **Reputation score (STORY-1405)**: `ScanResult` gains `reputation: float | None`, additive (no `label`/`reason` change, zero blast radius on existing `decide_access()` callers). `LocalHeuristicChecker.check()` changes from first-match-wins to evaluate-all-3-heuristics so the score reflects real evaluated signal, not a relabeled boolean; `is_trusted` semantics unchanged (still any-trip-fails). `FileScanner` stays `reputation: None` deliberately — `detect-secrets`' open-ended finding list has no natural fixed-heuristic-count basis for a fraction the way `reputation.py`'s 3 checks do; inventing one would be false precision.
+- **STORY-1406 explicitly deferred** — not designed here, would need its own full story→architecture pass given it reverses §15's post_tool_use rationale.
+- Updated §4's class diagram for `ScanResult.reputation` in the same pass (own standing discipline against the exact kind of drift I've flagged 3x before in other reviews). `tests/test_architecture_docs.py`: 6/6, confirms the new stereotype doesn't break the drift guard.
+- Flagged the real breaking-change surface (Smith's Gate 1 grep) as an explicit §17.8 subsection so Mouse's phasing has to account for it, not discover it mid-implementation.
+
+## Task Description (prior): `*lead review sec16` — **APPROVED, no fix round.** Handed to Oracle for grooming.
 
 ## Task Description (most recent): `*lead review sec16` — architecture review of `scg onboard` authoring a `PolicyRule` in one call
 Read `onboard.py` in full against §16 (which Neo added when picking this up via bob-protocol — I confirmed it accurately describes the shipped code, not just aspirationally). Checked:

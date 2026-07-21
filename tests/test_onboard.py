@@ -21,10 +21,438 @@ import yaml
 from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from scalene.onboard import OnboardError, main, onboard
+from scalene.onboard import OnboardError, identify_targets, load_tool_call, main, onboard, onboard_targets
 from scalene.policy_config import PolicyConfig
 from scalene.scan_cache import ScanCache
+from scalene.scanner import Resource
+
+
+class TestIdentifyTargets(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.1/17.2 (Sprint 8/E14, STORY-1401): target
+    discovery moves from a hand-typed --target URI to traversing SCANNERS
+    and calling each scanner's own identify() -- the exact mechanism
+    pre_tool_use already runs live, not a second hand-rolled resolver."""
+
+    def test_traverses_every_registered_scanner(self):
+        # A Bash command touching both a file path and a URL must be fully
+        # covered by one call -- not one scanner type at a time.
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "clean.md"
+            target.write_text("ordinary docs")
+            resources = identify_targets("Bash", {"command": f"cat {target} && curl https://example.com/x"})
+            kinds = {r.kind for r in resources}
+            self.assertEqual(kinds, {"file", "url"})
+
+    def test_known_field_target_is_identified(self):
+        resources = identify_targets("Read", {"file_path": "/tmp/secret.txt"})
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0].kind, "file")
+        self.assertEqual(resources[0].identity, os.path.abspath("/tmp/secret.txt"))
+
+    def test_no_targets_in_an_unrelated_call_returns_empty(self):
+        resources = identify_targets("Bash", {"command": "echo hello world"})
+        self.assertEqual(resources, [])
+
+    def test_deduplicates_by_kind_and_identity(self):
+        # The same URL can surface via a known field AND the generic
+        # fallback scan of the same string -- must not be listed twice.
+        resources = identify_targets("WebFetch", {"url": "https://example.com/x", "prompt": "fetch https://example.com/x"})
+        url_resources = [r for r in resources if r.identity == "https://example.com/x"]
+        self.assertEqual(len(url_resources), 1)
+
+
+class TestLoadToolCall(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.1: the same {"tool_name", "tool_input"}
+    field names scalene-guard's own hook contract already uses -- one
+    mental model, not two."""
+
+    def test_reads_from_a_file_via_call_path(self):
+        with TemporaryDirectory() as tmp:
+            call_path = Path(tmp) / "call.json"
+            call_path.write_text('{"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}}')
+            tool_name, tool_input = load_tool_call(call_path=str(call_path))
+            self.assertEqual(tool_name, "Read")
+            self.assertEqual(tool_input, {"file_path": "/tmp/x"})
+
+    def test_malformed_json_raises_onboard_error_not_a_raw_exception(self):
+        with TemporaryDirectory() as tmp:
+            call_path = Path(tmp) / "call.json"
+            call_path.write_text("not valid json{{{")
+            with self.assertRaises(OnboardError):
+                load_tool_call(call_path=str(call_path))
+
+    def test_missing_tool_name_raises_onboard_error(self):
+        with TemporaryDirectory() as tmp:
+            call_path = Path(tmp) / "call.json"
+            call_path.write_text('{"tool_input": {}}')
+            with self.assertRaises(OnboardError):
+                load_tool_call(call_path=str(call_path))
+
+    def test_missing_file_raises_onboard_error(self):
+        with self.assertRaises(OnboardError):
+            load_tool_call(call_path="/no/such/file.json")
+
+    def test_json_that_is_not_an_object_raises_onboard_error(self):
+        # Trin's UAT (Sprint 8/E14 Phase 1): valid JSON, wrong shape (an
+        # array, not an object) -- must fail loud, not IndexError/TypeError
+        # deep inside dict-key access.
+        with TemporaryDirectory() as tmp:
+            call_path = Path(tmp) / "call.json"
+            call_path.write_text("[1, 2, 3]")
+            with self.assertRaises(OnboardError):
+                load_tool_call(call_path=str(call_path))
+
+
+class TestOnboardTargets(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.4 (STORY-1403): per-target scan + rule-
+    write with batch semantics -- one target failing must not abort the
+    others. sensitivity/mode/scanner/description apply once, batch-level,
+    to every target (sec17.4) -- --tool/--pattern are gone entirely,
+    replaced by the fixed default (tool=".*", pattern=exact identity)."""
+
+    def test_requires_at_least_one_axis_before_touching_any_target(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            resource = Resource(kind="file", identity=str(target), scanner_name="secrets")
+            with self.assertRaises(OnboardError):
+                onboard_targets([resource], cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml")
+
+    def test_all_clean_targets_onboard_successfully(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            t1 = tmp_path / "a.md"
+            t1.write_text("ordinary docs")
+            t2 = tmp_path / "b.md"
+            t2.write_text("more ordinary docs")
+            targets = [
+                Resource(kind="file", identity=str(t1), scanner_name="secrets"),
+                Resource(kind="file", identity=str(t2), scanner_name="secrets"),
+            ]
+            results = onboard_targets(
+                targets, mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
+            )
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(r["ok"] for r in results))
+            config = PolicyConfig.from_yaml(tmp_path / "policy.yaml")
+            self.assertEqual(len(config.rules), 2)
+
+    def test_one_bad_target_does_not_abort_the_others(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            clean = tmp_path / "clean.md"
+            clean.write_text("ordinary docs")
+            leaky = tmp_path / "leaky.env"
+            fake_key = "AKIA" + "ABCDEFGHIJKLMNOP"
+            leaky.write_text(f"AWS_KEY={fake_key}")
+            targets = [
+                Resource(kind="file", identity=str(clean), scanner_name="secrets"),
+                Resource(kind="file", identity=str(leaky), scanner_name="secrets"),
+            ]
+            results = onboard_targets(
+                targets, mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
+            )
+            self.assertEqual(len(results), 2)
+            ok_by_identity = {r["resource"].identity: r["ok"] for r in results}
+            self.assertTrue(ok_by_identity[str(clean)])
+            self.assertFalse(ok_by_identity[str(leaky)])
+            config = PolicyConfig.from_yaml(tmp_path / "policy.yaml")
+            self.assertEqual(len(config.rules), 1)
+
+    def test_pattern_defaults_to_exact_identity_no_tool_pattern_flags(self):
+        # sec17.4: --tool/--pattern are removed from this flow entirely --
+        # confirms the fixed default still applies, not a regression.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            resource = Resource(kind="file", identity=str(target), scanner_name="secrets")
+            results = onboard_targets(
+                [resource], mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
+            )
+            self.assertEqual(results[0]["rule"].pattern, re.escape(str(target)))
+            self.assertEqual(results[0]["rule"].tool, ".*")
+
+    def test_result_includes_reputation_when_present(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            resource = Resource(kind="url", identity="https://internal.example.com", scanner_name="reputation")
+            results = onboard_targets(
+                [resource], mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
+            )
+            self.assertEqual(results[0]["reputation"], 1.0)
+
+
+class TestConfirmTargets(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.3 (STORY-1402, Smith's Gate 1 hard
+    requirement): interactive by default, --yes/--only as the two required
+    non-interactive escapes, fail-fast (not hang) with no TTY and neither."""
+
+    def setUp(self):
+        from scalene.onboard import _confirm_targets
+
+        self._confirm_targets = _confirm_targets
+        self.targets = [
+            Resource(kind="file", identity="/tmp/a.md", scanner_name="secrets"),
+            Resource(kind="url", identity="https://example.com/x", scanner_name="reputation"),
+        ]
+
+    def test_yes_confirms_every_target_without_prompting(self):
+        with patch("builtins.input") as mock_input:
+            confirmed = self._confirm_targets(self.targets, yes=True, only=None)
+            mock_input.assert_not_called()
+        self.assertEqual(confirmed, self.targets)
+
+    def test_only_confirms_named_subset_without_prompting(self):
+        with patch("builtins.input") as mock_input:
+            confirmed = self._confirm_targets(self.targets, yes=False, only="/tmp/a.md")
+            mock_input.assert_not_called()
+        self.assertEqual(confirmed, [self.targets[0]])
+
+    def test_only_with_an_unidentified_identity_fails_loud(self):
+        with self.assertRaises(OnboardError) as ctx:
+            self._confirm_targets(self.targets, yes=False, only="/tmp/never-identified.md")
+        self.assertIn("/tmp/never-identified.md", str(ctx.exception))
+
+    def test_no_tty_and_neither_escape_fails_fast_not_hang(self):
+        # The exact failure mode Smith's hard requirement exists to prevent:
+        # a script/test piping input must get an immediate, clear error,
+        # never a blocked read() waiting on input that will never arrive.
+        with patch("sys.stdin.isatty", return_value=False), patch("builtins.input") as mock_input:
+            with self.assertRaises(OnboardError) as ctx:
+                self._confirm_targets(self.targets, yes=False, only=None)
+            mock_input.assert_not_called()
+        self.assertIn("--yes", str(ctx.exception))
+        self.assertIn("--only", str(ctx.exception))
+
+    def test_interactive_yes_confirms_all(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="y"):
+            confirmed = self._confirm_targets(self.targets, yes=False, only=None)
+        self.assertEqual(confirmed, self.targets)
+
+    def test_interactive_enter_defaults_to_yes(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            confirmed = self._confirm_targets(self.targets, yes=False, only=None)
+        self.assertEqual(confirmed, self.targets)
+
+    def test_interactive_no_declines_everything_as_a_clean_no_op(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="n"):
+            confirmed = self._confirm_targets(self.targets, yes=False, only=None)
+        self.assertEqual(confirmed, [])
+
+    def test_interactive_select_excludes_named_indices(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["s", "1"]):
+            confirmed = self._confirm_targets(self.targets, yes=False, only=None)
+        self.assertEqual(confirmed, [self.targets[1]])
+
+
+class TestListInventory(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.5 (STORY-1404): a read-only view over
+    ScanCache.all_entries(), grouped by scanner -- no new store."""
+
+    def test_list_shows_onboarded_targets_grouped_by_scanner(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            resource = Resource(kind="file", identity=str(target), scanner_name="secrets")
+            onboard_targets([resource], mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml")
+
+            out = io.StringIO()
+            with redirect_stdout(out):
+                exit_code = main(["--list", "--cache-path", str(tmp_path / "cache.json")])
+            self.assertEqual(exit_code, 0)
+            self.assertIn(str(target), out.getvalue())
+            self.assertIn("secrets", out.getvalue())
+
+    def test_list_filters_by_scanner(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            file_target = tmp_path / "clean.md"
+            file_target.write_text("ordinary docs")
+            resources = [
+                Resource(kind="file", identity=str(file_target), scanner_name="secrets"),
+                Resource(kind="url", identity="https://internal.example.com", scanner_name="reputation"),
+            ]
+            onboard_targets(resources, mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml")
+
+            out = io.StringIO()
+            with redirect_stdout(out):
+                main(["--list", "--scanner", "reputation", "--cache-path", str(tmp_path / "cache.json")])
+            text = out.getvalue()
+            self.assertIn("internal.example.com", text)
+            self.assertNotIn(str(file_target), text)
+
+    def test_list_on_an_empty_cache_is_a_clean_no_op(self):
+        with TemporaryDirectory() as tmp:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                exit_code = main(["--list", "--cache-path", str(Path(tmp) / "cache.json")])
+            self.assertEqual(exit_code, 0)
+
+
+class TestMainNewCliSurface(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec17.1-17.4: --target/--tool/--pattern are gone;
+    --call/--yes/--only plus the tool-call-JSON input contract replace them."""
+
+    def test_target_flag_no_longer_exists(self):
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit):
+            with patch("sys.stderr", out):
+                main(["--target", "https://example.com", "--mode", "allow"])
+
+    def test_full_flow_via_call_file_and_yes(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            call_path = tmp_path / "call.json"
+            call_path.write_text(f'{{"tool_name": "Read", "tool_input": {{"file_path": "{target}"}}}}')
+
+            exit_code = main(
+                [
+                    "--call",
+                    str(call_path),
+                    "--yes",
+                    "--mode",
+                    "allow",
+                    "--cache-path",
+                    str(tmp_path / "cache.json"),
+                    "--policy-path",
+                    str(tmp_path / "policy.yaml"),
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            config = PolicyConfig.from_yaml(tmp_path / "policy.yaml")
+            self.assertEqual(len(config.rules), 1)
+
+    def test_missing_axis_fails_before_the_confirmation_prompt_not_after(self):
+        # Morpheus's Phase 2 review (Sprint 8/E14): caught live -- a user
+        # who answers the interactive prompt must never then be told they
+        # forgot --sensitivity/--mode. input() must not be called at all.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "clean.md"
+            target.write_text("ordinary docs")
+            call_path = tmp_path / "call.json"
+            call_path.write_text(f'{{"tool_name": "Read", "tool_input": {{"file_path": "{target}"}}}}')
+
+            with patch("sys.stdin.isatty", return_value=True), patch("builtins.input") as mock_input:
+                exit_code = main(
+                    [
+                        "--call",
+                        str(call_path),
+                        "--cache-path",
+                        str(tmp_path / "cache.json"),
+                        "--policy-path",
+                        str(tmp_path / "policy.yaml"),
+                    ]
+                )
+                mock_input.assert_not_called()
+            self.assertEqual(exit_code, 1)
+
+    def test_no_targets_identified_is_a_clean_no_op(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            call_path = tmp_path / "call.json"
+            call_path.write_text('{"tool_name": "Bash", "tool_input": {"command": "echo hello world"}}')
+            exit_code = main(["--call", str(call_path), "--yes", "--mode", "allow"])
+            self.assertEqual(exit_code, 0)
+
+
+class TestE14EndToEndUserJourney(unittest.TestCase):
+    """Sprint 8 (E14) full user story, encoded as a real, repeatable test
+    with assertions -- not an ad-hoc bash transcript re-verified by eye each
+    time. Covers the whole loop docs/GETTING_STARTED.md/USER_GUIDE.md
+    describe: a session gets tainted, a mixed multi-target tool call is
+    identified, --only selects one target to onboard, the retry is allowed,
+    and --list shows what was onboarded -- via the real hook_adapter and
+    the real onboard CLI, not narrated by hand."""
+
+    def test_mixed_batch_only_one_confirmed_then_allowed_then_listed(self):
+        from scalene.hook_adapter import pre_tool_use
+        from scalene.policy_config import PolicyConfig
+
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            state_dir = tmp_path / "state"
+            audit_log = tmp_path / "audit.log"
+            cache_path = tmp_path / "cache.json"
+            policy_path = tmp_path / "policy.yaml"
+            config_file = tmp_path / "app.yaml"
+            config_file.write_text("server: prod")
+
+            # 1. A clean session reads a file -- allowed, but now tainted.
+            first = pre_tool_use(
+                {"session_id": "e2e", "tool_name": "Read", "tool_input": {"file_path": "notes.txt"}},
+                PolicyConfig(),
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+                cache_path=cache_path,
+            )
+            self.assertEqual(first["hookSpecificOutput"]["permissionDecision"], "allow")
+
+            # 2. A tainted session hits an unrecognized destination -- blocked.
+            second = pre_tool_use(
+                {
+                    "session_id": "e2e",
+                    "tool_name": "WebFetch",
+                    "tool_input": {"url": "https://partner.example.com/api", "prompt": "x"},
+                },
+                PolicyConfig(),
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+                cache_path=cache_path,
+            )
+            self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "deny")
+
+            # 3. A mixed tool call (file + URL) identifies both targets;
+            # --only equivalent (explicit target list) onboards just the URL.
+            call_tool_input = {
+                "command": f"cat {config_file} && curl https://partner.example.com/api",
+            }
+            targets = identify_targets("Bash", call_tool_input)
+            self.assertEqual({t.kind for t in targets}, {"file", "url"})
+            url_target = next(t for t in targets if t.kind == "url")
+
+            results = onboard_targets(
+                [url_target],
+                mode="allow",
+                sensitivity="public",
+                description="trusted partner",
+                cache_path=cache_path,
+                policy_path=policy_path,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertTrue(results[0]["ok"])
+            self.assertEqual(results[0]["reputation"], 1.0)
+
+            # 4. Retrying the exact same blocked call is now allowed.
+            allow_config = PolicyConfig.from_yaml(policy_path)
+            third = pre_tool_use(
+                {
+                    "session_id": "e2e",
+                    "tool_name": "WebFetch",
+                    "tool_input": {"url": "https://partner.example.com/api", "prompt": "x"},
+                },
+                allow_config,
+                state_dir=state_dir,
+                audit_log_path=audit_log,
+                cache_path=cache_path,
+            )
+            self.assertEqual(third["hookSpecificOutput"]["permissionDecision"], "allow")
+
+            # 5. --list shows the onboarded URL, not the never-onboarded file.
+            out = io.StringIO()
+            with redirect_stdout(out):
+                exit_code = main(["--list", "--cache-path", str(cache_path)])
+            self.assertEqual(exit_code, 0)
+            listing = out.getvalue()
+            self.assertIn("https://partner.example.com/api", listing)
+            self.assertNotIn(str(config_file), listing)
 
 
 class TestOnboardHelpDisclosesRealConstraints(unittest.TestCase):

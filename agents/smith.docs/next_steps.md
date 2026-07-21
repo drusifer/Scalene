@@ -1,10 +1,16 @@
 # Next Steps
 
 ## Immediate Next Action
-`*user approve sec16` complete (2026-07-20) — Neo's `--help` epilog fix closes both my discoverability finding and Trin's bundled `--mode mask` finding. Handed to all for `*sprint retro` (Sprint 7).
+`*user test E14` complete (2026-07-21) — full sprint end-to-end PASSED, encoded as a permanent test (`TestE14EndToEndUserJourney`) after a user correction against ad-hoc bash verification. Handed to all for `*sprint retro`.
 
 ## Waiting On
-Nothing blocking. My retro input: this sprint is the second time in a row (after sec15) that a direct-user-design correction shipped ahead of formal review, and the second time in a row the after-the-fact gate chain caught something real (sec15: a structural safety gap; sec16: a first-use discoverability regression against my own prior hard requirement). Worth naming as validation that "implement fast with the user, gate formally after" is a workable pattern here — but only because the gate chain is actually run every time, not skipped because the code already works.
+Nothing blocking. My retro input: I'd already been corrected once this session (mid-sprint, an individual finding) for ad-hoc bash verification, then repeated the same shortcut at the full-sprint-close scale before being corrected again. Worth internalizing harder, not just for this session: even (especially) a "just confirming the whole thing works" moment at sprint close should default to a real test, same standard as any single bug repro — the scale of the check doesn't change the rule.
+
+## Retro input carried from Sprint 7 (for whenever the next retro happens after this one)
+Sprint 7's lesson: "implement fast with the user, gate formally after" is validated as workable here — but only because the gate chain runs every time, not skipped because the code already works.
+
+## Retro input carried from Sprint 7 (for whenever the next retro happens)
+This sprint (Sprint 7) was the second time in a row (after sec15) that a direct-user-design correction shipped ahead of formal review, and the second time in a row the after-the-fact gate chain caught something real. Worth naming as validation that "implement fast with the user, gate formally after" is a workable pattern here — but only because the gate chain is actually run every time, not skipped because the code already works.
 
 ## Retro input carried from sec15 (for whenever `*sprint retro` happens next)
 Nothing blocking. My own retro input (for `*sprint retro`): the central lesson of this sprint is that my mandatory Phase 3 gate — specifically the instruction to *run the software adversarially*, not just review it — is what caught a defect that fully passed code review and every unit test written against its own acceptance criteria. Worth naming as validation that the gate's "actually run it" requirement isn't ceremony.

@@ -1,10 +1,15 @@
 # Next Steps
 
 ## Immediate Next Action
-`*lead review sec16` complete (2026-07-20) — approved, no fix round; one non-blocking ordering observation flagged (cache write precedes rule write in `onboard()`). Handed to Oracle for grooming.
+Phase 2 approved (2026-07-21, after 1 fix round — an axis-validation ordering bug I caught by mocking a real interactive run). Handed to Smith for the mandatory gate.
 
 ## Waiting On
-Nothing. Next in the resumed close sequence: Oracle groom → Smith end-to-end test → retro → Cypher launch.
+Smith's gate verdict. If approved: Phase 3 (demo/docs/existing-test reconciliation, no separate gate) closes out the 5 known Phase-3-scoped test failures, then Oracle groom → Smith end-to-end test → retro → Cypher launch.
+
+## Watch-items for my own Phase reviews (once implementation starts)
+- Confirm `main()` genuinely fails fast (no hang) when stdin isn't a TTY and neither `--yes`/`--only` is given — this is the piece protecting the test suite, don't just trust it works, verify it.
+- Confirm `LocalHeuristicChecker.check()`'s evaluate-all-3 change doesn't silently change `is_trusted`'s truth table — only the score should be new, the boolean's meaning must be provably unchanged (a good spot for Trin to diff old-vs-new behavior across a matrix of trigger combinations).
+- Confirm §17.8's real breaking-change surface (demo, tests, GETTING_STARTED.md, SETUP.md) is actually a named task in Mouse's phase breakdown, not assumed to happen incidentally.
 
 ## Planned Work
 - [x] Resolved all 4 of §13.8's open questions into concrete decisions (§14.1, §14.5).

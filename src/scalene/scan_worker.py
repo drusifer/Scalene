@@ -24,7 +24,7 @@ def _scan_secrets(target: str) -> dict:
 
 def _scan_reputation(target: str) -> dict:
     result = LocalHeuristicChecker().check(target)
-    return {"ok": result.is_trusted, "reason": result.reason}
+    return {"ok": result.is_trusted, "reason": result.reason, "reputation": result.score}
 
 
 _SCANNERS = {"secrets": _scan_secrets, "reputation": _scan_reputation}

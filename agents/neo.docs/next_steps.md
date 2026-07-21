@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Immediate Next Action
-Handed to Trin to re-verify the `--help` discoverability fix (2026-07-20) before Smith re-gates. The main sec16 review chain (Trin UAT → Morpheus review) already passed cleanly before this bug surfaced at Smith's gate.
+Phase 3 complete, handed to Trin. Per Mouse's plan, Phase 3 gets no separate Smith gate — Trin re-runs `docs/GETTING_STARTED.md`'s onboarding section verbatim (real doc-touching-phase standard) instead, then this closes out to Oracle/Smith/retro/Cypher for the whole sprint.
 
 ## Waiting On
-Trin's re-verification, then Smith's re-test/approval, then retro/Cypher launch (Sprint 7). Whoever picks this up next should read §16 in full — it explicitly supersedes §14.3 for the onboard CLI surface (§14's other sections still hold).
+Trin's Phase 3 verification. She should know: `onboard()`/`_resolve_resource()` were **not** deleted (see current_task.md's scope revision — they cover real, distinct URI-scheme-validation behavior with no equivalent in the new flow, kept deliberately, not an oversight). Also carried: `docs/ARCHITECTURE.md` §5's Onboarding sequence diagram is stale (pre-dates even sec16) — flagged for Morpheus, not fixed by me, since it's outside Mouse's named Phase 3 scope and diagram-drift calls have historically been Morpheus's to make.
 
 ## Planned Work
 - [x] Sprint 5 (E11) Phases 1-3 originally implemented against §14.4's masking model, all gated and approved.

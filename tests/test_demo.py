@@ -33,10 +33,15 @@ class TestDemo(unittest.TestCase):
         self.assertIn("has no validated, explicitly-allowed rule", result.stdout)
 
     def test_demo_shows_onboard_and_rule_clearing_a_destination(self):
+        # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): --target is gone --
+        # onboard now takes --call/--yes, identifying targets from the tool
+        # call itself.
         result = subprocess.run([sys.executable, str(DEMO_SCRIPT)], capture_output=True, text=True, timeout=30)
-        self.assertIn("scg onboard --target", result.stdout)
+        self.assertIn("scg onboard --call", result.stdout)
+        self.assertIn("--yes", result.stdout)
         self.assertIn("Rule written to", result.stdout)
         self.assertIn("mode='allow'", result.stdout)
+        self.assertIn("1 onboarded, 0 blocked", result.stdout)
         self.assertIn("Allowed. Validated (real scan passed)", result.stdout)
 
     def test_demo_shows_rule_does_not_leak_to_other_destinations(self):

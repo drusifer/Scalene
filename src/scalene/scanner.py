@@ -77,6 +77,7 @@ class Resource:
 class ScanResult:
     label: str  # "public" | "sensitive" | "trusted" | "untrusted"
     reason: str = ""
+    reputation: float | None = None  # sec17.6: 0.0 (worst) .. 1.0 (best); None where no graded signal exists
 
 
 class ScannerMachineryError(Exception):
@@ -168,9 +169,10 @@ class URLScanner:
         result = run_scanner("reputation", host)
         if result.get("machinery_error"):
             raise ScannerMachineryError(result.get("reason", "reputation scan machinery failed"))
+        reputation = result.get("reputation")
         if result.get("ok", False):
-            return ScanResult(label="trusted")
-        return ScanResult(label="untrusted", reason=result.get("reason", ""))
+            return ScanResult(label="trusted", reputation=reputation)
+        return ScanResult(label="untrusted", reason=result.get("reason", ""), reputation=reputation)
 
 
 SCANNERS: dict[str, Scanner] = {"secrets": FileScanner(), "reputation": URLScanner()}

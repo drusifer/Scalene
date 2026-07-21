@@ -65,6 +65,7 @@ before a user has to trigger the error to learn them.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -110,6 +111,49 @@ def _resolve_resource(target: str) -> Resource:
     raise OnboardError(f"--target must be a file://, http://, or https:// URI (got {target!r})")
 
 
+def identify_targets(tool_name: str, tool_input: dict) -> list[Resource]:
+    """docs/ARCHITECTURE.md sec17.1/17.2 (STORY-1401): traverses the full
+    SCANNERS registry, calling each scanner's own identify() -- the exact
+    mechanism pre_tool_use already runs live -- instead of a hand-typed
+    --target URI resolved by a second, onboard-only resolver. Deduplicated
+    by (kind, identity): the same value can surface via a known field AND
+    the generic-fallback scan of the same string (e.g. WebFetch's --url
+    field vs. that same URL appearing in --prompt too)."""
+    seen: set[tuple[str, str]] = set()
+    targets: list[Resource] = []
+    for scanner in SCANNERS.values():
+        for resource in scanner.identify(tool_name, tool_input):
+            key = (resource.kind, resource.identity)
+            if key in seen:
+                continue
+            seen.add(key)
+            targets.append(resource)
+    return targets
+
+
+def load_tool_call(call_path: str | None = None) -> tuple[str, dict]:
+    """docs/ARCHITECTURE.md sec17.1: reads {"tool_name": ..., "tool_input":
+    ...} from `call_path` if given, else stdin -- deliberately the same
+    field names scalene-guard's own hook contract already uses (docs/
+    USER_GUIDE.md), so onboarding is one mental model, not two. Raises
+    OnboardError (never a raw exception) on a missing file, malformed JSON,
+    or a missing 'tool_name' key."""
+    try:
+        text = Path(call_path).read_text() if call_path else sys.stdin.read()
+    except OSError as exc:
+        raise OnboardError(f"Onboarding blocked: could not read tool call — {exc}") from exc
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise OnboardError(f"Onboarding blocked: tool call is not valid JSON — {exc}") from exc
+
+    if not isinstance(payload, dict) or "tool_name" not in payload:
+        raise OnboardError("Onboarding blocked: tool call JSON must be an object with a 'tool_name' key")
+
+    return payload["tool_name"], payload.get("tool_input", {})
+
+
 def _write_rule(policy_path: Path, rule: PolicyRule) -> None:
     if policy_path.exists():
         try:
@@ -144,19 +188,11 @@ def _write_rule(policy_path: Path, rule: PolicyRule) -> None:
         raise OnboardError(f"Onboarding blocked: could not write {policy_path} — {exc}") from exc
 
 
-def onboard(
-    target: str,
-    tool: str = ".*",
-    pattern: str | None = None,
-    sensitivity: str | None = None,
-    mode: str | None = None,
-    scanner: str = "",
-    description: str = "",
-    cache_path: Path = DEFAULT_CACHE_PATH,
-    policy_path: Path = DEFAULT_POLICY_PATH,
-) -> dict:
-    """Returns {"resource": Resource, "label": str, "rule": PolicyRule} on
-    success. Raises OnboardError (no cache/policy write) on failure."""
+def _validate_axis(sensitivity: str | None, mode: str | None) -> tuple[str, str]:
+    """Batch-level precondition (sec17.4): checked once, before any target
+    is touched -- a bad flag combo blocks the whole invocation, not one
+    target at a time, since --sensitivity/--mode describe one trust
+    decision shared across everything in this batch."""
     if sensitivity is None and mode is None:
         raise OnboardError(
             "At least one of 'sensitivity' or 'mode' must be provided — onboarding is the moment "
@@ -177,8 +213,25 @@ def onboard(
             f"but has no distinct effect under the live access-control decision (docs/ARCHITECTURE.md "
             f"sec15); it would silently behave exactly like 'block'."
         )
+    return sensitivity, mode
 
-    resource = _resolve_resource(target)
+
+def _onboard_resource(
+    resource: Resource,
+    sensitivity: str,
+    mode: str,
+    scanner: str,
+    description: str,
+    cache_path: Path,
+    policy_path: Path,
+    tool: str = ".*",
+    pattern: str | None = None,
+) -> dict:
+    """One target's worth of scan + rule-write (sec17.4). `onboard_targets()`
+    never overrides tool/pattern (the flags are gone from that flow entirely
+    -- ".*" and an exact match on the resource's own identity, same default
+    sec16 already had). `onboard()` (pre-sec17, kept for its existing
+    callers) still can, via these two params."""
     scanner_obj = SCANNERS[resource.scanner_name]
 
     try:
@@ -211,7 +264,128 @@ def onboard(
 
     _write_rule(policy_path, rule)
 
-    return {"resource": resource, "label": result.label, "rule": rule}
+    return {"resource": resource, "label": result.label, "reputation": result.reputation, "rule": rule}
+
+
+def onboard_targets(
+    targets: list[Resource],
+    sensitivity: str | None = None,
+    mode: str | None = None,
+    scanner: str = "",
+    description: str = "",
+    cache_path: Path = DEFAULT_CACHE_PATH,
+    policy_path: Path = DEFAULT_POLICY_PATH,
+) -> list[dict]:
+    """docs/ARCHITECTURE.md sec17.4 (STORY-1403): scans + writes a rule for
+    each confirmed target. Batch semantics, not all-or-nothing -- one
+    target's scan/rule failure is caught and recorded per-target (ok=False,
+    error=...), the rest of the batch still proceeds. Returns one result
+    dict per target, in the same order as `targets`."""
+    sensitivity, mode = _validate_axis(sensitivity, mode)
+
+    results = []
+    for resource in targets:
+        try:
+            outcome = _onboard_resource(resource, sensitivity, mode, scanner, description, cache_path, policy_path)
+            results.append({**outcome, "ok": True})
+        except OnboardError as exc:
+            results.append({"resource": resource, "ok": False, "error": str(exc)})
+    return results
+
+
+def onboard(
+    target: str,
+    tool: str = ".*",
+    pattern: str | None = None,
+    sensitivity: str | None = None,
+    mode: str | None = None,
+    scanner: str = "",
+    description: str = "",
+    cache_path: Path = DEFAULT_CACHE_PATH,
+    policy_path: Path = DEFAULT_POLICY_PATH,
+) -> dict:
+    """Returns {"resource": Resource, "label": str, "rule": PolicyRule} on
+    success. Raises OnboardError (no cache/policy write) on failure.
+
+    Superseded by onboard_targets() as of sec17 (Sprint 8/E14) -- kept as-is
+    (still `--target`-driven, single-resource) since its only caller,
+    _resolve_resource(), is deliberately not deleted yet (Phase 1's scope
+    note). Phase 3 migrates the remaining direct callers and removes both."""
+    sensitivity, mode = _validate_axis(sensitivity, mode)
+
+    resource = _resolve_resource(target)
+    return _onboard_resource(
+        resource, sensitivity, mode, scanner, description, cache_path, policy_path, tool=tool, pattern=pattern
+    )
+
+
+def _confirm_targets(targets: list[Resource], yes: bool, only: str | None) -> list[Resource]:
+    """docs/ARCHITECTURE.md sec17.3 (STORY-1402, Smith's Gate 1 hard
+    requirement): interactive by default, two explicit non-interactive
+    escapes. Fails fast (never hangs) when stdin isn't a TTY and neither
+    escape was given -- the failure mode that would otherwise silently wedge
+    a script/CI run on a read() that never resolves."""
+    if only is not None:
+        wanted = [identity.strip() for identity in only.split(",") if identity.strip()]
+        by_identity = {t.identity: t for t in targets}
+        missing = [identity for identity in wanted if identity not in by_identity]
+        if missing:
+            raise OnboardError(
+                f"Onboarding blocked: --only named identities not found among identified targets: "
+                f"{', '.join(missing)}"
+            )
+        return [by_identity[identity] for identity in wanted]
+
+    if yes:
+        return list(targets)
+
+    if not sys.stdin.isatty():
+        raise OnboardError(
+            "Onboarding blocked: no TTY for interactive confirmation, and neither --yes nor --only "
+            "was given. Pass --yes to confirm every identified target, or --only <identity,...> to "
+            "confirm a specific subset non-interactively."
+        )
+
+    print(f"Identified {len(targets)} target(s):")
+    for i, target in enumerate(targets, start=1):
+        print(f"  {i}. [{target.kind}] {target.identity} (via {target.scanner_name})")
+    answer = input(f"Onboard all {len(targets)} targets? [Y/n/s(elect)] ").strip().lower()
+    if answer in ("", "y", "yes"):
+        return list(targets)
+    if answer in ("s", "select"):
+        exclude_raw = input("Enter numbers to exclude, comma-separated (or blank for none): ").strip()
+        excluded = {int(tok) for tok in exclude_raw.split(",") if tok.strip().isdigit()}
+        return [target for i, target in enumerate(targets, start=1) if i not in excluded]
+    # 'n'/'no'/anything unrecognized: decline everything rather than guess.
+    return []
+
+
+def _list_inventory(cache_path: Path, scanner_filter: str | None) -> int:
+    """docs/ARCHITECTURE.md sec17.5 (STORY-1404): a read-only view over
+    ScanCache.all_entries() grouped by scanner -- no new store, so there's
+    nothing here that could drift from what decide_access() actually reads."""
+    try:
+        entries = ScanCache(cache_path).all_entries()
+    except ScanCacheError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    grouped: dict[str, list[tuple[str, dict]]] = {}
+    for key, entry in entries.items():
+        scanner_name, _, identity = key.partition(":")
+        if scanner_filter and scanner_name != scanner_filter:
+            continue
+        grouped.setdefault(scanner_name, []).append((identity, entry))
+
+    if not grouped:
+        print("No onboarded targets in the scan cache.")
+        return 0
+
+    for scanner_name in sorted(grouped):
+        print(f"{scanner_name}:")
+        for identity, entry in sorted(grouped[scanner_name]):
+            print(f"  {identity} -> {entry.get('label', '?')}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -219,6 +393,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="scg onboard",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "Reads a tool call ({\"tool_name\": ..., \"tool_input\": ...}) from stdin by default,\n"
+            "or --call PATH -- the same field names scalene-guard's own hook contract already\n"
+            "uses. Every scanner's identify() runs against it; identified targets are confirmed\n"
+            "(interactively, or via --yes/--only) before anything is scanned or written.\n\n"
             "At least one of --sensitivity/--mode is required -- onboarding is the moment you\n"
             "declare a trust decision, so it's never silently inferred. Whichever you omit\n"
             "defaults sensibly (mode: allow, sensitivity: public).\n\n"
@@ -227,14 +405,19 @@ def main(argv: list[str] | None = None) -> int:
             "'not allow' -- mask would silently behave exactly like block."
         ),
     )
+    parser.add_argument("--call", default=None, help="Path to a JSON {tool_name, tool_input} file (default: read from stdin)")
     parser.add_argument(
-        "--target",
-        required=True,
-        help="file://<path> (runs a secrets scan) or http(s)://<host> (runs a reputation check)",
+        "--yes", "-y", action="store_true", help="Onboard every identified target without an interactive prompt"
     )
-    parser.add_argument("--tool", default=".*", help="Regex against the tool name (default: any tool)")
     parser.add_argument(
-        "--pattern", default=None, help="Regex against the resource identity (default: exact match on --target)"
+        "--only",
+        default=None,
+        help="Comma-separated identities to onboard, skipping the prompt (fails if a named identity wasn't identified)",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List onboarded targets from the scan cache (optionally filtered by --scanner) instead of onboarding",
     )
     parser.add_argument(
         "--sensitivity",
@@ -245,36 +428,77 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mode", choices=_ONBOARD_VALID_MODES, default=None, help="allow|block (default 'allow' if --sensitivity is given)"
     )
-    parser.add_argument("--scanner", default="", help="Optional disambiguating scanner name (usually inferred)")
+    parser.add_argument(
+        "--scanner", default="", help="Optional disambiguating scanner name (usually inferred); also filters --list"
+    )
     parser.add_argument("--description", default="", help="Why this rule exists (recommended)")
     parser.add_argument("--policy-path", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("--cache-path", default=str(DEFAULT_CACHE_PATH))
     args = parser.parse_args(argv)
 
+    if args.list:
+        return _list_inventory(Path(args.cache_path), args.scanner or None)
+
+    # Morpheus's Phase 2 review (Sprint 8/E14): validate the batch-level
+    # --sensitivity/--mode precondition BEFORE the interactive confirmation
+    # prompt, not after -- a user who answers the prompt shouldn't then be
+    # told they forgot a required flag; the failure has to come before
+    # their input is asked for, same as --yes's non-interactive path
+    # already did.
     try:
-        result = onboard(
-            args.target,
-            tool=args.tool,
-            pattern=args.pattern,
-            sensitivity=args.sensitivity,
-            mode=args.mode,
-            scanner=args.scanner,
-            description=args.description,
-            cache_path=Path(args.cache_path),
-            policy_path=Path(args.policy_path),
-        )
+        sensitivity, mode = _validate_axis(args.sensitivity, args.mode)
     except OnboardError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    resource = result["resource"]
-    rule = result["rule"]
-    print(f"Verified: {resource.scanner_name}:{resource.identity} -> {result['label']}")
-    print(
-        f"Rule written to {args.policy_path}: tool={rule.tool!r} pattern={rule.pattern!r} "
-        f"sensitivity={rule.sensitivity!r} mode={rule.mode!r}"
+    try:
+        tool_name, tool_input = load_tool_call(call_path=args.call)
+    except OnboardError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    targets = identify_targets(tool_name, tool_input)
+    if not targets:
+        print("No targets identified in this tool call.")
+        return 0
+
+    try:
+        confirmed = _confirm_targets(targets, yes=args.yes, only=args.only)
+    except OnboardError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if not confirmed:
+        print("No targets selected. Nothing onboarded.")
+        return 0
+
+    results = onboard_targets(
+        confirmed,
+        sensitivity=sensitivity,
+        mode=mode,
+        scanner=args.scanner,
+        description=args.description,
+        cache_path=Path(args.cache_path),
+        policy_path=Path(args.policy_path),
     )
-    return 0
+
+    ok_count = 0
+    for r in results:
+        resource = r["resource"]
+        if r["ok"]:
+            ok_count += 1
+            score = f" (score {r['reputation']:.2f})" if r["reputation"] is not None else ""
+            rule = r["rule"]
+            print(f"Verified: {resource.scanner_name}:{resource.identity} -> {r['label']}{score}")
+            print(
+                f"Rule written to {args.policy_path}: tool={rule.tool!r} pattern={rule.pattern!r} "
+                f"sensitivity={rule.sensitivity!r} mode={rule.mode!r}"
+            )
+        else:
+            print(f"Blocked: {resource.scanner_name}:{resource.identity} -> {r['error']}", file=sys.stderr)
+
+    print(f"{ok_count} onboarded, {len(results) - ok_count} blocked")
+    return 0 if ok_count > 0 else 1
 
 
 if __name__ == "__main__":
