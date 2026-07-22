@@ -1,9 +1,19 @@
 # Current Task
 
-**Status:** `*ora groom` (Sprint 8 / E14 close) complete. Handed to Smith.
+**Status:** `*ora groom` (Sprint 9 / E15 close) complete. Handed to Smith for end-to-end test.
 **Assigned to:** Oracle
 **Started:** 2026-07-21
 **Completed:** 2026-07-21
+
+## Task Description (most recent): `*ora groom` (Sprint 9 / E15 close)
+- `CHAT.md` was at 111 messages — archived (new `CHAT-ARCHIVE-20260721.md`, cut at the session's own state-save boundary, 47 live messages remain).
+- Reconciled all 4 E15 stories' ACs against real shipped code: STORY-1501/1503 checked off cleanly. STORY-1502 and STORY-1504 both had literal wording ("restricted"/"untrusted"/"trust=trusted") that didn't correspond to any real system vocabulary once Neo traced actual control flow — reconciled with notes explaining the real mechanism satisfies the AC's intent, not silently checked or silently left as mismatched.
+- Resolved all 5 open questions for Morpheus with brief resolution notes.
+- Recorded 2 durable lessons in `lessons.md` (existing-code architecture assumptions; broad-default-shadows-later-rule interaction bug).
+- Fixed `docs/PRD.md`'s status line (stale since Sprint 4) to point at `USER_STORIES.md`'s own current one instead of independently drifting.
+- `make test`: 389/389.
+
+## Task Description (prior): `*ora groom` (Sprint 8 / E14 close) complete. Handed to Smith.
 
 ## Task Description (most recent): `*ora groom` (Sprint 8 / E14 close)
 - `CHAT.md` at 50 messages — within threshold, no archive needed.

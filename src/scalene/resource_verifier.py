@@ -62,7 +62,7 @@ from dataclasses import dataclass
 
 from .policy_config import MatchResult, PolicyConfig, PolicyRule
 from .scan_cache import ScanCache, refresh_if_needed
-from .scanner import SCANNERS, Resource
+from .scanner import Resource
 from .taint_state import TaintState
 
 _FILE_SCANNER_NAME = "secrets"
@@ -108,8 +108,11 @@ def _resolve_sensitivity_and_mode(
 
 
 def evaluate(tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache) -> MatchResult:
+    # sec18.1 (STORY-1501): config.scanners, not the module-level SCANNERS
+    # constant -- so a config-declared scanner participates in identification
+    # the same way a builtin does.
     resources_by_scanner: dict[str, list[Resource]] = {
-        name: scanner.identify(tool_name, args) for name, scanner in SCANNERS.items()
+        name: scanner.identify(tool_name, args) for name, scanner in config.scanners.items()
     }
     file_resources = resources_by_scanner.get(_FILE_SCANNER_NAME, [])
     url_resources = resources_by_scanner.get(_URL_SCANNER_NAME, [])
@@ -170,7 +173,7 @@ def decide_access(
     """docs/ARCHITECTURE.md sec15.3: the core call-permission decision.
     Mutates `taint` in place (escalate_trust/escalate_sensitivity) when the
     call is allowed -- callers persist it (taint.save()) themselves."""
-    resources = [r for scanner in SCANNERS.values() for r in scanner.identify(tool_name, args)]
+    resources = [r for scanner in config.scanners.values() for r in scanner.identify(tool_name, args)]
     if not resources:
         return AccessDecision(allowed=True)
 

@@ -172,3 +172,39 @@ When a plan calls for deleting code (a function, a whole module, a config path) 
 
 ### References
 - **Files:** `src/scalene/onboard.py` (`onboard()`/`_resolve_resource()`, kept), `tests/test_onboard.py` (`TestOnboardUrlTarget.test_unknown_scheme_blocks_with_no_cache_write`, the test that surfaced this), `task.md`'s Sprint 8 Phase 1/3 notes, `agents/neo.docs/current_task.md` (the Phase 3 handoff documenting the revision)
+
+---
+
+## [2026-07-21] Sprint 9: An Architecture Doc's Claims About *Existing* Code Need the Same "Verify, Don't Assume" Standard as Its Claims About New Code
+
+> **Tags:** #Morpheus #Neo #Architecture #Testing
+
+### Context
+Morpheus's §18 (E15) architecture, written in one pass before any phase's implementation, made two claims about *existing* code's behavior that turned out wrong once Neo actually built against them: (1) it proposed threading `config.scanners` through `cache_refresh_worker.py`, without noticing that worker is a detached subprocess with no shared memory — the claim assumed a threading change that couldn't actually reach that call site without also plumbing a policy path across a process boundary; (2) it proposed an implicit `PolicyRule` in `resource_verifier.py` to reach STORY-1502's tri-level `sensitivity` label, without tracing that `decide_access()`'s `is_bad` check already runs *before* any rule match — making the proposed addition unreachable dead code. Neither was a new-code bug; both were untested assumptions about how code that already existed actually behaved.
+
+### The Issue
+Writing a whole epic's architecture ahead of any phase's implementation is normal practice here (every prior sprint has done it), but it lets claims about *existing* control flow go unverified in a way that claims about *brand-new* code can't — a new function's behavior is whatever gets written and tested in the same pass, but an existing function's behavior can be misremembered, oversimplified, or assumed without re-reading the real source. Both gaps here were caught the same way: by Neo actually tracing the real call chain (`_scan_reputation`'s argv shape; `decide_access()`'s if/elif order) before writing the planned code, not after a test failed.
+
+### The Rule (The "Lesson")
+When an architecture doc makes a claim about how *existing* code behaves — "X already does Y," "this threads through cleanly," "this reaches that check" — trace the real call chain before writing the dependent implementation, the same discipline already applied to performance/behavior claims about new code. If the claim turns out wrong, don't force the originally-planned code into existence to satisfy a written document — correct the document and implement the simpler/correct thing instead, transparently, the same as any other mid-implementation design correction this project has made before.
+
+### References
+- **Files:** `docs/ARCHITECTURE.md` §18.1 (cache_refresh_worker correction), §18.2 (resource_verifier correction), `agents/neo.docs/e15_phase1_notes.md`, `agents/neo.docs/e15_phase2_notes.md`
+
+---
+
+## [2026-07-21] Sprint 9: A Broad Default Written First Can Silently Shadow a Specific Rule Written Later
+
+> **Tags:** #Neo #Trin #Morpheus #Security #Testing
+
+### Context
+STORY-1504 (E15) writes one real `PolicyRule` for a project's own folder to a brand-new `scalene_policy.yaml`, with a deliberately broad pattern (matches almost anything under the project root). `onboard.py::_write_rule()` (unchanged since Sprint 7/sec16) always appends newly-authored rules to the *end* of the rules list, and `resource_verifier._find_matching_rule()` returns the *first* declaration-order match. Combined, these two individually-correct, individually-already-tested behaviors produce a real bug: since the broad default is written *first* (before any onboarding ever happens), any rule a developer onboards *afterward* — even an explicit `--mode block` on one specific sensitive file inside their own project — would be silently, permanently unreachable, because the earlier, broader rule always matches first.
+
+### The Issue
+Neither piece of this was new, and neither was wrong in isolation — `_write_rule()`'s append-at-end behavior is fine when there's no broad rule already present; `_find_matching_rule()`'s first-match-wins is fine when rules are ordered by the author's own intent. The bug only exists at the *interaction* between a new feature (a broad, auto-written default) and an old, unrelated mechanism (append-only rule writing) that was never designed with a broad first-written rule in mind. This is a different shape from "verify existing code's behavior" (the lesson above) — it's "verify how a new piece of code behaves *together with* an existing, unrelated piece," which neither piece's own tests would ever catch on their own.
+
+### The Rule (The "Lesson")
+When adding a new rule/config entry that will be written to a file *before* any user-driven entries typically exist, and that new entry's matching is intentionally broad, explicitly trace what happens when a *later*, more specific entry gets added on top of it — don't just verify the new feature in isolation. If an existing "append new things at the end" convention would let the broad entry permanently shadow anything added later, the new feature needs to account for that ordering explicitly (here: insert new rules ahead of the specific auto-created default, identified by a stable marker, leaving all other append behavior unchanged) rather than silently inheriting a convention that predates and doesn't anticipate it.
+
+### References
+- **Files:** `src/scalene/onboard.py` (`_write_rule()`'s insertion-before-default logic), `src/scalene/policy_config.py` (`PROJECT_FOLDER_DEFAULT_DESCRIPTION`, `write_default_project_policy()`), `tests/test_onboard.py` (`test_onboarded_rule_is_inserted_before_the_project_folder_default_not_after`, `test_multiple_onboards_after_the_default_all_stay_ahead_of_it_in_order`)

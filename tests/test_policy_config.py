@@ -19,7 +19,13 @@ from tempfile import TemporaryDirectory
 
 import yaml
 
-from scalene.policy_config import MatchResult, PolicyConfig, PolicyConfigError, PolicyRule
+from scalene.policy_config import (
+    MatchResult,
+    PolicyConfig,
+    PolicyConfigError,
+    PolicyRule,
+    write_default_project_policy,
+)
 
 
 def write_yaml(tmp: Path, text: str) -> Path:
@@ -148,12 +154,15 @@ class TestPolicyRule(unittest.TestCase):
         rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="")
         self.assertEqual(rule.scanner, "")
 
-    def test_invalid_scanner_name_raises_clear_error(self):
-        # E12/STORY-1201 (Trin's Sprint 5 UAT finding): a typo'd scanner
-        # name must fail loud at rule-construction time -- previously it
-        # silently made the rule permanently ineffective with no warning.
-        with self.assertRaises(PolicyConfigError):
-            PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputatoin")
+    def test_invalid_scanner_name_no_longer_validated_at_construction(self):
+        # sec18.1 (STORY-1501): moved out of PolicyRule.__post_init__ --
+        # a rule can't see a dynamically-loaded registry from inside its
+        # own constructor. Direct construction (this test) no longer raises;
+        # see TestPolicyConfigScanners below for the real, still-fail-loud
+        # check at PolicyConfig.from_yaml's YAML-loading boundary, which is
+        # the only place an actual user ever hits this.
+        rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputatoin")
+        self.assertEqual(rule.scanner, "reputatoin")
 
 
 class TestPolicyConfigModeExcludesAllow(unittest.TestCase):
@@ -231,6 +240,94 @@ class TestPolicyConfigRulesLoading(unittest.TestCase):
                 PolicyConfig.from_yaml(path)
 
 
+class TestPolicyConfigScanners(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.1 (STORY-1501): config-driven registry."""
+
+    def test_bare_config_defaults_to_the_two_builtins(self):
+        config = PolicyConfig()
+        self.assertEqual(set(config.scanners), {"secrets", "reputation"})
+
+    def test_from_yaml_with_no_scanners_section_matches_bare_default(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(Path(tmp), "defaults: {}\n")
+            config = PolicyConfig.from_yaml(path)
+            self.assertEqual(set(config.scanners), {"secrets", "reputation"})
+
+    def test_from_yaml_loads_an_extra_scanner(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                scanners:
+                  extra:
+                    - name: dummy
+                      import: "fixtures_custom_scanner:DummyScanner"
+                """,
+            )
+            config = PolicyConfig.from_yaml(path)
+            self.assertIn("dummy", config.scanners)
+            self.assertIn("secrets", config.scanners)
+
+    def test_from_yaml_bad_scanner_import_raises_policy_config_error(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                scanners:
+                  extra:
+                    - name: dummy
+                      import: "no.such.module:Whatever"
+                """,
+            )
+            with self.assertRaises(PolicyConfigError):
+                PolicyConfig.from_yaml(path)
+
+    def test_scanners_section_not_a_mapping_raises(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(Path(tmp), "scanners: not-a-mapping\n")
+            with self.assertRaises(PolicyConfigError):
+                PolicyConfig.from_yaml(path)
+
+    def test_rule_scanner_validated_against_the_loaded_registry_not_just_builtins(self):
+        # A rule can now legitimately reference a config-declared scanner.
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                scanners:
+                  extra:
+                    - name: dummy
+                      import: "fixtures_custom_scanner:DummyScanner"
+                rules:
+                  - tool: ".*"
+                    pattern: ".*"
+                    sensitivity: public
+                    mode: allow
+                    scanner: dummy
+                """,
+            )
+            config = PolicyConfig.from_yaml(path)
+            self.assertEqual(config.rules[0].scanner, "dummy")
+
+    def test_rule_with_typo_scanner_name_still_fails_loud_at_yaml_load_time(self):
+        # sec18.1: the real, user-visible fail-loud behavior is unchanged --
+        # only *where* it's checked moved (from_yaml, not PolicyRule.__init__).
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                rules:
+                  - tool: ".*"
+                    pattern: ".*"
+                    sensitivity: public
+                    mode: allow
+                    scanner: reputatoin
+                """,
+            )
+            with self.assertRaises(PolicyConfigError):
+                PolicyConfig.from_yaml(path)
+
+
 class TestRepoOwnPolicyFile(unittest.TestCase):
     """STORY-1105 (docs/ARCHITECTURE.md sec14.6): this repo's own root
     scalene_policy.yaml had a pre-Sprint-4 `allowlist:` block that was
@@ -255,6 +352,67 @@ class TestRepoOwnPolicyFile(unittest.TestCase):
         self.assertGreaterEqual(len(config.rules), 1)
         for rule in config.rules:
             self.assertIsInstance(rule, PolicyRule)
+
+
+class TestWriteDefaultProjectPolicy(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.4 (STORY-1504, corrected 2026-07-21 per
+    direct user request): a brand-new project gets a real rule for its own
+    folder written to a real scalene_policy.yaml -- not an implicit,
+    in-memory special case."""
+
+    def test_writes_a_real_yaml_file_with_one_rule(self):
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            self.assertTrue(policy_path.exists())
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(len(data["rules"]), 1)
+
+    def test_written_rule_parses_as_an_ordinary_policy_rule(self):
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            self.assertEqual(len(config.rules), 1)
+            rule = config.rules[0]
+            self.assertEqual(rule.sensitivity, "internal")
+            self.assertEqual(rule.mode, "allow")
+            # 2026-07-22: no scanner filter -- the anchored absolute-path
+            # pattern is already selective enough on its own.
+            self.assertEqual(rule.scanner, "")
+
+    def test_written_rule_matches_a_file_under_the_project_root(self):
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            rule = config.rules[0]
+            target = str(project_root / "src" / "main.py")
+            self.assertRegex(target, rule.pattern)
+
+    def test_written_rule_does_not_match_a_path_outside_the_project_root(self):
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as other_tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            rule = config.rules[0]
+            outside_target = str(Path(other_tmp) / "other.py")
+            self.assertNotRegex(outside_target, rule.pattern)
+
+    def test_no_scan_cache_entry_is_pre_seeded(self):
+        # User's own explicit direction: "timestamp uninitialized so that it
+        # scans on first tool use" -- this function must only ever write the
+        # rule, never a cache entry.
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            self.assertFalse((project_root / "scan_cache.json").exists())
+            self.assertFalse((project_root / ".scalene").exists())
 
 
 if __name__ == "__main__":

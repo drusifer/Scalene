@@ -10,6 +10,12 @@ from scalene.hook_adapter import pre_tool_use
 from scalene.onboard import identify_targets, onboard_targets
 from scalene.policy_config import PolicyConfig
 
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# docs/ARCHITECTURE.md sec18.3 (STORY-1503): see _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
+
 GETTING_STARTED_DOC = Path(__file__).resolve().parent.parent / "docs" / "GETTING_STARTED.md"
 README_DOC = Path(__file__).resolve().parent.parent / "README.md"
 

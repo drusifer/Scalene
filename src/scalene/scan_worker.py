@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 
-from .reputation import LocalHeuristicChecker
+from .reputation import composite_check
 from .secrets_scan import scan_text_for_secrets
 
 
@@ -23,7 +23,12 @@ def _scan_secrets(target: str) -> dict:
 
 
 def _scan_reputation(target: str) -> dict:
-    result = LocalHeuristicChecker().check(target)
+    # sec18.3 (STORY-1503): composite_check() always runs the free, offline
+    # heuristics and additionally attempts a real external reputation source
+    # (URLhaus), degrading visibly to local-only if that source is
+    # unreachable -- this runs inside this same isolated subprocess
+    # boundary (STORY-601), the right place for a new outbound network call.
+    result = composite_check(target)
     return {"ok": result.is_trusted, "reason": result.reason, "reputation": result.score}
 
 

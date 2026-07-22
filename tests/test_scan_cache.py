@@ -18,6 +18,15 @@ from unittest.mock import patch
 from scalene.scan_cache import FRESHNESS_SECONDS, CacheEntry, ScanCache, ScanCacheError, refresh_if_needed
 from scalene.scanner import Resource, ScanResult
 
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# docs/ARCHITECTURE.md sec18.3 (STORY-1503): refresh_if_needed() on a real
+# cache miss spawns a real background subprocess -- Trin's Phase 3 UAT
+# found this file (unlike test_resource_verifier.py) calls it directly and
+# was missed by Neo's own file sweep. See _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
+
 
 def _try_reserve_in_a_real_separate_process(args: tuple[str, Resource]) -> bool:
     # Module-level (not a closure) so it's picklable for ProcessPoolExecutor

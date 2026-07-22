@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. **Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped 2026-07-21** — full formal cycle (Cypher→Smith→Morpheus→Smith→Mouse→Morpheus→Bloop→Smith gate), 3 phases, 1 fix round. STORY-1406 remains flagged, not committed.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped and closed 2026-07-21, full formal cycle, 3 phases, 1 fix round; STORY-1406 remains flagged, not committed. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) shipped and closed 2026-07-21** — full formal cycle, 4 phases, Phase 4 gated twice after a direct mid-sprint user design correction (implicit in-memory rule replaced with a real on-disk one), 1 real infra finding from Tank (URLhaus's "no API key" premise was false, resolved with a real Auth-Key + env var). 389/389 tests.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -451,5 +451,62 @@ As a developer relying on a scan result to make a trust decision, I want the res
 4. Is the "inventory of onboarded targets" (STORY-1404) a genuinely new on-disk store, or a reframing of the existing `ScanCache` + `PolicyConfig.rules` combination sec16 already writes? Both already durably record every scanned/onboarded resource — worth confirming a 3rd store adds real value rather than duplicating state that could drift from it.
 5. Reputation score's scale/units (STORY-1405), and which scanners currently have enough real signal to compute one meaningfully — `reputation.py`'s `LocalHeuristicChecker` has exactly 3 heuristics (IP-literal, punycode, suspicious-length label) today; worth confirming a numeric score is meaningful now vs. starting coarse (e.g. a 0-2 count of heuristics triggered) and refining later.
 6. STORY-1406 above — whether scan results ever apply to a tool call's *response*, and if so how that coexists with §15's post_tool_use no-op rationale.
+
+---
+
+## E15 — Configurable Scanner Registry & Extended Scanner Coverage
+
+**Origin:** Direct user request (voice, 2026-07-21), per the user's own prior direction that the next sprint would focus on scanner work. Read `src/scalene/scanner.py`, `reputation.py`, and `scan_cache.py` before writing these stories. Most of what the user described is already shipped and working exactly as asked — not re-storied here: the two-entry-point `Scanner` protocol (`identify()`/`scan()`, since E10/STORY-1001), `FileScanner.scan()` already reusing the existing secrets-detection logic for sensitivity, and the 24h scan-cache expiration/rescan cycle (`scan_cache.py`, since E10/STORY-1003). Three things the user asked for are genuinely new:
+
+1. `SCANNERS` (`scanner.py:178`) is today a fixed `{"secrets": FileScanner(), "reputation": URLScanner()}` dict literal — no config-driven way to add a scanner.
+2. `FileScanner` has no hardcoded sensitive-path handling today — a clean secrets scan of e.g. `~/.ssh/id_rsa` currently returns `public`, same as any other clean file.
+3. `reputation.py`'s `LocalHeuristicChecker` is 3 local, offline heuristics only (IP-literal, punycode, suspicious label) — no real external reputation source.
+
+The user named enterprise integrations (asset inventory/CMDB, data-labeling systems, vulnerability databases) as the motivating *reason* for a configurable registry, and was explicit that "for now we'll start with the file system scanner and the url scanner" — so those enterprise scanners are this epic's rationale, not its scope. Not storied as build work this sprint; STORY-1501 delivers only the extension point they'd eventually plug into.
+
+A follow-up user note added a 4th item: a new project's own folder should default to trusted + Internal Only rather than today's global untrusted/sensitive-by-default posture — added as STORY-1504.
+
+### STORY-1501
+As an operator, I want Scalene to load its built-in scanners (FileScanner, URLScanner) by default but allow registering additional scanners via config, so that enterprise-specific scanners (asset inventory/CMDB, data-labeling systems, vulnerability databases) can plug in later without editing `scanner.py`.
+
+**Acceptance Criteria**
+- [x] `SCANNERS` is populated from config at startup (built-ins on by default) instead of being a fixed dict literal in `scanner.py`. `scanner.load_scanners()` + `PolicyConfig.scanners`.
+- [x] A config-declared scanner can be registered without modifying `scanner.py`. `scalene_policy.yaml`'s `scanners: extra:` section, `importlib`-loaded.
+- [x] Omitting scanner config from `scalene_policy.yaml` preserves today's exact default behavior (`FileScanner` + `URLScanner` only, same names/order) — no silent behavior change for existing projects/configs. Verified: `PolicyConfig.scanners` defaults to `dict(SCANNERS)`.
+- [x] Enterprise integrations themselves (asset inventory, data-labeling, vulnerability-database scanners) are explicitly NOT built this sprint. Confirmed — not built.
+
+### STORY-1502
+As a user, I want well-known sensitive system paths (e.g. `/etc`, the user's `~/.ssh`) to always be classified Restricted sensitivity and Untrusted, regardless of what the secrets scan finds, so a clean secrets-scan result on a path like `~/.ssh/id_rsa` can't be mistaken for safe-to-treat-as-public.
+
+**Acceptance Criteria**
+- [x] `FileScanner` forces `sensitivity=restricted` + untrusted for a defined set of sensitive path prefixes, independent of the underlying secrets-scan outcome for that path. **Reconciled 2026-07-21 (Oracle):** the real mechanism is `ScanResult(label="sensitive")`, which `decide_access()` treats as `confirmed_bad` — an unconditional block, regardless of any rule. Neo traced `decide_access()`'s actual control flow during implementation and found the originally-designed "implicit restricted `PolicyRule`" addition to `resource_verifier.py` would have been unreachable dead code (`is_bad` is checked before any rule match) — the tri-level `sensitivity=restricted` label and a distinct "untrusted" trust state, as literally worded, aren't what gets produced; an unconditional block is, which is the AC's real intent (this path can never be treated as safe).
+- [x] `/etc` and the invoking user's `~/.ssh` are in the default set. `_HARDCODED_RESTRICTED_PREFIXES`.
+- [x] Verified for real: a path under one of these prefixes with a clean (no-secrets-found) scan is still labeled restricted/untrusted, not public/trusted. Verified via `tests/test_resource_verifier.py::TestHardcodedRestrictedPaths` and `tests/test_scanner.py`, using the real `FileScanner`, not a fabricated result.
+
+### STORY-1503
+As a user relying on URL reputation results, I want `URLScanner`'s validation to draw on real open-source or free-tier external reputation/threat-intel sources, not just today's 3 local offline heuristics, so a genuinely malicious or newly-registered domain has a realistic chance of being caught.
+
+**Acceptance Criteria**
+- [x] `URLScanner.scan()` consults at least one real external open-source/free-tier reputation data source, in addition to (not replacing) the existing local heuristics. `URLHausChecker` (abuse.ch) + `composite_check()`.
+- [x] A source-unreachable or rate-limited condition degrades to today's local-heuristic-only result rather than blocking every call (`ScannerMachineryError` semantics unaffected). `ReputationCheckUnavailable`, verified via `tests/test_reputation.py`.
+- [x] **Flagged for Tank**: introduces outbound network calls to a third-party service and likely new config (API keys/rate limits) — needs Tank's review on env vars/service dependency, per the standard Cypher-Tank protocol for stories touching external services. **Tank's review found the endpoint's "no API key" premise was false in practice** (verified live, not from docs) — user decided to obtain a free Auth-Key via `SCALENE_URLHAUS_AUTH_KEY` (`.env.example`), never hardcoded. Tank re-reviewed and approved the fix.
+
+### STORY-1504
+As a developer setting up Scalene on a new project, I want the project's own folder to default to trusted + Internal Only, so that onboarding doesn't start by treating my own codebase — the thing Scalene exists to protect, not attack — as an unrecognized, untrusted resource requiring the same scrutiny as arbitrary external files/URLs.
+
+**Acceptance Criteria**
+- [x] A newly onboarded project's own root folder defaults to `trust=trusted`, `sensitivity=internal` — not today's global `untrusted_by_default`/`sensitive_by_default` posture, and not `public` (the project's source is not meant to be world-shareable either). **Reconciled 2026-07-21 (Oracle):** "trust=trusted" as literally worded doesn't correspond to a real state this system has (`taint.trust` is `low`/`med`/`high`; Smith's Phase 4 gate found and corrected an early implementation that invented a `trust=trusted` display value that never actually occurred). What actually ships: a clean project file becomes `validated_allow` — `sensitivity` escalates to `internal`, and `trust` is simply never contaminated by it (stays whatever it already was). The AC's real intent — project files aren't treated as scrutinized/untrusted resources — is satisfied; the literal wording predates the vocabulary this epic's own implementation clarified.
+- [x] This default applies to the project folder specifically (however scoped — see open question below), not a blanket change to `scalene_policy.yaml`'s global `defaults:` block, which still governs everything outside it. Resolved: a single, ordinary `rules:` entry, not a `defaults:` change.
+- [x] Coexists with STORY-1502's hardcoded restricted paths — a sensitive subpath inside the project folder (e.g. a `.ssh`-like directory someone actually committed) is not blanket-trusted just because it's under the project root. Verified via `tests/test_resource_verifier.py::TestProjectFolderDefault::test_coexists_with_hardcoded_restricted_paths_under_the_project_root`.
+
+**Mechanism note (corrected mid-sprint, direct user request, 2026-07-21):** originally implemented as an implicit `PolicyRule` constructed in memory by `PolicyConfig.__post_init__`, surfaced via a synthetic `scg onboard --list` line — already fully gated and approved. The user then asked for a simpler design explicitly to avoid an implicit special case: `policy_config.write_default_project_policy()` now writes one real, ordinary rule to a real `scalene_policy.yaml` the first time a project has none, with no `ScanCache` entry pre-seeded ("timestamp uninitialized," the user's own phrase — first tool-use still triggers a genuine scan). Found and fixed a real bug while implementing this version: the rule's broad pattern, written first, would otherwise permanently shadow any more specific rule a developer onboards later (append-only + first-match-wins) — `onboard.py::_write_rule()` now inserts new rules ahead of this one specifically. Both the original and corrected mechanisms were fully gated (Smith Gate 1 hard requirement, satisfied differently by each); the corrected one shipped.
+
+## Open Questions for Architecture (Morpheus) — E15 — all resolved during Sprint 9
+
+1. **Resolved**: `scalene_policy.yaml` gains a `scanners: extra:` section (`name`/`import: "module.path:ClassName"`), `importlib`-loaded and validated against the `Scanner` protocol at load time.
+2. **Resolved**: kept to exactly the two paths the user named (`/etc`, `~/.ssh`) — not expanded to a guessed broader list. A developer can add their own via `rules:` today.
+3. **Resolved**: URLhaus (abuse.ch) — though its "no API key" premise turned out false in practice (Tank's finding); resolved with a real, free Auth-Key via `SCALENE_URLHAUS_AUTH_KEY`.
+4. **Not resolved, deliberately carried** — still an open, separate backlog item (see Cypher's `next_steps.md`), not folded into E15.
+5. **Resolved, and changed mid-sprint**: originally an implicit rule keyed off `PolicyConfig.project_root`; corrected per direct user request to a real `rules:` entry written to a real `scalene_policy.yaml` on first run (`policy_config.write_default_project_policy()`), wherever `--policy-path` resolves to. No `scg init` command needed or added — `scalene-guard`'s own hot path creates the file on first use.
 
 ---

@@ -5,15 +5,26 @@ pre_tool_use/post_tool_use already consume (sec13.1.1), so this module is
 the only thing that changes -- MaskingEngine.decide() is untouched.
 """
 
+import os
+import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scalene.policy_config import MatchResult, PolicyConfig, PolicyRule
+from scalene.policy_config import MatchResult, PolicyConfig, PolicyRule, write_default_project_policy
 from scalene.resource_verifier import decide_access, evaluate
 from scalene.scan_cache import ScanCache
-from scalene.scanner import Resource, ScanResult
+from scalene.scanner import FileScanner, Resource, ScanResult
 from scalene.taint_state import TaintState
+
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# sec18.3 (STORY-1503): several tests below use never-seen URLs to exercise
+# the first-sighting/fail-safe path -- a real cache miss spawns a real
+# (fire-and-forget) background subprocess that would now attempt a live
+# URLhaus call. See _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
 
 
 class TestNoResourcesIdentified(unittest.TestCase):
@@ -611,6 +622,154 @@ class TestDecideAccess(unittest.TestCase):
             decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
             self.assertTrue(decision.allowed)  # clean context, unmatched -> proceeds
             self.assertEqual(taint.trust, "low")  # NOT validated_allow -- fell through to uncleared
+
+
+class TestHardcodedRestrictedPaths(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.2 (STORY-1502). Uses the real FileScanner
+    (not a fabricated ScanResult) against a real path under one of the
+    hardcoded prefixes -- /etc/hostname exists on essentially every Linux
+    system and is safe to stat/read (no real secret content). Pre-populates
+    the cache with the *real* FileScanner().scan() result directly, same
+    precedent as this file's other cache-hit tests (e.g.
+    test_validated_allow_rule_proceeds_and_escalates_sensitivity) --
+    decide_access()'s first-sighting path is fire-and-forget async (no
+    synchronous scan on a cache miss), so testing the post-scan state this
+    way is what the rest of this file already does, not a shortcut unique
+    to this test."""
+
+    def _seed_real_scan(self, cache: ScanCache, identity: str) -> Resource:
+        resource = Resource(kind="file", identity=identity, scanner_name="secrets")
+        cache.put(resource, FileScanner().scan(resource))
+        return resource
+
+    def test_hardcoded_restricted_path_blocks_unconditionally(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            self._seed_real_scan(cache, "/etc/hostname")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": "/etc/hostname"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+
+    def test_hardcoded_restricted_path_blocks_even_with_a_matching_allow_rule(self):
+        # The actual STORY-1502 "regardless" AC: a hand-authored rule that
+        # would normally validated_allow a clean-scanning resource must not
+        # be able to override the hardcoded floor.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            self._seed_real_scan(cache, "/etc/hostname")
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"/etc/hostname", sensitivity="public", mode="allow"),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": "/etc/hostname"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+
+    def test_ordinary_path_outside_the_hardcoded_set_is_unaffected(self):
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "clean.md"
+            target.write_text("ordinary docs, not under any restricted prefix")
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            self._seed_real_scan(cache, str(target))
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+
+
+class TestProjectFolderDefault(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.4 (STORY-1504, corrected 2026-07-21 per
+    direct user request): a brand-new project's own folder gets a real
+    rule written to a real scalene_policy.yaml (write_default_project_policy,
+    policy_config.py) -- not an implicit in-memory special case. These
+    tests load that real, on-disk rule via PolicyConfig.from_yaml(), the
+    same way `scalene-guard` actually does, then exercise decide_access()
+    against it. Uses the real FileScanner result pre-seeded into the cache
+    -- same precedent as TestHardcodedRestrictedPaths -- since
+    decide_access()'s first-sighting path is fire-and-forget async, not
+    synchronous."""
+
+    def _seed_real_scan(self, cache: ScanCache, identity: str) -> Resource:
+        resource = Resource(kind="file", identity=identity, scanner_name="secrets")
+        cache.put(resource, FileScanner().scan(resource))
+        return resource
+
+    def test_clean_project_file_is_validated_allow_and_escalates_internal_sensitivity(self):
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            target = project_root / "src" / "main.py"
+            target.parent.mkdir()
+            target.write_text("print('hello')")
+            cache = ScanCache(project_root / "scan_cache.json")
+            self._seed_real_scan(cache, str(target))
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.sensitivity, "internal")
+            self.assertEqual(taint.trust, "high")  # validated, not merely uncleared
+
+    def test_second_project_file_in_the_same_session_does_not_hit_the_uncleared_wall(self):
+        # The actual friction STORY-1504 fixes: without this rule, a 2nd
+        # uncleared resource in an already-"low"-trust session would block.
+        # With it, a 2nd *clean, in-project* file still proceeds.
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            first = project_root / "a.py"
+            second = project_root / "b.py"
+            first.write_text("a")
+            second.write_text("b")
+            cache = ScanCache(project_root / "scan_cache.json")
+            self._seed_real_scan(cache, str(first))
+            self._seed_real_scan(cache, str(second))
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1", trust="low")  # already contaminated
+            decision = decide_access("Read", {"file_path": str(second)}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+
+    def test_coexists_with_hardcoded_restricted_paths_under_the_project_root(self):
+        # sec18.2's coexistence AC: a restricted subpath under the project
+        # root is not blanket-trusted just because it's under project_root.
+        # _HARDCODED_RESTRICTED_PREFIXES is fixed to /etc and the real
+        # ~/.ssh -- an arbitrary tmp dir can't literally *be* one of those,
+        # so this uses the real home directory as project_root (a realistic
+        # "project root happens to be your home dir" case) with a target
+        # under ~/.ssh. FileScanner's short-circuit fires before any real
+        # file read, so the target path doesn't need to actually exist, and
+        # the policy file is written to a scratch dir (never touches the
+        # real ~/scalene_policy.yaml).
+        home = Path(os.path.expanduser("~"))
+        target = Path(os.path.expanduser("~/.ssh")) / "id_rsa"
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            self._seed_real_scan(cache, str(target))
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, home)
+            config = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
+            self.assertFalse(decision.allowed)  # is_bad wins, the allow rule never fires
+
+    def test_file_outside_the_project_root_is_unaffected(self):
+        with TemporaryDirectory() as project_tmp, TemporaryDirectory() as outside_tmp:
+            project_root = Path(project_tmp)
+            outside_target = Path(outside_tmp) / "other.py"
+            outside_target.write_text("not part of this project")
+            cache = ScanCache(project_root / "scan_cache.json")
+            self._seed_real_scan(cache, str(outside_target))
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": str(outside_target)}, config, cache, taint)
+            self.assertTrue(decision.allowed)  # clean, unmatched -> uncleared, was_clean -> proceeds
+            self.assertEqual(taint.trust, "low")  # NOT validated_allow
 
 
 if __name__ == "__main__":

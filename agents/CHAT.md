@@ -23,340 +23,327 @@ Summary of the second archive: Sprint 2 Phase 3 UAT/close (Smith found a real fo
 ---
 **Archived:** [agents/chat_archive/CHAT-ARCHIVE-20260720.md](chat_archive/CHAT-ARCHIVE-20260720.md) — 2026-07-17 15:21 through 2026-07-18 18:27.
 
-Summary of the fourth archive: Sprint 5 (E11) planning + all 3 phases (rule matching, unconditional scanning, `mode: allow` amendment) → sec15 correction (Trin's Phase 3 gate found `pattern:".*"`+`mode:allow` could blanket-disable scanning; replaced with rule-driven access control, `trust`/`sensitivity` session tags) → sec15 re-gated after the fact (Trin UAT, Morpheus review, Oracle groom, Smith test) → Sprint 5 launched → Sprint 6 (E12, tech debt: `PolicyRule.scanner` typo validation, `make test-q`, architecture-diagram drift guard) planned, implemented, gated, launched.
-[<small>2026-07-18 19:43:49</small>] [**make**]->[**all**] *build*:
- Build FAILED exit=2 | make test | /home/drusifer/Projects/Scalene/build/build.out
-
-----------------------------------------------------------------------
-Ran 289 tests in 40.364s
-
-FAILED (failures=1)
-make[1]: *** [Makefile:66: test] Error 1
-
----
-[<small>2026-07-18 19:49:47</small>] [**User**]->[**all**] *request*:
- init and continue sgc onboard changes (uncommitted, direct-user design session post-Sprint-6: scg onboard now authors a PolicyRule in one call). Build failing: 1 test in test_user_guide_docs.py is stale against the new single-call design.
-
----
-[<small>2026-07-18 19:57:39</small>] [**make**]->[**all**] *build*:
- Build PASSED | make via_index | /home/drusifer/Projects/Scalene/build/build.out
-Functions:     124
-Classes:       95
-Methods:       353
-Imports:       453
-Globals:       94
-Headers:       1073
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-18 19:58:39</small>] [**Neo**]->[**Trin**] *swe handoff*:
- *swe fix (post-Sprint-6 scg onboard rework): fixed the 1 failing test (stale two-step-workflow assertions, retired language) and closed a real doc gap - added ARCHITECTURE.md sec16 documenting that this uncommitted work reverses sec14.3's Smith-Gate-locked 'onboard CLI surface never changes' requirement, which had no addendum recording it. make test: 289/289. Review debt flagged same as sec15: no Trin UAT/Morpheus review/Smith gate has run against this yet. @Trin *qa uat sec16
-
----
-[<small>2026-07-18 20:37:36</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-Ran 289 tests in 38.767s
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-18 20:38:06</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- *qa uat sec16 PASSED. Real e2e via installed scg/scalene-guard: full GETTING_STARTED sec4 walkthrough byte-for-byte, mode=allow blocked on a real secret finding, mode=block succeeds+enforces unconditionally on a fresh session, comment-stripping known-limitation confirmed live. Non-blocking UX note for Smith: --mode mask's detailed rationale is unreachable from the real CLI. make test: 289/289. See current_task.md. @Morpheus *lead review sec16
-
----
-[<small>2026-07-20 10:24:24</small>] [**Morpheus**]->[**Oracle**] *lead handoff*:
- *lead review sec16: APPROVED, no fix round. Verified rule-validation happens before any cache write (invalid requests never pollute the cache), sec4 class diagram needs no changes (onboard.py functions, same as pre-existing precedent), policy-path defaults consistent with cli.py. 1 non-blocking note: cache write precedes rule write in onboard(), so a rule-write failure could undersell that the scan itself succeeded (harmless under decide_access). make test: 289/289. @Oracle *ora groom
-
----
-[<small>2026-07-20 10:42:36</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 289 tests in 40.030s
-
-OK
-
----
-[<small>2026-07-20 10:43:04</small>] [**Oracle**]->[**Smith**] *ora handoff*:
- *ora groom (Sprint7/sec16) complete: CHAT.md archived (80->~10 live msgs, CHAT-ARCHIVE-20260720.md). task.md Sprint7 section added. STORY-501 reconciled (3/4 ACs checked, dated note). 1 durable lesson recorded (layered-validation message shadowing). make test: 289/289. @Smith *user test sec16
-
----
-[<small>2026-07-20 10:52:26</small>] [**Smith**]->[**Trin**] *user bug*:
- *user bug (sec16): scg onboard --help never discloses --sensitivity/--mode's OR-requirement. Naive 'scg onboard --target <uri>' (old muscle memory) always fails on first try - good runtime message, but invisible until violated. Nielsen #1/#6. Bundle-fix with Trin's --mode mask message-shadowing finding. NOT approving gate yet. @Trin triage
-
----
-[<small>2026-07-20 10:52:37</small>] [**Trin**]->[**Neo**] *qa triage*:
- *qa triage Smith's sec16 bug: confirmed real (reran the exact naive command myself, same failure). Root cause: argparse has no native way to express 'at least one of X/Y required', and onboard.py's main() never adds a note explaining the constraint. Same shape as my own --mode mask finding. @Neo *swe fix: add discoverable help text for both.
-
----
-[<small>2026-07-20 10:54:45</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 291 tests in 39.961s
-
-OK
-
----
-[<small>2026-07-20 10:55:23</small>] [**Neo**]->[**Trin**] *swe handoff*:
- *swe fix Smith's sec16 bug: added --help epilog disclosing --sensitivity/--mode's OR-requirement + why --mode rejects mask (bundled Trin's finding). Updated USER_GUIDE.md's literal --help block to match. 2 new tests guard both disclosures against real captured --help output. make test: 291/291. @Trin re-verify
-
----
-[<small>2026-07-20 10:56:26</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-20 10:56:47</small>] [**Trin**]->[**Smith**] *qa handoff*:
- *qa retest sec16 bug PASSED. Verified --help now shows both disclosures verbatim against the real installed binary; re-ran the exact naive command from Smith's report (fails as designed, but now discoverable via --help first). make test: 291/291. @Smith re-gate
-
----
-[<small>2026-07-20 10:57:17</small>] [**Smith**]->[**all**] *user approve*:
- *user approve sec16: gate PASSED after 1 fix round. --help now self-documents the --sensitivity/--mode requirement and the --mode mask rejection - closes the Nielsen #1/#6 gap. USER_GUIDE.md's literal --help block verified to match. This closes the extra scrutiny I gave sec16 for reversing my own sec14.3 requirement - the CLI changed, but it's now fully self-documenting. @all *sprint retro
-
----
-[<small>2026-07-20 10:57:31</small>] [**Neo**]->[**Cypher**] *retro*:
- Neo retro (Sprint7/sec16): picking up direct-user work cold via bob-protocol worked cleanly because the code's own docstrings already carried the full design rationale - I didn't have to reconstruct intent. Backlog: this is the 2nd sprint in a row (after sec15) where real engineering happened outside the Bloop chain before formal gates ran. Worth asking whether that's now just how big user-driven design changes happen here, or something to tighten.
-
----
-[<small>2026-07-20 10:57:34</small>] [**Trin**]->[**Cypher**] *retro*:
- Trin retro (Sprint7/sec16): real CLI invocation (not just calling onboard() directly like the unit tests do) caught both the --mode mask message-shadowing and, indirectly, set up Smith to catch the --help discoverability gap - neither would surface from function-level tests alone. Backlog: 'run the real --help output, not just the function' is worth naming as standard UAT practice for any CLI-surface change, same weight as the mutate-verify-revert pattern from Sprint6.
-
----
-[<small>2026-07-20 10:57:40</small>] [**Morpheus**]->[**Cypher**] *retro*:
- Morpheus retro (Sprint7/sec16): reviewing onboard() found the ordering (validate rule -> write cache -> write policy) was already safe by construction, not something I had to fix - a good sign the direct-user session got the hard part right without formal review in the loop. Backlog: sec14.3 was written as a Smith-Gate 'hard requirement, carried forward' - worth a lighter tag for decisions expected to be revisited, so reversing one doesn't always need a full new numbered section to feel legitimate.
-
----
-[<small>2026-07-20 10:57:43</small>] [**Oracle**]->[**Cypher**] *retro*:
- Oracle retro (Sprint7/sec16): STORY-501 had drifted through 3 undocumented mechanism changes (original -> Sprint4 cache-only -> sec16 rule-authoring) before this groom reconciled it - each change was individually well-documented in ARCHITECTURE.md, but nobody had walked back to the original story since Sprint 1. Backlog: a periodic 'walk every open story against current ARCHITECTURE.md' sweep, not just at the sprint that happens to touch it, would catch this earlier next time.
-
----
-[<small>2026-07-20 10:57:50</small>] [**Mouse**]->[**Cypher**] *retro*:
- Mouse retro (Sprint7/sec16): no phase-planning role this sprint - same shape as sec15, a direct-user change small/contained enough (1 file's public surface, no cross-module dependency chain) that a formal phase breakdown would've been pure overhead. Confirms the pattern from sec15/Sprint6: single-file or single-surface corrections don't need Mouse in the loop, only genuinely multi-part work does. No backlog item - this is working as intended.
-
----
-[<small>2026-07-20 10:57:58</small>] [**Smith**]->[**Cypher**] *retro*:
- Smith retro (Sprint7/sec16): filing a real *user bug against a change reversing my own prior hard requirement felt higher-stakes, but the protocol handled it like any other bug - triage, fix, re-verify, re-gate, no special-casing needed. Backlog: 'run --help cold like a first-time user' is a distinct UAT technique from the CLI-matches-docs test we already have - worth naming explicitly alongside Trin's mutate-verify-revert and real-binary techniques.
-
----
-[<small>2026-07-20 10:59:29</small>] [**Cypher**]->[**all**] *pm launch*:
- *pm launch Sprint 7 (E13, sec16 correction). scg onboard now authors a full PolicyRule in one call, reversing sec14.3's Smith-Gate-locked CLI-surface requirement (ARCHITECTURE.md sec16). Re-gated after the fact: Trin UAT + Morpheus review passed clean, Smith's end-to-end test found 1 real --help discoverability bug, fixed+re-verified same session. 291/291 tests. Retro compiled (5 backlog items). Sprint 7 formally closed.
-
----
-[<small>2026-07-20 11:00:13</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-Ran 291 tests in 39.973s
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-20 11:16:26</small>] [**User**]->[**Cypher**] *request*:
- re-integrate scanning arch: remove --target from scg onboard, derive targets from a real tool call via each scanner's own identify() (traverse SCANNERS registry, not one hardcoded target). Confirm identified targets with user before scanning. On confirm, run 1st scan per target, allow on clean result, add to scanner's own onboarded-target inventory. Scans return sensitivity + reputation score for trust decisions and possibly evaluating tool call results. @Cypher *pm req: write user stories
-
----
-[<small>2026-07-20 11:18:15</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 291 tests in 39.777s
-
-OK
-
----
-[<small>2026-07-20 11:18:45</small>] [**Cypher**]->[**Smith**] *pm handoff*:
- *pm req complete: E14 (Tool-Call-Driven Onboarding) drafted, STORY-1401-1405 in USER_STORIES.md, STORY-1406 flagged not committed (scanning tool-call results would revisit sec15's post_tool_use no-op - left for Morpheus, not pre-scoped). 6 open questions carried to architecture incl. the confirmation-UX mechanism, which needs your input directly. PRD.md epic table updated. @Smith *user review E14
-
----
-[<small>2026-07-20 11:25:58</small>] [**Smith**]->[**Morpheus**] *user approve*:
- *user approve E14. Testable, user-facing, correctly resolves the user's request. Hard requirement for Gate2 (same weight as sec14.3): STORY-1402's confirmation must have a real non-interactive path - our test suite/demo both call onboard() in CI-shaped ways. Also flagged: I grepped real --target call sites (demo, tests, GETTING_STARTED, SETUP.md) - Mouse's phasing must cover updating all of them explicitly. Full review: e14_gate1_review.md. @Morpheus *lead arch sprint
-
----
-[<small>2026-07-20 11:29:44</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
- *lead arch sprint E14 complete: ARCHITECTURE.md sec17. stdin/--call JSON contract (reuses scalene-guard's field names), --yes/--only as your required non-interactive escapes + fail-fast on no-TTY, --tool/--pattern dropped (don't compose across N targets), --list is a read-only ScanCache view (no new store), ScanResult.reputation added (additive, LocalHeuristicChecker now evaluates all 3 heuristics for a real score), STORY-1406 explicitly deferred. sec4 diagram updated same pass. @Smith *user feedback E14
-
----
-[<small>2026-07-20 11:30:45</small>] [**Smith**]->[**Mouse**] *user approve*:
- *user approve E14 architecture (Gate2). My hard requirement is concretely satisfied - --yes/--only + real fail-fast-not-hang on no-TTY, not just gestured at. Both non-blocking Gate1 asks landed as designed. 1 new non-blocking note for Trin's UAT: batch-level sensitivity/mode means a mixed-sensitivity tool call needs --only run twice, not auto per-target classification. Full review: e14_gate2_review.md. @Mouse *sm plan sprint
-
----
-[<small>2026-07-20 11:32:28</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
- *sm plan sprint (Sprint8/E14) complete: 3 hard-dependency-ordered phases (task.md). Phase1: reputation score + target-ID core, no gate. Phase2: confirmation/scan/list, Smith gate required - includes her hard requirement's actual implementation + mixed-sensitivity note. Phase3: demo/docs/test reconciliation, Trin re-verifies verbatim instead of a full gate. Every breaking-change file from Smith's grep is a named Phase3 task. No Tank. @Morpheus *lead review sprint plan
-
----
-[<small>2026-07-20 11:33:30</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
- *lead review sprint plan (Sprint8/E14): APPROVED, LOCKED. Phases match sec17 exactly - Phase1 (identification+reputation, no gate), Phase2 (confirmation/scan/list, Smith gate - my hard-requirement design becomes real testable code here), Phase3 (breaking-change surface, Trin verbatim-recheck not a full gate). Confirmed _resolve_resource has zero direct test refs before approving its deletion. sec17.7's deferral correctly produced zero tasks. @Neo *swe impl phase-1
-
----
-[<small>2026-07-20 11:39:12</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-Ran 307 tests in 40.875s
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-20 11:39:48</small>] [**Neo**]->[**Trin**] *swe handoff*:
- *swe impl phase-1 (Sprint8/E14) complete: reputation score wired end-to-end through the real subprocess boundary (LocalHeuristicChecker now evaluates all 3 heuristics, is_trusted's truth table confirmed unchanged), identify_targets()+load_tool_call() added, both new/standalone/tested. Scope note: did NOT delete _resolve_resource() yet - deferred to Phase2 where it actually becomes dead code, kept Phase1 independently green instead of a half-rewritten CLI. make test: 307/307. @Trin *qa uat phase-1
-
----
-[<small>2026-07-20 11:58:54</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-Ran 310 tests in 40.691s
-
-OK
-
----
-[<small>2026-07-20 11:59:22</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- *qa uat phase-1 (Sprint8/E14) PASSED. Found+closed 3 real gaps: stdin reading had zero coverage (verified for real via a piped subprocess), single-heuristic score assertion only ever checked the IP-literal case (added punycode-only/length-only), load_tool_call crashed-adjacent on non-object JSON (now fails loud). Agree with Neo's _resolve_resource deletion deferral. make test: 310/310. @Morpheus *lead review phase-1
-
----
-[<small>2026-07-20 12:00:12</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
- *lead review phase-1 (Sprint8/E14): APPROVED. identify_targets() matches sec17.2's pseudocode exactly. Confirmed reputation plumbing is genuinely additive (subprocess_isolation.py needed zero changes, FileScanner correctly untouched). Endorsing Neo's _resolve_resource deletion deferral - correct call, not a shortcut. Corrected task.md's Phase1 wording to match what actually shipped (a stale phase plan is doc drift too). make test: 310/310. @Neo *swe impl phase-2
-
----
-[<small>2026-07-20 12:06:54</small>] [**make**]->[**all**] *build*:
- Build FAILED exit=2 | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-20 12:08:30</small>] [**Neo**]->[**Trin**] *swe handoff*:
- *swe impl phase-2 (Sprint8/E14) complete: confirmation (interactive+--yes+--only, fail-fast-no-TTY verified via mock_input.assert_not_called()), onboard_targets() batch scan/write (caught+fixed a real bug in my own first pass - a cosmetic post-hoc override that didn't match what was actually written to disk), --list. make test: 324/329 - 5 known failures, all named in Mouse's Phase3 task list (test_demo.py x4, test_user_guide_docs.py x1), not a regression. @Trin *qa uat phase-2
-
----
-[<small>2026-07-20 12:17:51</small>] [**make**]->[**all**] *build*:
- Build FAILED exit=2 | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-20 12:18:27</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
- *qa uat phase-2 (Sprint8/E14) PASSED. Real e2e via installed scg: multi-target ID, --only isolates by identity (+ fails loud on wrong identity), no-TTY fail-fast confirmed via timeout+exit-code (not just 'didn't hang once'), Smith's mixed-sensitivity workaround verified for real (2 --only invocations, both rules land correctly), real batch partial-failure (1 clean+1 secret, exit0, 1 rule written). make test: 324/329, same known 5 as Neo flagged, no new gaps. @Morpheus *lead review phase-2
-
----
-[<small>2026-07-21 07:39:16</small>] [**Morpheus**]->[**Neo**] *lead reject*:
- *lead review phase-2 (Sprint8/E14): 1 real bug found, verified live not just read. main() runs the interactive confirmation prompt BEFORE onboard_targets() validates --sensitivity/--mode - mocked a real run (isatty=True, input='y'), confirmed the user answers the prompt then gets told they forgot a required flag. Backwards - should fail before wasting their input, same as --yes's path already does. One-line reorder, not a design change. @Neo *swe fix: validate axis before confirmation
-
----
-[<small>2026-07-21 07:41:21</small>] [**make**]->[**all**] *build*:
- Build FAILED exit=2 | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-21 07:42:25</small>] [**Neo**]->[**Morpheus**] *swe handoff*:
- *swe fix Morpheus's phase-2 ordering finding: _validate_axis() now runs right after argparse, before load_tool_call/identify/confirm - a user answering the interactive prompt can no longer be told afterward they forgot --sensitivity/--mode. Added a regression test asserting input() is never called when axis is missing. make test: same 5 known Phase3-scoped failures, +1 new passing test. @Morpheus *lead review phase-2
-
----
-[<small>2026-07-21 07:42:54</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
- *lead review phase-2: APPROVED after 1 fix round. Independently re-verified the ordering fix myself (mocked the same real run, input() calls: 0, was 1 before). make test: same 5 known Phase3-scoped failures, no new ones. @Smith *user test phase-2
-
----
-[<small>2026-07-21 07:44:33</small>] [**Smith**]->[**Neo**] *user approve*:
- *user test phase-2: APPROVED. Drove the real interactive confirmation through a genuine pty (not a mock) - numbered list, s(elect) sub-flow, exclusion all read clearly and behave correctly, verified against the real written policy.yaml. My Gate1 reputation-visibility ask + Gate2 mixed-sensitivity note both already confirmed by Trin. Full review: e14_gate_phase2.md. @Neo *swe impl phase-3
-
----
-[<small>2026-07-21 10:51:12</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-21 10:51:56</small>] [**Neo**]->[**Trin**] *swe handoff*:
- *swe impl phase-3 (Sprint8/E14) complete: demo/docs/tests reconciled against real output (found+fixed a pre-existing SETUP.md staleness predating even sec16). Revised scope: kept onboard()/_resolve_resource() - its URI-scheme-validation test has no equivalent in the new flow, deleting would lose real coverage not just rename it. Flagged (not fixed): ARCHITECTURE.md sec5's Onboarding sequence diagram is stale, pre-dates sec16, Morpheus's call. make test: 331/331. @Trin verbatim-recheck GETTING_STARTED.md
-
----
-[<small>2026-07-21 10:53:04</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-21 10:53:32</small>] [**Trin**]->[**Oracle**] *qa handoff*:
- *qa recheck phase-3 PASSED, no separate gate needed. Re-ran GETTING_STARTED.md's onboarding section verbatim against real binaries - byte-for-byte match. SETUP.md's rewritten example also verified real. Agree with Neo's onboard()-kept scope revision. make test: 331/331. Sprint8/E14 implementation complete, all 3 phases done. @Oracle *ora groom
-
----
-[<small>2026-07-21 10:57:15</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
----
-[<small>2026-07-21 10:57:44</small>] [**Oracle**]->[**Smith**] *ora handoff*:
- *ora groom (Sprint8/E14) complete: CHAT.md at 50 msgs, no archive needed. USER_STORIES.md reconciled honestly - 3 ACs left unchecked with real notes (onboard() kept not deleted, --list is a CLI view not per-scanner API, reputation score doesn't yet drive the block decision). task.md phases updated with real PASSED outcomes. 1 durable lesson recorded. make test: 331/331. @Smith *user test E14
-
----
-[<small>2026-07-21 11:02:00</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
-[<small>2026-07-21 11:02:32</small>] [**Smith**]->[**all**] *user approve*:
- *user test E14 PASSED (full sprint end-to-end). Corrected mid-task: wrote the whole user journey as a real test (TestE14EndToEndUserJourney: block->mixed-batch identify->only-select-one->onboard->retry-allowed->list) instead of an ad-hoc bash transcript. Stays in the suite for regression coverage. make test: 332/332. No new bugs - every phase gate already did its job. @all *sprint retro
-
----
-[<small>2026-07-21 11:02:38</small>] [**Neo**]->[**Cypher**] *retro*:
- Neo retro (Sprint8/E14): kept onboard()/_resolve_resource() instead of deleting per the original plan once its own tests showed real, distinct coverage - a plan is a hypothesis too. Backlog: this is worth naming as a general pattern (see Oracle's new lesson), not a one-off.
-
 ---
-[<small>2026-07-21 11:02:40</small>] [**Trin**]->[**Cypher**] *retro*:
- Trin retro (Sprint8/E14): the pty-based interactive test (Smith's gate) and the batch-partial-failure real check both caught real signal a mock alone wouldn't have. Backlog: 'drive a real pty for any new interactive CLI prompt' is worth naming as a standard technique alongside real-binary/mutate-verify-revert, same weight as those.
+**Archived:** [agents/chat_archive/CHAT-ARCHIVE-20260721.md](chat_archive/CHAT-ARCHIVE-20260721.md) — 2026-07-18 19:43 through 2026-07-21 12:31.
 
----
-[<small>2026-07-21 11:02:46</small>] [**Morpheus**]->[**Cypher**] *retro*:
- Morpheus retro (Sprint8/E14): caught the axis-validation-ordering bug by mocking a real interactive run rather than just reading main()'s control flow - reviewing UX-adjacent code benefits from the same 'run it, don't just read it' standard I apply to perf/architecture claims. Backlog: sec5's stale Onboarding sequence diagram (pre-dates sec16) is a 4th instance of diagram-drift - worth a real automated guard, not just class-existence checks.
-
----
-[<small>2026-07-21 11:02:48</small>] [**Oracle**]->[**Cypher**] *retro*:
- Oracle retro (Sprint8/E14): reconciling stories honestly (3 ACs left unchecked with real notes, not force-checked) took longer than rubber-stamping but is what makes USER_STORIES.md trustworthy later. Backlog: STORY-1405's unmet 'decision weighs both signals' AC is real, open product work - Cypher should decide whether to carry it forward as a story or explicitly drop it, not let it silently vanish.
-
----
-[<small>2026-07-21 11:02:53</small>] [**Mouse**]->[**Cypher**] *retro*:
- Mouse retro (Sprint8/E14): 3-phase hard-dependency chain (identify->confirm/scan->reconcile) matched exactly how implementation actually unfolded, no re-planning needed mid-sprint. Confirms Sprint4/5's chain-shape pattern applies whenever a rewrite has a genuine load-bearing core piece. No backlog item.
-
----
-[<small>2026-07-21 11:02:56</small>] [**Smith**]->[**Cypher**] *retro*:
- Smith retro (Sprint8/E14): got corrected twice this session for ad-hoc bash verification - once mid-sprint, once at full sprint-close scale. Backlog: 'write it as a real test' needs to be instinct at every scale (single bug, single gate, whole-epic close), not something I relax on for the 'just confirming it all works together' moment - that's exactly when the token/regression cost of NOT doing it is highest.
-
----
-[<small>2026-07-21 11:04:00</small>] [**Cypher**]->[**all**] *pm launch*:
- *pm launch Sprint 8 (E14). scg onboard now identifies targets from a real tool call via the scanner registry, confirms interactively or via --yes/--only, batch scans/writes, --list shows inventory, reputation score displayed. Full cycle incl. Smith's gate (real pty session) + full e2e user-journey as a permanent test. 332/332 tests. Retro compiled (6 items). Sprint 8 formally closed.
-
----
-[<small>2026-07-21 11:06:03</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-OK
-
----
-[<small>2026-07-21 11:08:33</small>] [**Smith**]->[**Cypher**] *user consult*:
- *user consult (post-close CLI UX pass on scg onboard, per user feedback re: critiquing ergonomics not just function). 3 findings in e14_cli_ux_review.md: --scanner means 2 things depending on --list (Nielsen#4), interactive 's' asks what to exclude not include - wrong direction for the common case (Nielsen#7), --sensitivity/--mode both default permissive when omitted (Nielsen#5). Added to backlog, not filed as bugs. @Cypher backlog
-
----
-[<small>2026-07-21 12:11:06</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
-1 onboarded, 0 blocked
-No targets identified in this tool call.
-make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
-
-OK
-
----
+Summary of the fifth archive: Sprint 6 (E12, tech debt) launched → Sprint 7 (E13, `scg onboard` sec16 correction: single-call rule authoring, CLI flags matching `PolicyRule` fields) planned/implemented/gated, Smith's gate found a real `--help` discoverability gap (fixed same-day), launched → Sprint 8 (E14, Tool-Call-Driven Onboarding: `scg onboard` traverses the scanner registry directly instead of a hand-typed `--target`, adds developer confirmation, per-scanner inventory, reputation score) planned + all 3 phases implemented (Phase 2's mandatory Smith gate found a real axis-validation-ordering bug, fixed) → Sprint 8 closed, full e2e test encoded as a permanent test, retro compiled, launched, committed+pushed (`5f88586`) → session state-save before context clear.
 [<small>2026-07-21 12:31:56</small>] [**User**]->[**all**] *state-save*:
  State save before context clear. Sprint 8 (E14) closed, committed+pushed (5f88586). scg onboard identifies targets via SCANNERS registry, confirms interactively/--yes/--only, --list, reputation score. 332/332 tests. Next sprint (user direction): more scanner work - pulls from Cypher next_steps.md backlog (STORY-1405/1406, CLI UX findings in e14_cli_ux_review.md, stale sec5 diagram). No open handoffs - resume with *pm plan sprint whenever ready.
+
+---
+[<small>2026-07-21 13:07:30</small>] [**Cypher**]->[**all**] *resume*:
+ Cypher resuming (cold start). Sprint 8/E14 closed, committed+pushed. Nothing in-flight. Per user direction, next sprint is scanner-focused - backlog ready in next_steps.md: STORY-1405 (reputation score drives allow/block), STORY-1406 (scan tool-call responses, revisits sec15), Smith's e14 CLI UX findings (--scanner overload, invert-select prompt, permissive defaults), sec5 diagram drift. Awaiting direction to *pm plan sprint.
+
+---
+[<small>2026-07-21 13:28:13</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ *pm req E15 (scanner sprint) drafted: STORY-1501 config-driven scanner registry, 1502 hardcoded restricted paths (/etc,~/.ssh), 1503 real external URL reputation source (Tank-flagged), 1504 project folder defaults trusted+internal. Details+5 open Qs for Morpheus in cypher.docs/e15_scanner_sprint_req.md + USER_STORIES.md. @Smith *user review E15
+
+---
+[<small>2026-07-21 13:30:10</small>] [**Smith**]->[**all**] *resume*:
+ Smith resuming — reviewing E15 (Gate 1) per Cypher's handoff. Checked oracle.docs/lessons.md first (sec16's 'unreachable message' lesson is directly relevant to STORY-1504).
+
+---
+[<small>2026-07-21 13:30:45</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user review E15 APPROVED with notes. 3 non-blocking (1502 reason-string clarity, 1503 degraded-check visibility, 1501 config-schema consistency). 1 HARD REQUIREMENT carried to Gate 2 (precedent weight of sec16/14.3): STORY-1504's project-folder default must be discoverable to the developer, not silent - this project has been burned by silent-but-correct defaults before (sec16 lesson). Full: smith.docs/e15_gate1_review.md. @Morpheus *lead arch E15
+
+---
+[<small>2026-07-21 13:38:06</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead arch E15 complete (docs/ARCHITECTURE.md sec18). Config-driven SCANNERS registry, FileScanner hardcoded restricted paths, URLScanner composites new URLHausChecker (no API key), project-folder implicit allow-rule (discoverable via --list, resolves Smith's hard requirement). All 5 Cypher open Qs resolved. Flagged for Tank: URLHaus network call + dynamic importlib loading. Details in this msg's file, see morpheus.docs/context.md. @Smith *user feedback E15
+
+---
+[<small>2026-07-21 13:39:38</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user feedback E15 Gate 2: APPROVED. Hard requirement (1504 discoverability via --list) satisfied at design level - will re-verify real rendered output at phase gate. 3 Gate1 notes addressed. 1 light non-blocking ask: import: path error message should name the offending string (Trin/Neo). No new CLI flags, no breaking changes. Full: smith.docs/e15_gate2_review.md. @Mouse *sm plan sprint E15
+
+---
+[<small>2026-07-21 13:41:40</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ *sm plan sprint E15 done. 4 phases in task.md: P1 config-driven registry (no gate), P2 hardcoded restricted paths (no gate), P3 URLScanner+URLHaus (Tank required, sequenced last), P4 project-folder default (Smith mandatory gate, her hard requirement). Sequencing is story-order not hard-dependency - flagged P2/P4 could reorder ahead of P3 if Tank review runs long. @Morpheus *lead review sprint plan
+
+---
+[<small>2026-07-21 13:42:05</small>] [**Morpheus**]->[**all**] *resume*:
+ *lead review sprint plan (E15). Reviewing Mouse's 4-phase breakdown against sec18.
+
+---
+[<small>2026-07-21 13:42:39</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review sprint plan E15: APPROVED, plan LOCKED. All 4 phases match sec18 completely. Sequencing/gate placement both correct - confirmed Phases 2-4 only share Phase 1's PolicyConfig fields, no real dependency on each other. Full: morpheus.docs/e15_plan_review.md. @Neo *swe impl phase-1
+
+---
+[<small>2026-07-21 13:54:14</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-21 14:51:00</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-1 (E15) complete. Config-driven SCANNERS via load_scanners()+PolicyConfig.scanners. Found+fixed a real regression the full suite caught (onboard()'s legacy path lost scanner-name validation - restored). Reverted premature Phase-3 diagram entries (guard test caught it correctly). make test: 349/349. Details: neo.docs/e15_phase1_notes.md. @Trin *qa uat phase-1
+
+---
+[<small>2026-07-21 14:54:22</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 14:54:50</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-1 (E15) PASSED. Verified Neo's 2 self-reported findings (regression fix, diagram revert) independently, not just trusted. Added 3 new CLI-level adversarial tests (main() itself identifying/onboarding/listing through a config-declared scanner, plus a typo-scanner-name check against the full registry) - the real STORY-1501 AC is CLI-level traversal, Neo's tests were library-level only. make test: 352/352. Full: trin.docs/e15_phase1_uat.md. @Morpheus *lead review phase-1
+
+---
+[<small>2026-07-21 14:55:48</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-1 (E15): APPROVED. Independently traced both of Neo's findings (onboard() regression fix is correct+necessary, cache_refresh_worker scope decision is well-reasoned+bounded). Diagram-drift revert confirmed correct - noting for myself not to write a whole epic's end-state diagram in one architecture pass again. Full: morpheus.docs/e15_phase1_review.md. @Neo *swe impl phase-2
+
+---
+[<small>2026-07-21 15:00:52</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 15:01:16</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-2 (E15) complete. FileScanner hardcoded restricted-path short-circuit (/etc,~/.ssh, prefix-boundary-safe). Real design correction found before coding: sec18.2's proposed resource_verifier.py addition was unreachable dead code given decide_access()'s actual is_bad-checked-first control flow - FileScanner's short-circuit alone already makes it unconditional/un-overridable. Corrected ARCHITECTURE.md sec18.2. make test: 360/360. Details: neo.docs/e15_phase2_notes.md. @Trin *qa uat phase-2
+
+---
+[<small>2026-07-21 15:02:39</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 15:03:08</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-2 (E15) PASSED. Independently traced decide_access() myself before trusting Neo's dead-code finding - confirmed correct. Added 1 more adversarial test (exact /etc match, not just subpaths). Reconciled task.md's stale exit-criteria wording honestly (sensitivity=restricted was never reachable, not force-satisfied). make test: 361/361. Full: trin.docs/e15_phase2_uat.md. @Morpheus *lead review phase-2
+
+---
+[<small>2026-07-21 15:03:38</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-2 (E15): APPROVED. Independently re-traced decide_access() myself (I wrote sec15.3) - confirmed Neo's dead-code finding is right. Verified the prefix-boundary check against the false-positive case myself too. Full: morpheus.docs/e15_phase2_review.md. @Neo *swe impl phase-3
+
+---
+[<small>2026-07-21 15:26:50</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 15:27:34</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-3 (E15) complete. URLHausChecker+composite_check() wired into scan_worker.py's isolated subprocess. Serious finding: this made every existing URLScanner test hit a REAL live network call (subprocess = no in-process mock reaches it) - confirmed via timing+direct curl. Fixed with an env-var gate set by 8 test files via shared tests/_env_guards.py. Re-added Phase3 diagram classes for real. make test: 371/371, timing back to normal. Details: neo.docs/e15_phase3_notes.md. @Trin *qa uat phase-3
+
+---
+[<small>2026-07-21 15:29:29</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-21 15:32:25</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-3 (E15) PASSED, with 1 real gap found+closed during UAT: test_scan_cache.py calls refresh_if_needed() directly on URL resources, ungated by Neo's fix (missed by his file sweep since it lacked the literal https:// grep hit). Added the same guard there. Verified monitor tests are safe (no scan calls). make test: 371/371, ~45s (confirms the network regression is really fixed). Full: trin.docs/e15_phase3_uat.md. Tank review still required before this phase closes. @Morpheus *lead review phase-3
+
+---
+[<small>2026-07-21 15:33:06</small>] [**Morpheus**]->[**Tank**] *lead handoff*:
+ *lead review phase-3 (E15): APPROVED, contingent on Tank. Confirmed the network call runs inside the existing isolated subprocess (no new mechanism). The env-var test-gate is a real, tightly-scoped exception to normal test-isolation practice, justified by the subprocess boundary Trin's timing check proved matters. Confirmed Trin's found gap (test_scan_cache.py) is fixed. Full: morpheus.docs/e15_phase3_review.md. @Tank *devops review phase-3
+
+---
+[<small>2026-07-21 15:39:16</small>] [**Tank**]->[**Morpheus**] *devops blocked*:
+ *devops review phase-3 (E15): BLOCKED. URLhaus host-lookup now requires an Auth-Key (verified live, not docs) - composite_check() degrades to local-only on every real call, permanently. STORY-1503's real-external-check AC isn't met as merged. Found a keyless CSV-feed alternative but it needs a redesign. 3 options given, not decided unilaterally. Full: tank.docs/e15_phase3_review.md. @Morpheus needs a real decision.
+
+---
+[<small>2026-07-21 15:44:55</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 15:46:14</small>] [**Trin**]->[**Morpheus**] *qa recheck*:
+ *qa recheck phase-3 (E15) after Tank's Auth-Key finding + user decision (get a free key, env var). Verified: _query_urlhaus() checks SCALENE_URLHAUS_AUTH_KEY before ever sending a request (no doomed unauthenticated call), raises ReputationCheckUnavailable naming the signup URL if unset. Added 3 new tests (missing-key no-request, key sent as real header via mocked urlopen, URLHausChecker surfaces it). make test: 374/374. @Morpheus recheck
+
+---
+[<small>2026-07-21 15:46:41</small>] [**Morpheus**]->[**Tank**] *lead handoff*:
+ *lead recheck phase-3 after Auth-Key correction: APPROVED. Verified no secret hardcoded anywhere (grep clean), env-var-first design correctly avoids the doomed unauthenticated request Tank found. .env.example documents it properly. @Tank re-review please - confirm this resolves your finding
+
+---
+[<small>2026-07-21 15:47:07</small>] [**Tank**]->[**Neo**] *devops approve*:
+ *devops review phase-3 recheck: APPROVED. Fix is structurally correct (real env var, no hardcoded secret, no doomed unauthenticated request). Honest limitation: I can't obtain a real URLhaus key myself (requires human signup) so can't verify an actual successful authenticated call - flagged as a non-blocking follow-up for whoever deploys with a live key. Phase 3 closes on the engineering side. Full: tank.docs/e15_phase3_recheck.md. @Neo *swe impl phase-4
+
+---
+[<small>2026-07-21 16:45:30</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-21 16:46:00</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-4 (E15) complete. PolicyConfig.project_root + implicit allow-rule (appended after user rules), cli.py wired on both bare-constructor branches, scg onboard --list shows a synthetic discoverability line (Smith's hard requirement). Real finding: from_yaml() deriving project_root unconditionally broke 7 existing tests (extra rule in count assertions) - fixed each with explanatory comments, not routed around. make test: 381/381. Details: neo.docs/e15_phase4_notes.md. @Trin *qa uat phase-4
+
+---
+[<small>2026-07-21 16:47:46</small>] [**Trin**]->[**Smith**] *qa handoff*:
+ *qa uat phase-4 (E15) PASSED. Verified Neo's 5 mechanism tests + ran the real CLI myself (python -m scalene.onboard --list, before/after a real onboard) - synthetic default line renders correctly, distinct from real entries, both in real terminal output not just mocked unit tests. make test: 381/381. Full: trin.docs/e15_phase4_uat.md. This is the mandatory-gate phase. @Smith *user test phase-4
+
+---
+[<small>2026-07-21 16:50:43</small>] [**Smith**]->[**Neo**] *user reject*:
+ *user test phase-4: REJECTED. Ran --list cold myself. Real finding: the synthetic line says 'trust=trusted' - a value that doesn't exist anywhere in this project's real vocabulary (low/med/high, taint_state.py TRUST_LEVELS), AND traced decide_access() myself - a project-folder resource only ever escalates sensitivity, never touches trust at all. The line describes a mechanism that doesn't exist. REASON/FIX in smith.docs/e15_phase4_gate.md. @Neo *swe fix the --list wording
+
+---
+[<small>2026-07-21 16:52:28</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 381 tests in 45.642s
+
+OK
+
+---
+[<small>2026-07-21 16:54:37</small>] [**Neo**]->[**Smith**] *swe handoff*:
+ *swe fix phase-4 --list wording per Smith's rejection. Line now reads: 'sensitivity=internal (clean project files are allowed without escalating trust; ...)' - accurate, no invented vocabulary. Updated ARCHITECTURE.md sec18.4 + the test asserting the old wording. Re-ran the real CLI myself to confirm. make test: 381/381. @Smith please re-test phase-4
+
+---
+[<small>2026-07-21 16:55:28</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user test phase-4 re-test: APPROVED. Re-ran the real CLI myself (fresh scratch dir, not just re-reading the diff) - new wording is accurate, clear, still satisfies discoverability. My Gate 1 hard requirement holds. Full: smith.docs/e15_phase4_gate.md. @Morpheus *lead review phase-4
+
+---
+[<small>2026-07-21 16:56:11</small>] [**Morpheus**]->[**Oracle**] *lead handoff*:
+ *lead review phase-4 (E15, last phase): APPROVED. Traced the rule-priority + coexistence claims myself, both confirmed real. Agree with Smith's trust=trusted fix - a false factual claim in UX text, not a style nit. All 4 phases of E15 now implemented+gated. @Oracle *ora groom
+
+---
+[<small>2026-07-21 17:21:51</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-21 17:22:52</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix phase-4 per user request: replaced the implicit in-memory rule + synthetic --list line with a real rule written to a real scalene_policy.yaml on first run. Found+fixed a real bug: the broad default rule written first would silently shadow a later onboard-authored specific rule - fixed _write_rule() to insert before the default. make test: 387/387, real CLI verified too. Details: neo.docs/e15_phase4_correction_notes.md. @Trin *qa uat phase-4 (re-run)
+
+---
+[<small>2026-07-21 17:25:43</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-21 17:26:11</small>] [**Trin**]->[**Smith**] *qa handoff*:
+ *qa uat phase-4 re-run PASSED (mechanism corrected). Grepped for leftover refs to removed design - clean. Found a gap in Neo's shadowing-fix testing (only 1 onboard call verified) - added multi-onboard test, caught my own test bug before it hid a problem. Confirmed 'timestamp uninitialized' by grepping for cache imports - none. make test: 388/388. Full: trin.docs/e15_phase4_correction_uat.md. @Smith please re-gate against the new mechanism
+
+---
+[<small>2026-07-21 17:29:05</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+OK
+
+---
+[<small>2026-07-21 17:29:23</small>] [**Trin**]->[**Smith**] *qa test*:
+ *qa automate phase-4 e2e: added a real subprocess-level test (python -m scalene.cli, not just in-process guard_main()) to TestGuardCreatesDefaultProjectPolicy - same real-binary precedent as test_demo.py. Automates the manual verification runs done during this phase's reviews into a repeatable test instead of ad-hoc bash. make test: 389/389. @Smith please review this automated test as your gate evidence, not fresh manual checks
+
+---
+[<small>2026-07-21 17:30:50</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-21 17:30:57</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user test phase-4 re-gate (mechanism corrected) APPROVED. Reviewed Trin's real subprocess e2e test itself (not just pass/fail) - genuine binary spawn, real stdin payload, asserts real written YAML. Re-ran make test myself: 389/389. Discoverability requirement satisfied by construction now (rule is plain YAML in the dev's own file). Full: smith.docs/e15_phase4_correction_gate.md. @Morpheus *lead review phase-4 (corrected)
+
+---
+[<small>2026-07-21 17:32:00</small>] [**Morpheus**]->[**Oracle**] *lead handoff*:
+ *lead review phase-4 (corrected mechanism): APPROVED. Traced the shadowing-fix rationale myself against resource_verifier.py's real code - confirmed it's a real bug, correctly and minimally fixed. write_default_project_policy() is exactly the right shape (no new PolicyConfig field, no special-casing). Sprint 9 (E15) fully implemented+gated, all 4 phases (Phase 4 gated twice, correctly, against 2 real implementations). @Oracle *ora groom
+
+---
+[<small>2026-07-21 17:38:09</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-21 17:38:16</small>] [**Oracle**]->[**Smith**] *ora handoff*:
+ *ora groom (E15) complete. Reconciled all 4 stories' ACs honestly against real shipped mechanisms (STORY-1502/1504's literal 'restricted'/'trust=trusted' wording didn't match the real vocab - noted why, not force-checked). Resolved all 5 open questions. Archived CHAT.md (111->47 msgs, new archive at 20260721). Recorded 2 durable lessons (existing-code architecture assumptions; broad-default-shadows-later-rule interaction bug). make test: 389/389. @Smith *user test E15
+
+---
+[<small>2026-07-21 17:40:56</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+OK
+
+---
+[<small>2026-07-21 17:41:29</small>] [**Smith**]->[**all**] *user approve*:
+ *user test E15 (sprint close, full e2e) PASSED. Wrote it as a real permanent test (TestE15EndToEndUserJourney in test_cli.py) covering all 4 stories in one session via the real scalene-guard hook adapter - project-folder default lets 2 clean files flow, /etc still blocks mid-session regardless. make test: 390/390. No new bugs - every phase gate already did its job. Full: smith.docs/e15_sprint_close_e2e.md. @all *sprint retro
+
+---
+[<small>2026-07-21 17:42:01</small>] [**Smith**]->[**Cypher**] *retro*:
+ Smith retro (Sprint9/E15): 2 real catches from actually running things, not trusting docs/transcripts - the trust=trusted wording bug at my own gate, and (self-critical) I reached for ad-hoc bash verification twice more this session despite already having 2 prior corrections for exactly this. Backlog: the rule isn't sticking under time pressure - trigger should be 'I want to verify X' -> write the test immediately, not 'let me quickly check.'
+
+---
+[<small>2026-07-21 17:42:06</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro (Sprint9/E15): traced existing control flow before implementing twice this sprint and both times found the architecture doc's plan didn't match reality (cache_refresh_worker's subprocess boundary, decide_access()'s is_bad-checked-first order) - saved writing dead code both times. Backlog: architecture claims about EXISTING code deserve the same verify-before-build standard as claims about new code (now a lesson).
+
+---
+[<small>2026-07-21 17:42:12</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro (Sprint9/E15): independent adversarial sweeps (not just re-running the SWE's own tests) found 2 real gaps this sprint - test_scan_cache.py's ungated live-network calls (Phase 3), and Neo's shadowing-fix only verified for 1 onboard call (Phase 4, multi-onboard test caught it). Backlog: grepping by call-site pattern, not just obvious keyword matches, is what found the network-guard gap - worth naming as a standard sweep technique.
+
+---
+[<small>2026-07-21 17:42:23</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro (Sprint9/E15): writing the whole epic's architecture in one pass before implementation produced 2 real corrections + 1 premature diagram entry once Neo built against it. Also: re-running the full gate chain after the user's mid-flight Phase 4 design pivot (not assuming the old approval still applied) was correct discipline, not overhead. Backlog: don't diagram a whole epic's end-state before any of it exists.
+
+---
+[<small>2026-07-21 17:42:29</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro (Sprint9/E15): reconciling STORY-1502/1504's ACs honestly took real work - their literal wording (restricted/untrusted/trust=trusted) didn't match any real system vocabulary once the mechanisms were actually traced, same shape as the trust=trusted bug Smith caught independently. Also fixed PRD.md's status line, stale since Sprint 4 while USER_STORIES.md stayed current - 2 parallel status lines drift independently, worth just pointing one at the other going forward.
+
+---
+[<small>2026-07-21 17:42:35</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro (Sprint9/E15): the story-order (not hard-dependency) phase sequencing held up fine, and flagging upfront that Phase 3/4 could reorder if Tank's review ran long turned out prescient in spirit even though the actual disruption was a Phase 4 design pivot, not a Tank delay. Confirms Sprint 3's pattern: naming a plausible re-sequence risk upfront prevents it from reading as plan failure later. No backlog item.
+
+---
+[<small>2026-07-21 17:42:42</small>] [**Tank**]->[**Cypher**] *retro*:
+ Tank retro (Sprint9/E15, my first real invocation in this project): verifying a vendor API claim against the LIVE endpoint (not its docs) is what caught the Auth-Key requirement - the story's own instruction to 'specifically verify, not assume' turned out to matter for real, not just as boilerplate caution. Backlog: this project's first external network dependency - worth a standing habit of live-verifying any future third-party API claim before it's architected around, not just at Tank's gate.
+
+---
+[<small>2026-07-21 17:43:19</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 9 (E15). SCANNERS is config-driven, FileScanner hardcodes /etc+~/.ssh restricted, URLScanner adds a real external reputation source (URLhaus, Auth-Key required - a real Tank finding, fixed), new projects auto-get a trusted+internal rule for their own folder (corrected mid-sprint per direct user request to avoid an implicit special case). 390/390 tests. Retro compiled (7 items, incl. Tank's first real invocation). Sprint 9 formally closed.
+
+---
+[<small>2026-07-22 14:15:05</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-22 14:15:34</small>] [**Neo**]->[**all**] *swe fix*:
+ Direct user session, post-E15-close: URLScanner now recognizes any URL protocol (ftp/ws/s3/etc), not just http(s); file:// is the exception, routed to FileScanner instead. Found+fixed a real regex bug: a (?!file://) lookahead only blocks a match at that exact position - finditer retried one char later and matched 'ile://...'. Fixed via any-scheme-match + filter-in-code. Also dropped STORY-1504's now-redundant scanner:secrets filter. docs/ARCHITECTURE.md sec19 records this. make test: 396/396.
+
+---
+[<small>2026-07-22 14:49:35</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-22 14:59:47</small>] [**User**]->[**all**] *state-save*:
+ State save before context clear (2026-07-22). Sprint 9 (E15) fully closed + a post-close correction (generic URL protocols, file:// routing). 396/396 tests. Full detail: agents/oracle.docs/state_save_20260722.md. Everything is uncommitted (not asked to commit). No open handoffs - next sprint direction not yet given.

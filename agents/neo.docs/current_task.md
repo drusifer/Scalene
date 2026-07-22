@@ -1,7 +1,48 @@
-**Status:** DONE — Sprint 8 (E14) Phase 3: demo/docs/existing-test reconciliation. Handed to Trin.
+**Status:** DONE — post-E15-close correction: generic protocol detection + file:// routing. `make test`: 396/396.
 **Assigned to:** Neo
-**Started:** 2026-07-21
-**Finished:** 2026-07-21
+**Started:** 2026-07-22
+**Finished:** 2026-07-22
+
+## Task Description (most recent): direct user session, post-E15-close — generic URL protocol detection, `file://` → FileScanner
+User questioned STORY-1504's `scanner: secrets` filter, which surfaced a broader design gap: `URLScanner` only matched `http(s)://`, and no scanner recognized `file://` URIs at all. Broadened `_URL_FALLBACK_RE` to any URI scheme (`_URI_SCHEME` grammar), added `_FILE_URI_RE` to `FileScanner.identify()` so `file://` is recognized as a file resource regardless of which tool/field it appears in, and removed the now-redundant `scanner: secrets` filter from the auto-created project-folder rule (the anchored absolute-path pattern was already sufficient — general principle: don't require a rule author to remember scanner registry names).
+
+**Real bug found while implementing, not assumed correct**: my first attempt excluded `file://` from `URLScanner`'s regex via a `(?!file://)` negative lookahead — wrong, because `re.finditer` retries one character later when a match fails at the current position, and `(?!file://)` trivially passes there, matching `"ile://..."` as a bogus scheme. Caught by a test that actually ran `file://` through `URLScanner.identify()`. Fixed by matching any scheme unconditionally and filtering `file://` out in Python code (`_is_file_uri()`), which has no analogous retry failure mode.
+
+Recorded in `docs/ARCHITECTURE.md` §19. `make test`: 396/396 (390 + 6 new tests covering file:// routing, non-http protocols, and the regex-retry regression).
+
+## Task Description (prior): DONE — reworked Phase 4's mechanism per direct user request (real on-disk rule, not implicit in-memory). Handed to Trin for re-UAT.
+
+## Task Description (most recent): Phase 4 mechanism rework — real rule file, not implicit special case
+Full notes: `agents/neo.docs/e15_phase4_correction_notes.md`. User asked, after Phase 4 was already gated: create a real `scalene_policy.yaml` with a real rule for the project folder when none exists, with no cache entry pre-seeded ("timestamp uninitialized"), avoiding an implicit special case. Removed `PolicyConfig.project_root`/its `__post_init__` logic/the synthetic `--list` line entirely; added `policy_config.write_default_project_policy()`, called once by `cli.py` before the ordinary `from_yaml()` load. Found and fixed a real bug while implementing: the broad default rule, written first, would silently shadow any later onboard-authored specific rule under append-only + first-match-wins semantics — fixed `_write_rule()` to insert ahead of the auto-created default specifically, leaving all other rule-writes unchanged. `make test`: 387/387, plus a real end-to-end CLI run confirming the file gets created correctly.
+
+## Task Description (prior): DONE — fixed Smith's Phase 4 rejection (`--list` wording). Handed back to Smith for re-test.
+
+## Task Description (most recent): fix Smith's Gate rejection — `--list` synthetic line wording
+Smith found the original wording (`trust=trusted`) used a value that doesn't exist in this project's real trust vocabulary and described a mechanism (`decide_access()` escalating trust) that doesn't actually happen for a project-folder resource. Reworded to `sensitivity=internal (clean project files are allowed without escalating trust; ...)` — accurate to what the code actually does. Updated the one test asserting the old string, and `docs/ARCHITECTURE.md` §18.4's own line + a correction note. Re-ran the real CLI myself (not just the diff) to confirm the new text renders correctly. `make test`: 381/381 (unchanged count, just the one test's assertion updated).
+
+## Task Description (prior): DONE — Sprint 9 (E15) Phase 4: Project-Folder Default. Handed to Trin for UAT (Smith's mandatory gate still pending).
+
+## Task Description (most recent): `*swe impl phase-4` (Sprint 9/E15) — project-folder default posture
+Full notes: `agents/neo.docs/e15_phase4_notes.md`. `PolicyConfig.project_root` + an implicit allow-rule appended after user rules; `cli.py` wired on both bare-constructor branches; `scg onboard --list` shows the synthetic discoverability line satisfying Smith's Gate 1 hard requirement. Real, wide implementation-time finding: deriving `project_root` unconditionally in `from_yaml()` broke 7 existing tests (extra rule in count assertions) — fixed each explicitly with a comment, not routed around by making the feature conditional. 5 new `TestProjectFolderDefault` tests cover the actual mechanism (clean-file validated-allow, second-file-doesn't-hit-the-wall, explicit-rule-wins, coexistence-with-restricted-paths, outside-project unaffected) plus 2 new `--list` tests for the synthetic line. `make test`: 381/381 (374 + 7 new).
+
+Sprint 9 (E15) all 4 phases now implemented. Sprint-level exit needs: Trin's Phase 4 UAT, Smith's mandatory gate (her own Gate 1 hard requirement lands here), Morpheus's Phase 4 review, then sprint close (Oracle groom → Smith end-to-end test → retro → Cypher launch).
+
+## Task Description (prior): DONE — Sprint 9 (E15) Phase 3: External Reputation Source. Handed to Trin for UAT (Tank review still required before phase closes).
+
+## Task Description (most recent): `*swe impl phase-3` (Sprint 9/E15) — external reputation source
+Full notes: `agents/neo.docs/e15_phase3_notes.md`. `URLHausChecker` + `composite_check()` in `reputation.py`, wired into `scan_worker.py`'s isolated subprocess. **Serious implementation-time finding**: wiring the composite check into the live subprocess path made every existing `URLScanner.scan()`-exercising test hit a real, live network call (the subprocess boundary means no in-process mock can reach `composite_check()`) — confirmed via timing (57s vs. ~43s baseline) and a direct curl to the endpoint from this environment. Fixed with an env-var gate (`SCALENE_SKIP_REMOTE_REPUTATION`, read by `composite_check()`, propagated to the child subprocess via `subprocess_isolation.run_scanner`'s existing env-copy) — added a small shared test helper (`tests/_env_guards.py`) and wired `setUpModule`/`tearDownModule` into all 8 test files that exercise a URL resource through a real scan path. `test_reputation.py` itself deliberately left unguarded (its own tests mock `_query_urlhaus` in-process, need the real code path). Re-added the §4 class-diagram entries this time (Phase 1 had to revert a premature addition). `make test`: 371/371, timing back to ~45s.
+
+## Task Description (prior): DONE — Sprint 9 (E15) Phase 2: Hardcoded Restricted Paths. Handed to Trin for UAT.
+
+## Task Description (most recent): `*swe impl phase-2` (Sprint 9/E15) — hardcoded restricted paths
+Full notes: `agents/neo.docs/e15_phase2_notes.md`. Summary: `FileScanner.scan()` short-circuits on `/etc`/`~/.ssh` (prefix-boundary-safe, not naive startswith) before the secrets-scan subprocess ever runs. **Real design correction, found by tracing control flow before writing code, not after a test failed**: §18.2's proposed `resource_verifier.py` implicit-rule addition would have been unreachable dead code — `decide_access()` checks `is_bad` (true for any cached `"sensitive"` label) before any rule match, so the `FileScanner` short-circuit alone already makes this unconditional and un-overridable. Corrected `docs/ARCHITECTURE.md` §18.2 rather than implementing the unverified original plan. `make test`: 360/360 (352 + 8 new).
+
+## Task Description (prior): DONE — Sprint 9 (E15) Phase 1: Configurable Scanner Registry. Handed to Trin for UAT.
+
+## Task Description (most recent): `*swe impl phase-1` (Sprint 9/E15) — config-driven scanner registry
+Full notes: `agents/neo.docs/e15_phase1_notes.md`. Summary: `scanner.load_scanners()` (new), `PolicyConfig.scanners` field, validation of a rule's `scanner` field moved from `PolicyRule.__post_init__` to `PolicyConfig.from_yaml` (documented behavior change, anticipated by Morpheus/Smith at Gate 2). `resource_verifier.py`/`onboard.py` thread `config.scanners`/an optional `scanners` param instead of importing the module `SCANNERS` constant directly. Found and fixed a real regression the full test suite caught (not a new test I wrote to find it): `onboard()`'s legacy path lost scanner-name validation when it moved out of `PolicyRule`, since `_onboard_resource()` constructs a `PolicyRule` directly, bypassing `from_yaml`'s new check — restored via an explicit check in `_onboard_resource()` itself. Also reverted a premature class-diagram addition (Phase 3's `ReputationChecker`/etc, caught by the diagram-drift guard test) — will re-add during Phase 3 itself, not before. `cache_refresh_worker.py` deliberately left scoped to builtins only (documented in-code), since making it see a config-declared scanner needs subprocess-argv plumbing with zero real payoff this epic (no custom scanner ships). `make test`: 349/349 (332 + 17 new).
+
+## Task Description (prior): DONE — Sprint 8 (E14) Phase 3: demo/docs/existing-test reconciliation. Handed to Trin.
 
 ## Task Description (most recent): `*swe impl phase-3` (Sprint 8/E14) — breaking-change surface
 Every real `--target` reference found at Smith's Gate 1 grep, fixed and re-verified against real output (not fabricated):

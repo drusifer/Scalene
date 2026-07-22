@@ -1,8 +1,15 @@
 # Current Task
 
-**Status:** Sprint 8 (E14) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
+**Status:** Sprint 9 (E15) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
 **Assigned to:** Mouse
-**Started:** 2026-07-20
+**Started:** 2026-07-21
+
+## Task Description (most recent): `*sm plan sprint` (Sprint 9 / E15)
+Following Smith's Gate 2 approval on Morpheus's §18 architecture. 4 phases, sequenced by story order (1501→1502→1503→1504) rather than a hard technical dependency chain — only real shared-file overlap is Phase 1's `PolicyConfig` field additions (`scanners`, `project_root`), which Phases 2-4 all build on incidentally, not because 1502/1503/1504 depend on each other. Explicitly flagged in task.md's Notes that Phase 3 (Tank-gated) and Phase 4 (Smith-gated) have no dependency on each other and could reorder if Tank's review runs long — pre-empting a "re-planning = plan failure" misread if that happens, per Sprint 3's retro lesson about a 3rd status bucket for exactly this shape.
+Gate placement: Phase 1/2 get no Smith gate (no new CLI/interactive surface, matches Sprint 8 Phase 1's precedent). Phase 3 gets a **required Tank task**, sequenced last within the phase per standing protocol (new outbound network dependency). Phase 4 gets the **mandatory Smith gate** — this is where Smith's Gate 1 hard requirement (STORY-1504 discoverability) actually gets built and must be verified live, same weight as Sprint 8's Phase 2 pty-gate.
+Handed to Morpheus (`*lead review sprint plan`).
+
+## Task Description (prior): `*sm plan sprint` (Sprint 8 / E14)
 
 ## Task Description (most recent): `*sm plan sprint` (Sprint 8 / E14)
 Following Smith's Gate 2 approval on Morpheus's §17 architecture. 3 hard-dependency-ordered phases (§17.1/17.2's rewrite is load-bearing for everything downstream — same chain shape as Sprint 4/5, not Sprint 3's parallel-capable one): Phase 1 (reputation score + new target-identification core, no Smith gate — internal/library-level, no usable CLI change yet), Phase 2 (confirmation + per-target scan/write + `--list`, **Smith gate required** — this is where the real interactive/CLI surface lands, including her Gate 1 hard requirement's actual implementation), Phase 3 (demo/docs/existing-test reconciliation, no separate Smith gate — Trin's UAT re-runs doc examples verbatim instead, matching the project's standing practice for doc-only phases). Folded Smith's Gate 1 breaking-change-surface grep directly into Phase 3's 3 tasks by name, not left as prose — every file she found is a named task. Folded her Gate 2 mixed-sensitivity note into Phase 2's exit criteria explicitly. No Tank phase (no infra/daemon change).

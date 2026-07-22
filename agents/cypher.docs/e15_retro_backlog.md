@@ -1,0 +1,21 @@
+# Cypher — Sprint 9 (E15) close — retro compile — 2026-07-21
+
+Compiled from all 7 persona retro posts (Neo, Trin, Morpheus, Oracle, Mouse, Smith, Tank — Tank's first real invocation in this project). Central theme: this sprint tested "verify, don't assume" against two *new* kinds of claims this project hadn't stress-tested before — claims about *existing* code's behavior (not just new code), and claims made by a *third-party vendor* about their own API. Both broke exactly once, both were caught by someone actually checking instead of trusting the written claim.
+
+## Retro Backlog (Sprint 9)
+1. **Architecture claims about *existing* code need the same verify-before-build standard as claims about new code** (Neo, Morpheus) — now a durable lesson (`agents/oracle.docs/lessons.md`). §18's whole-epic-in-one-pass architecture made 2 real claims about existing control flow (`cache_refresh_worker`'s subprocess boundary, `decide_access()`'s match order) that didn't hold once traced during implementation. Worth watching for in any future architecture doc that reasons about code it didn't just write.
+2. **A broad default written first can silently shadow a specific rule written later, under an unrelated append-only convention** (Neo, Trin) — the other new durable lesson this sprint. Two individually-correct, individually-tested mechanisms (auto-created default + append-only rule writing) combined into a real bug neither one's own tests would catch. Worth a standing check whenever a new "auto-written, broad-matching" config entry is introduced: trace what happens when something more specific gets added on top of it later, don't just test the new entry in isolation.
+3. **Verify a vendor's own API claims against the live service, not its docs, before architecting around them** (Tank) — this project's first external network dependency, and its very first real check found the "no API key needed" premise was false in practice. Tank's own retro flags this as worth turning into a standing habit for any future third-party integration, not a one-off lucky catch.
+4. **A mid-sprint user design pivot (avoiding an implicit special case) is a legitimate reason to re-run a full gate chain, not overhead to shortcut** (Morpheus, Smith) — Phase 4 was fully gated once, then reworked at the user's request, then gated again as genuinely different code. Confirms this project's standing practice of never reusing an approval for code that changed underneath it.
+5. **Standing feedback (no ad-hoc bash verification) needs to survive time pressure mid-gate-cycle, not just calm moments** (Smith, self-flagged) — third correction on this exact pattern in this project now (2026-07-14, twice more on 2026-07-21). Recorded with escalated weight in the standing memory; also worth naming here since it's a recurring team discipline gap, not just one persona's habit.
+6. **Independent adversarial sweeps (grep by call-site pattern, not just obvious keywords) find real gaps a SWE's own test list misses** (Trin) — found 2 real gaps this sprint this way (network-guard coverage, multi-onboard ordering). Worth keeping as a standard UAT technique alongside the existing real-binary/mutate-verify-revert/pty ones.
+7. **Naming a plausible re-sequencing risk upfront, even if the actual disruption looks different than predicted, still pays off** (Mouse) — flagged Phase 3/Phase 4 could reorder if Tank's review ran long; the sprint instead reordered around a Phase 4 design pivot, but the "don't treat a re-sequence as plan failure" framing held regardless of which risk actually fired.
+
+## Not carried forward as new backlog (already tracked elsewhere)
+- `docs/ARCHITECTURE.md` §5's stale Onboarding diagram — still open, still Morpheus's/whoever's call, unchanged status.
+- STORY-1405 (reputation-drives-decision), STORY-1406 (post-call scanning), Smith's `scg onboard` CLI UX findings — all still open, explicitly not touched this sprint, per my own `next_steps.md` discipline of not silently folding backlog items into whatever sprint happens to be running.
+
+## Progress
+- [x] Read all 7 persona retro posts in `agents/CHAT.md`.
+- [x] Compiled backlog above — every line traces to a specific persona's post, no invented items.
+- [x] `*pm launch` posted to CHAT.md.

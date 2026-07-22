@@ -74,9 +74,15 @@ from urllib.parse import urlparse
 
 import yaml
 
-from .policy_config import PolicyConfigError, PolicyRule, VALID_SENSITIVITIES
+from .policy_config import (
+    PROJECT_FOLDER_DEFAULT_DESCRIPTION,
+    PolicyConfig,
+    PolicyConfigError,
+    PolicyRule,
+    VALID_SENSITIVITIES,
+)
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache, ScanCacheError
-from .scanner import SCANNERS, Resource, ScannerMachineryError
+from .scanner import SCANNERS, Resource, Scanner, ScannerMachineryError
 
 DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
 
@@ -111,17 +117,26 @@ def _resolve_resource(target: str) -> Resource:
     raise OnboardError(f"--target must be a file://, http://, or https:// URI (got {target!r})")
 
 
-def identify_targets(tool_name: str, tool_input: dict) -> list[Resource]:
+def identify_targets(
+    tool_name: str, tool_input: dict, scanners: dict[str, Scanner] | None = None
+) -> list[Resource]:
     """docs/ARCHITECTURE.md sec17.1/17.2 (STORY-1401): traverses the full
-    SCANNERS registry, calling each scanner's own identify() -- the exact
+    scanner registry, calling each scanner's own identify() -- the exact
     mechanism pre_tool_use already runs live -- instead of a hand-typed
     --target URI resolved by a second, onboard-only resolver. Deduplicated
     by (kind, identity): the same value can surface via a known field AND
     the generic-fallback scan of the same string (e.g. WebFetch's --url
-    field vs. that same URL appearing in --prompt too)."""
+    field vs. that same URL appearing in --prompt too).
+
+    sec18.1 (STORY-1501): `scanners` defaults to the module-level SCANNERS
+    constant (the 2 builtins) when not given, so every existing caller
+    (tests, direct library use) is unaffected -- `main()` passes the
+    project's own loaded PolicyConfig.scanners so a config-declared scanner
+    is identified here too, not just at live hook-decision time."""
+    registry = scanners if scanners is not None else SCANNERS
     seen: set[tuple[str, str]] = set()
     targets: list[Resource] = []
-    for scanner in SCANNERS.values():
+    for scanner in registry.values():
         for resource in scanner.identify(tool_name, tool_input):
             key = (resource.kind, resource.identity)
             if key in seen:
@@ -178,7 +193,20 @@ def _write_rule(policy_path: Path, rule: PolicyRule) -> None:
     if rule.description:
         rule_dict["description"] = rule.description
 
-    rules.append(rule_dict)
+    # sec18.4 (STORY-1504): the auto-created project-folder default's
+    # pattern is broad by design -- if a real onboarded rule for the same
+    # (or a more specific) path were simply appended after it, the default
+    # would always match first and the new, more specific decision would
+    # be silently unreachable forever. Insert ahead of it instead of after,
+    # same declaration-order-wins mechanism, just placed correctly.
+    default_index = next(
+        (i for i, r in enumerate(rules) if isinstance(r, dict) and r.get("description") == PROJECT_FOLDER_DEFAULT_DESCRIPTION),
+        None,
+    )
+    if default_index is None:
+        rules.append(rule_dict)
+    else:
+        rules.insert(default_index, rule_dict)
     data["rules"] = rules
 
     try:
@@ -226,13 +254,32 @@ def _onboard_resource(
     policy_path: Path,
     tool: str = ".*",
     pattern: str | None = None,
+    scanners: dict[str, Scanner] | None = None,
 ) -> dict:
     """One target's worth of scan + rule-write (sec17.4). `onboard_targets()`
     never overrides tool/pattern (the flags are gone from that flow entirely
     -- ".*" and an exact match on the resource's own identity, same default
     sec16 already had). `onboard()` (pre-sec17, kept for its existing
-    callers) still can, via these two params."""
-    scanner_obj = SCANNERS[resource.scanner_name]
+    callers) still can, via these two params.
+
+    sec18.1 (STORY-1501): `scanners` defaults to the module-level SCANNERS
+    constant when not given, same precedent as identify_targets(). The
+    `scanner` param (the rule's disambiguating filter, distinct from
+    `resource.scanner_name`) is validated here against this same registry --
+    `PolicyRule.__post_init__` no longer validates it (sec18.1's move), and
+    this function constructs a `PolicyRule` directly, never through
+    `PolicyConfig.from_yaml`'s own validation loop -- so without this check
+    a typo'd --scanner would silently write an ineffective rule (E12/
+    STORY-1201's original defect, reintroduced by the sec18.1 move if left
+    unchecked here)."""
+    registry = scanners if scanners is not None else SCANNERS
+    scanner_obj = registry[resource.scanner_name]
+
+    if scanner and scanner not in registry:
+        raise OnboardError(
+            f"Onboarding blocked: invalid rule — 'scanner' must be one of {tuple(registry)} or empty "
+            f"(inferred), got {scanner!r}"
+        )
 
     try:
         result = scanner_obj.scan(resource)
@@ -275,18 +322,24 @@ def onboard_targets(
     description: str = "",
     cache_path: Path = DEFAULT_CACHE_PATH,
     policy_path: Path = DEFAULT_POLICY_PATH,
+    scanners: dict[str, Scanner] | None = None,
 ) -> list[dict]:
     """docs/ARCHITECTURE.md sec17.4 (STORY-1403): scans + writes a rule for
     each confirmed target. Batch semantics, not all-or-nothing -- one
     target's scan/rule failure is caught and recorded per-target (ok=False,
     error=...), the rest of the batch still proceeds. Returns one result
-    dict per target, in the same order as `targets`."""
+    dict per target, in the same order as `targets`.
+
+    sec18.1 (STORY-1501): `scanners` (defaults to the module-level SCANNERS
+    constant) is threaded through to `_onboard_resource()` unchanged."""
     sensitivity, mode = _validate_axis(sensitivity, mode)
 
     results = []
     for resource in targets:
         try:
-            outcome = _onboard_resource(resource, sensitivity, mode, scanner, description, cache_path, policy_path)
+            outcome = _onboard_resource(
+                resource, sensitivity, mode, scanner, description, cache_path, policy_path, scanners=scanners
+            )
             results.append({**outcome, "ok": True})
         except OnboardError as exc:
             results.append({"resource": resource, "ok": False, "error": str(exc)})
@@ -457,7 +510,20 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    targets = identify_targets(tool_name, tool_input)
+    # sec18.1 (STORY-1501): load the project's own registry (builtins +
+    # any config-declared scanners) once -- so a config-declared scanner is
+    # identified/onboarded here the same way it participates in live
+    # pre_tool_use decisions, not just the 2 builtins. A missing/absent
+    # policy file (a brand-new project) falls back to the builtins only,
+    # same as PolicyConfig()'s own default.
+    policy_path = Path(args.policy_path)
+    try:
+        scanners = PolicyConfig.from_yaml(policy_path).scanners if policy_path.exists() else dict(SCANNERS)
+    except PolicyConfigError as exc:
+        print(f"scg onboard: could not load {policy_path}: {exc}", file=sys.stderr)
+        return 1
+
+    targets = identify_targets(tool_name, tool_input, scanners=scanners)
     if not targets:
         print("No targets identified in this tool call.")
         return 0
@@ -479,7 +545,8 @@ def main(argv: list[str] | None = None) -> int:
         scanner=args.scanner,
         description=args.description,
         cache_path=Path(args.cache_path),
-        policy_path=Path(args.policy_path),
+        policy_path=policy_path,
+        scanners=scanners,
     )
 
     ok_count = 0

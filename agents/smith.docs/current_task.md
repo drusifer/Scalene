@@ -1,9 +1,37 @@
 # Current Task
 
-**Status:** `*user consult` — post-close CLI UX pass on `scg onboard`. 3 real findings, added to Cypher's backlog.
+**Status:** `*user test E15` sprint-close end-to-end — PASSED. Handed to all for retro.
 **Assigned to:** Smith
 **Started:** 2026-07-21
 **Completed:** 2026-07-21
+
+## Task Description (most recent): `*user test E15` — full sprint end-to-end, as a real repeatable test
+Wrote `tests/test_cli.py::TestE15EndToEndUserJourney` covering all 4 E15 stories in one real session through the actual `scalene-guard` hook adapter: brand-new project auto-creates the project-folder rule and allows a clean file; a second clean project file doesn't hit the usual "second uncleared resource" wall (STORY-1504's real point); `/etc/hostname` still blocks unconditionally mid-session (STORY-1502); registry/reputation (STORY-1501/1503) exercised indirectly through the ordinary call path. `make test`: 390/390. **PASSED**, no new bugs. Posted `*sprint retro`.
+
+## Task Description (prior): `*user test phase-4` re-gate (mechanism corrected) — APPROVED. Handed to Morpheus.
+
+## Task Description (most recent): `*user test phase-4` re-gate — mechanism corrected (real rule file)
+Full report: `agents/smith.docs/e15_phase4_correction_gate.md`. Phase 4's mechanism changed completely after my first approval (real on-disk rule replacing the implicit in-memory one + my synthetic `--list` line) — re-gated fresh rather than reusing the old approval. My own first check was a manual bash transcript; corrected mid-session (user direction) to review Trin's real automated subprocess test instead — genuine binary spawn, real stdin payload, real written-YAML assertions, not mocked. Re-ran `make test` myself: 389/389. My original Gate 1 hard requirement (discoverability) is satisfied by construction now — the rule is plain YAML in the developer's own config file, no separate display feature needed. **APPROVED.**
+
+## Task Description (prior): `*user test phase-4` (E15, mandatory gate) — APPROVED after 1 fix round. Handed to Morpheus.
+
+## Task Description (most recent): `*user test phase-4` re-test after Neo's wording fix
+Ran the real CLI again myself (fresh scratch dir, not the diff) — new line reads "sensitivity=internal (clean project files are allowed without escalating trust; ...)", accurate, still a clear one-line discoverability summary. **APPROVED.** Handed to Morpheus for the Phase 4 code review. Full history in `agents/smith.docs/e15_phase4_gate.md` (both the rejection and the re-test).
+
+## Task Description (most recent): `*user test phase-4` — mandatory gate, project-folder default
+Full report: `agents/smith.docs/e15_phase4_gate.md`. My Gate 1 hard requirement (discoverability) is satisfied — ran `--list` cold myself, the synthetic line appears unprompted on the exact command already established for this. **Found a real, non-cosmetic problem**: the line says `trust=trusted`, a value that doesn't exist anywhere in this project's real trust vocabulary (`low`/`med`/`high`) — traced `decide_access()` myself and confirmed a project-folder resource never touches `trust` at all (only escalates `sensitivity`). The line describes a mechanism that doesn't exist, not just a wording nitpick. **REJECTED** with a specific REASON/FIX. Handed to Neo.
+
+## Task Description (prior): `*user feedback E15` Gate 2 — APPROVED. Handed to Mouse for phase planning.
+
+## Task Description (most recent): `*user feedback E15` — Gate 2 on ARCHITECTURE.md §18
+Full review: `agents/smith.docs/e15_gate2_review.md`. My Gate 1 hard requirement (STORY-1504's default must be discoverable) is concretely satisfied — reuses `scg onboard --list`, no new surface invented. All 3 Gate 1 non-blocking notes landed as designed. One new light ask (import-path error message quality) — not blocking. Confirmed no new CLI flags anywhere in E15 and no breaking changes to existing behavior a user would observe. **APPROVED.** Handed to Mouse (`*sm plan sprint E15`).
+
+## Task Description (prior): `*user review E15` Gate 1 — APPROVED with notes, 1 hard requirement carried to Gate 2. Handed to Morpheus for architecture.
+
+## Task Description (most recent): `*user review E15` — Gate 1 on STORY-1501-1504
+Full review: `agents/smith.docs/e15_gate1_review.md`. Approved with notes — all 4 stories testable/correctly scoped. 3 non-blocking (1502 reason-string clarity between hardcoded-path override vs. real secrets finding; 1503 degraded-reputation-check visibility; 1501 config-schema consistency with existing `rules:` idiom). **Hard requirement carried to Gate 2**: STORY-1504's project-folder trusted+Internal-Only default must be discoverable to the developer, not silent — grounded in the sec16 "unreachable message" lesson (`agents/oracle.docs/lessons.md`) and this project's repeated history of exactly this failure shape. Handed to Morpheus (`*lead arch E15`).
+
+## Task Description (prior): `*user consult` — post-close CLI UX pass on `scg onboard`. 3 real findings, added to Cypher's backlog.
 
 ## Task Description (most recent): post-close CLI UX review, per direct user feedback
 User feedback (2026-07-21): Smith should critique CLI tools as full UX surfaces (arg naming, defaults, ergonomics) even when they already work and are documented — not just verify function/discoverability. Saved as a standing feedback memory (`feedback_smith_cli_ux_review.md`) and applied immediately: reviewed the shipped `scg onboard` interface fresh. 3 real, non-blocking findings, full writeup `agents/smith.docs/e14_cli_ux_review.md`:

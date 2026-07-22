@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from .hook_adapter import post_tool_use, pre_tool_use
-from .policy_config import PolicyConfig, PolicyConfigError
+from .policy_config import PolicyConfig, PolicyConfigError, write_default_project_policy
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCacheError
 from .scanner import ScannerMachineryError
 from .taint_state import DEFAULT_STATE_DIR
@@ -41,6 +41,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     policy_path = Path(args.policy_path)
+    # sec18.4 (STORY-1504): a brand-new project (no policy file yet) gets
+    # one real, ordinary rule for its own folder written to a real file --
+    # not an implicit in-memory special case. Same shape as any
+    # onboard-authored rule, visible by just opening scalene_policy.yaml.
+    # If the write itself fails (e.g. unwritable directory), fail safe the
+    # same way an unreadable/malformed policy file already does below.
+    if not policy_path.exists():
+        try:
+            write_default_project_policy(policy_path, project_root=policy_path.resolve().parent)
+        except OSError as exc:
+            logger.warning("Could not create default %s (%s) — using fail-safe defaults", policy_path, exc)
+
     try:
         config = PolicyConfig.from_yaml(policy_path) if policy_path.exists() else PolicyConfig()
     except PolicyConfigError as exc:

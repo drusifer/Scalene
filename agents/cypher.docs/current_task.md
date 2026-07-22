@@ -1,10 +1,44 @@
 # Current Task
 
-**Status:** Sprint 8 (E14) closed. `*pm launch` posted.
+**Status:** Sprint 9 (E15) closed. `*pm launch` posted.
 **Assigned to:** Cypher
 **Started:** 2026-07-21
 
-## Task Description (most recent): Sprint 8 (E14) close — retro compile, `*pm launch`
+## Task Description (most recent): Sprint 9 (E15) close — retro compile, `*pm launch`
+Full backlog: `agents/cypher.docs/e15_retro_backlog.md`. Compiled from all 7 persona retro posts (first sprint with a real Tank retro). Central theme: this sprint tested "verify, don't assume" against 2 new claim types this project hadn't stress-tested before — claims about *existing* code's control flow, and a third-party vendor's own API claims — both broke once, both caught by someone actually checking. 7 backlog items, all traced to a specific persona's post, none invented. Sprint had a real mid-flight design pivot (Phase 4 reworked per direct user request after already being fully gated) and a real infra finding (Tank's URLhaus Auth-Key catch) — both handled by re-running the relevant gate chain rather than assuming prior approval carried over. 390/390 tests. `*pm launch` posted.
+
+## Task Description (prior): `*pm req` — write E15 stories (Configurable Scanner Registry & Extended Scanner Coverage)
+
+## Task Description (most recent): `*pm req` — write E15 stories (Configurable Scanner Registry & Extended Scanner Coverage)
+User request (2 messages, verbatim intent in `agents/cypher.docs/e15_scanner_sprint_req.md`): make the scanner registry config-driven (built-ins default, enterprise scanners registrable later), start with FileScanner + URLScanner, hardcode restricted+untrusted for `/etc`/`~/.ssh`, real external reputation source for URLScanner, and a follow-up: new project's own folder defaults to trusted+Internal Only.
+
+Read `src/scalene/scanner.py`, `reputation.py`, `scan_cache.py` before writing stories — 3 things the user described (two-entry-point Scanner protocol, FileScanner reusing secrets-detection, 24h scan-cache expiration/rescan) are already shipped since E10; not re-storied. Wrote 4 new stories as E15 in `docs/USER_STORIES.md`:
+- STORY-1501: `SCANNERS` becomes config-driven; enterprise scanners (asset inventory/CMDB, data-labeling, vuln DBs) are the motivating rationale, explicitly not built this sprint.
+- STORY-1502: `FileScanner` hardcodes restricted+untrusted for `/etc`, `~/.ssh`, independent of scan outcome.
+- STORY-1503: `URLScanner` gets a real external open-source/free-tier reputation source beyond today's 3 local heuristics. Flagged for Tank (network calls, likely API keys).
+- STORY-1504: newly onboarded project's own folder defaults to trusted+Internal Only. Flagged explicitly as tension with PRD Goal 5 (fail-safe defaults) — scoped narrowly (project root only, still overridable by STORY-1502) rather than silently treated as routine.
+
+Carried 5 open questions to Morpheus (registry config mechanism, canonical sensitive-path list, concrete reputation source pick, STORY-1405 interaction, how "project folder" gets scoped/detected for 1504).
+
+Updated `docs/PRD.md` (new E15 epic row, Sprint 9 Goals 24-27) and `docs/USER_STORIES.md`'s header status line. Handed off to Smith for Gate 1 review.
+
+## Progress
+- [x] Read scanner.py/reputation.py/scan_cache.py to ground stories in current code, not assumption.
+- [x] Wrote STORY-1501 through 1504 in `docs/USER_STORIES.md`.
+- [x] Flagged STORY-1504's tension with Goal 5 explicitly rather than silently resolving it.
+- [x] Updated `docs/PRD.md` epic table + Sprint 9 goals + status line.
+- [x] Handed to Smith (`*user review E15`).
+
+## Blockers
+None — awaiting Smith's Gate 1 verdict.
+
+## Oracle Consultations
+None yet.
+
+---
+*Last updated: 2026-07-21*
+
+## Task Description (prior): Sprint 8 (E14) close — retro compile, `*pm launch`
 Compiled retro backlog from all 6 persona inputs. Central theme: two persona-boundary disciplines got tested for real this sprint and held up — Neo correctly revised a "delete this" plan when its own tests revealed real distinct coverage (now a durable lesson), and Smith caught herself repeating an ad-hoc-verification shortcut at full-sprint-close scale after already being corrected mid-sprint, converting the whole E14 user journey into a permanent test instead.
 
 **Decided on Oracle's carried item** (STORY-1405's "decision weighs both signals" AC, unmet — the reputation score displays but doesn't yet drive the allow/block gate): not dropping it silently, not forcing it into this sprint either. Recorded as an explicit backlog item below for whenever E14's reputation-scoring work gets revisited — a real, open product question (what threshold, whose call) that deserves its own story/architecture pass, not a rushed addendum here.

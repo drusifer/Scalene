@@ -42,6 +42,18 @@
 
 ---
 
+## `*user feedback` Gate 2 — E15 (2026-07-21)
+
+**Approved.** Full review: `agents/smith.docs/e15_gate2_review.md`. My Gate 1 hard requirement (STORY-1504 discoverability) is satisfied at the design level — §18.4's `scg onboard --list` synthetic line reuses the exact surface STORY-1404 already established, not a new one. All 3 Gate 1 non-blocking notes addressed for real (distinct reason strings, degraded-check visibility via a dedicated exception type). One new light non-blocking ask: the `import:` path error message (STORY-1501) should name the offending string, matching this project's existing error-message quality bar — not blocking. No new CLI flags, no breaking changes to existing surface. Handed to Mouse for phase planning.
+
+## `*user review` Gate 1 — E15 (2026-07-21)
+
+**Approved with notes.** Full review: `agents/smith.docs/e15_gate1_review.md`. Checked `agents/oracle.docs/lessons.md` first per Artifacts-First — the sec16 "unreachable message" lesson directly informed the STORY-1504 flag below.
+- Non-blocking: STORY-1502 needs a distinct reason string for hardcoded-path overrides vs. real secrets-scan findings (Nielsen #9 — don't let a clean file read as "a secret was found").
+- Non-blocking: STORY-1503's degrade-to-local-heuristics path must be visibly distinguishable from a real external check passing clean (Nielsen #1).
+- **Hard requirement, carried to Gate 2** (same weight as §14.3/sec16): STORY-1504 (project folder defaults trusted+Internal Only) must include an AC making that default *discoverable* to the developer — this project has repeatedly shipped correct-but-silent behavior and paid for it later (sec16's `--help` gap being the closest precedent). Will not approve a Gate 2 architecture where this classification is invisible outside source/config.
+- STORY-1501 has no end-user surface yet (config schema is Morpheus's open question) — flagged only a forward-looking consistency note (reuse `scalene_policy.yaml`'s existing `rules:` idiom, don't invent a second one).
+
 ## `*user review` Gate 1 — E11 (2026-07-17)
 
 **Approved.** Full review: `agents/smith.docs/e11_gate1_review.md`. Key flag carried to Gate 2 (not blocking Gate 1): E10 made `scg onboard` a single-flag command (`--target` only); E11 reintroduces `PolicyRule`'s `jsonpath`+`pattern` at the config layer. §13.8's open question #4 (how `--target` maps onto a generated rule) is the seam that decides whether that simplicity survives. **I will not approve a Gate 2 architecture where the common onboarding path requires hand-authoring `jsonpath`/`pattern`.**

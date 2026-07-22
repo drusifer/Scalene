@@ -1,7 +1,42 @@
 # Current Task
 
-**Status:** `*qa recheck phase-3` (Sprint 8/E14) — PASSED, sprint implementation complete. Handed to Oracle for groom.
+**Status:** `*qa automate phase-4 e2e` — added a real subprocess-level test. Handed to Smith to review it as gate evidence.
 **Assigned to:** Trin
+
+## Task Description (most recent): `*qa automate phase-4 e2e` — real subprocess test, not ad-hoc bash
+User direction mid-session: the manual `echo ... | python -m scalene.cli ...` verification runs used during this phase's reviews needed to become a real, repeatable automated test, not stay as one-off shell checks — and specifically Trin's job to build, not folded into Neo's or done ad-hoc again. Added `test_cli.py::TestGuardCreatesDefaultProjectPolicy::test_real_subprocess_end_to_end_creates_and_reuses_the_default` — spawns the actual `python -m scalene.cli` binary via `subprocess.run()` (not the in-process `guard_main()` helper the other tests in that class use), same "real binary" precedent as `test_demo.py`. Covers: first real subprocess call creates the file with the correct rule; a second real subprocess call reuses it without duplicating the rule or rewriting the file (`st_mtime_ns` unchanged). `make test`: 389/389. Handed to Smith to review/run this as her gate evidence instead of fresh manual checks.
+
+## Task Description (prior): `*qa uat phase-4` re-run (mechanism corrected per user request) — PASSED. Handed to Smith to re-gate.
+
+## Task Description (most recent): `*qa uat phase-4` re-run — mechanism corrected (real rule file, not implicit)
+Full report: `agents/trin.docs/e15_phase4_correction_uat.md`. Re-verified against the new mechanism, not the old approval. Found a real gap in Neo's own shadowing-fix coverage (single-onboard only) — added a multi-onboard ordering test, which caught a trivial bug in my own first draft (regex-escaped pattern vs literal substring assertion) before it masked anything real. Confirmed the "timestamp uninitialized" claim directly (grepped `policy_config.py` for cache imports — none). `make test`: 388/388.
+
+## Task Description (prior): `*qa uat phase-4` (Sprint 9/E15, last phase) — PASSED. Handed to Smith for the mandatory gate.
+
+## Task Description (most recent): `*qa uat phase-4` (Sprint 9/E15) — project-folder default
+Full report: `agents/trin.docs/e15_phase4_uat.md`. Reviewed Neo's 5 `TestProjectFolderDefault` tests, then went further — ran the real CLI myself (`python -m scalene.onboard --list`) in a scratch dir, before and after a real onboarding action, confirming the synthetic discoverability line renders correctly in real output and stays visually distinct from a real cache entry. `make test`: 381/381. This is the sprint's mandatory-gate phase — handed to Smith, my own real-CLI run is a data point for her, not a substitute.
+
+## Task Description (prior): `*qa recheck phase-3` (Sprint 9/E15) — PASSED after Tank's Auth-Key finding + user decision. Handed to Morpheus for recheck.
+
+## Task Description (most recent): `*qa recheck phase-3` — Auth-Key correction
+Tank's review found URLhaus requires an Auth-Key (contrary to §18.3's original docs-based assumption); user chose "get a free key, env var." Verified Neo's fix: `_query_urlhaus()` checks `SCALENE_URLHAUS_AUTH_KEY` before ever sending a request, raising `ReputationCheckUnavailable` with the signup URL if unset — no doomed unauthenticated round-trip. Added 3 tests (missing-key blocks before any request; present key sent as a real `Auth-key` header via a mocked `urlopen`, inspecting the actual constructed `Request` object; `URLHausChecker.check()` surfaces the missing-key condition correctly). `make test`: 374/374.
+
+## Task Description (prior): `*qa uat phase-3` (Sprint 9/E15) — PASSED (1 gap found+closed). Handed to Morpheus; Tank review still required.
+
+## Task Description (most recent): `*qa uat phase-3` (Sprint 9/E15) — external reputation source
+Full report: `agents/trin.docs/e15_phase3_uat.md`. Did an independent adversarial sweep rather than trusting Neo's file list for the network-guard fix — grepped for any `scanner_name="reputation"`/`refresh_if_needed(` usage across all of `tests/`, not just files matching "https://"/"WebFetch". Found a real gap: `test_scan_cache.py` calls `refresh_if_needed()` directly on URL resources, ungated. Fixed it (same `_env_guards.py` pattern). Verified `test_monitor_app.py`/`test_monitor_data.py` are safe (construct `Resource` objects only, never scan). `make test`: 371/371, ~45s (confirms the timing regression is genuinely fixed, not just claimed). Tank's required review is still outstanding — flagged explicitly, not treated as done.
+
+## Task Description (prior): `*qa uat phase-2` (Sprint 9/E15) — PASSED. Handed to Morpheus for code review.
+
+## Task Description (most recent): `*qa uat phase-2` (Sprint 9/E15) — hardcoded restricted paths
+Full report: `agents/trin.docs/e15_phase2_uat.md`. Independently traced `decide_access()`'s control flow myself before trusting Neo's claim that §18.2's originally-planned `resource_verifier.py` addition was dead code — confirmed correct (`is_bad` blocks before any rule is consulted). Added 1 adversarial test beyond Neo's coverage (exact `/etc` match, not just subpaths). Reconciled `task.md`'s exit-criteria wording, which predated this correction and still said "resolves sensitivity=restricted" — not reachable, fixed the line honestly rather than force-satisfying or ignoring it. `make test`: 361/361.
+
+## Task Description (prior): `*qa uat phase-1` (Sprint 9/E15) — PASSED. Handed to Morpheus for code review.
+
+## Task Description (most recent): `*qa uat phase-1` (Sprint 9/E15) — configurable scanner registry
+Full report: `agents/trin.docs/e15_phase1_uat.md`. Neo's own library-level tests (`TestLoadScanners`/`TestPolicyConfigScanners`) were solid but didn't reach the actual STORY-1501 AC surface — the real CLI (`scg onboard` `main()`) traversing a config-declared scanner. Added `tests/test_onboard.py::TestCustomScannerCLI` (3 tests): end-to-end identify+onboard through a config scanner, `--list` showing it afterward, and an adversarial typo-scanner-name check against the full loaded registry via the real CLI. Independently verified (not just trusted) Neo's 2 self-reported findings: the legacy `onboard()` regression fix, and the reverted premature class-diagram entries. `make test`: 352/352 (349 + my 3 new tests). No `make judge-trace` this phase — no interactive surface yet (that's Phase 4's mandatory Smith gate).
+
+## Task Description (prior): `*qa recheck phase-3` (Sprint 8/E14) — PASSED, sprint implementation complete. Handed to Oracle for groom.
 
 ## Task Description (most recent): `*qa recheck phase-3` (Sprint 8/E14) — verbatim doc recheck, no separate gate
 Re-ran `docs/GETTING_STARTED.md`'s full onboarding section verbatim against the real installed binaries in a fresh scratch dir — matched byte-for-byte (the block/onboard/rule/retry-allow sequence, including the exact `Verified:`/`Rule written to`/summary lines). Also spot-checked `docs/SETUP.md`'s rewritten example for real (both a file and a URL target) — both work as documented. Agree with Neo's scope revision (keeping `onboard()`/`_resolve_resource()`): independently confirmed `test_unknown_scheme_blocks_with_no_cache_write` tests real, undeleted behavior with no equivalent in `identify_targets()` — not stale coverage. `make test`: 331/331. **Verdict: PASS.** Sprint 8 (E14) implementation is now fully complete across all 3 phases.

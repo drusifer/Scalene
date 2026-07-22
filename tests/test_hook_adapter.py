@@ -23,6 +23,14 @@ from scalene.hook_adapter import post_tool_use, pre_tool_use
 from scalene.policy_config import PolicyConfig, PolicyRule
 from scalene.scan_cache import ScanCache
 from scalene.scanner import Resource, ScanResult
+
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# docs/ARCHITECTURE.md sec18.3 (STORY-1503): a never-seen WebFetch URL's
+# first-sighting path spawns a real background subprocess that would
+# otherwise attempt a live URLhaus call. See _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
 from scalene.taint_state import TaintState
 
 REAL_SECRET = "AKIAIOSFODNN7EXAMPLE"  # AWS access-key-ID shape (not used for scanning under sec15, kept for realistic call shapes)

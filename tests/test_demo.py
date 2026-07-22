@@ -11,7 +11,17 @@ import sys
 import unittest
 from pathlib import Path
 
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
 DEMO_SCRIPT = Path(__file__).resolve().parent.parent / "demo" / "run_demo.py"
+
+# docs/ARCHITECTURE.md sec18.3 (STORY-1503): the demo's WebFetch scenarios
+# use real URLs -- subprocess.run() below inherits this process's
+# environment by default (no explicit env= override), so setting this here
+# propagates through run_demo.py's own subprocess calls too. See
+# _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
 
 
 class TestDemo(unittest.TestCase):

@@ -58,10 +58,12 @@ classDiagram
         +str reason
     }
     class PolicyConfig {
+        <<sec18, 2026-07-21: scanners added>>
         +bool sensitive_by_default
         +bool untrusted_by_default
         +str mode
         +tuple~PolicyRule~ rules
+        +dict~str,Scanner~ scanners
         +from_yaml(path) PolicyConfig
     }
     class MatchResult {
@@ -93,10 +95,30 @@ classDiagram
         +scan(resource) ScanResult
     }
     class FileScanner {
+        <<sec18, 2026-07-21: hardcoded restricted-path short-circuit>>
         +str name = "secrets"
     }
     class URLScanner {
         +str name = "reputation"
+    }
+    class ReputationChecker {
+        <<interface, reputation.py>>
+        +check(target) ReputationResult
+    }
+    class LocalHeuristicChecker {
+        +check(target) ReputationResult
+    }
+    class URLHausChecker {
+        <<sec18.3, 2026-07-21 -- STORY-1503>>
+        +check(target) ReputationResult
+    }
+    class ReputationResult {
+        +bool is_trusted
+        +str reason
+        +float score
+    }
+    class ReputationCheckUnavailable {
+        <<exception>>
     }
     class Resource {
         +str kind
@@ -149,6 +171,11 @@ classDiagram
     ScanCache --> CacheEntry
     ScanCache ..> ScanCacheError
     MaskingEngine --> MatchResult
+    ReputationChecker <|.. LocalHeuristicChecker
+    ReputationChecker <|.. URLHausChecker
+    ReputationChecker --> ReputationResult
+    URLHausChecker ..> ReputationCheckUnavailable
+    URLScanner ..> ReputationChecker : isolated subprocess (scan_worker.py, STORY-601)
 ```
 
 **Full replacement, not incremental simplification (2026-07-15, Sprint 4 / E10, §13.1) — corrected 2026-07-17, §13.8:** the original `PolicyConfig.allowlist`/`PolicyRule` model (tool/jsonpath/pattern/target, matching a call *and* deciding trust in one step) was removed entirely at Sprint 4, on the reasoning that pattern-matching itself was structurally unsafe (one scan vouching for an unbounded future match). That reasoning was right about the *old* `PolicyRule`, but the replacement (host-only resource identity for URLs) reintroduced the identical defect in a different shape — see §13.1's revision note. `PolicyRule` returns in §13.8's corrected model, but doing a narrower job than before: it decides *candidacy and resource identity* (jsonpath + pattern, tool-shape-agnostic), never trust directly — the scan cache (`ScanCache`) still verifies and freshness-tracks each *distinct* matched identity, which is what keeps a wildcard `pattern` from vouching for anything it hasn't actually checked. `PolicyConfig` still carries the mode/sensitivity-by-default fallbacks used when no rule matches. `docs/BRD.md` is left as the original historical requirements doc, not updated to match — same treatment as `task.md`/`USER_STORIES.md`.
@@ -740,3 +767,134 @@ Scanning a tool call's *response* (as opposed to its pre-call arguments) is not 
 ### 17.9 Not yet decided / explicitly deferred
 
 Whether `--only`'s identity-matching should support globs/regex instead of exact strings (kept exact for v1 — simplest thing that satisfies "assert exactly what I expect," extend only if a real scripting need shows up). Whether `scg monitor`'s TUI should also surface the `--list` inventory view as a 4th panel, or whether the CLI's own `--list` output is sufficient for now — left to whoever implements Phase 1/2, not pre-decided. Exact wording of `main()`'s per-target success/failure summary lines — implementation detail, not an architecture decision.
+
+## 18. E15 Architecture — Configurable Scanner Registry & Extended Scanner Coverage
+
+Direct user request (2026-07-21), per `docs/USER_STORIES.md` E15 (STORY-1501-1504) and Smith's Gate 1 review (`agents/smith.docs/e15_gate1_review.md`). Read `scanner.py`, `policy_config.py`, `resource_verifier.py`, `reputation.py`, `scan_worker.py`, and `subprocess_isolation.py` before designing this — three separate hardcoded scanner-name registries exist today (`scanner.py`'s `SCANNERS`, `scan_worker.py`'s `_SCANNERS`, `subprocess_isolation.py`'s `_KNOWN_SCAN_TYPES`), at two different layers (in-process dispatch vs. the isolated-subprocess boundary, STORY-601). That distinction is what shapes 18.1's scope below.
+
+### 18.1 STORY-1501: `SCANNERS` becomes config-driven — the in-process registry only
+
+`scanner.py`'s module-level `SCANNERS: dict[str, Scanner] = {"secrets": FileScanner(), "reputation": URLScanner()}` becomes the *default* seed of a registry built by a new function:
+
+```python
+def load_scanners(raw_config: dict) -> dict[str, Scanner]:
+    """raw_config is scalene_policy.yaml's `scanners:` section (or {})."""
+```
+
+`scalene_policy.yaml` gains an optional `scanners:` section:
+
+```yaml
+scanners:
+  extra:
+    - name: "asset_inventory"                       # new registry key -- must not collide with a builtin
+      import: "myco.scalene_scanners:AssetInventoryScanner"   # "module.path:ClassName"
+```
+
+Builtins (`secrets`, `reputation`) always load — omitting `scanners:` entirely reproduces today's exact behavior byte-for-byte (Smith's Gate 1 AC). `import` is split on `:`, resolved via `importlib.import_module` + `getattr`, instantiated zero-arg (`Cls()`, matching `FileScanner()`/`URLScanner()`'s own construction), and validated at load time against the `Scanner` protocol (has `.name`, `.identify`, `.scan` — `isinstance(obj, Scanner)` since `Scanner` is `@runtime_checkable`-eligible, or an explicit `hasattr` triplet if simpler) and against `.name` matching the registry key. A name collision with a builtin, an unimportable path, or a class that doesn't satisfy the protocol all raise `PolicyConfigError` at load time — same fail-loud precedent as `PolicyRule`'s regex/scanner-name validation (§14.1's Trin/E12 finding).
+
+**Threading change, not additive-only:** `PolicyConfig` gains a `scanners: dict[str, Scanner]` field, populated by `load_scanners()` inside `from_yaml` (and defaulting to the two builtins in the bare `PolicyConfig()` constructor, so every existing call site that doesn't load from YAML is unaffected). `resource_verifier.evaluate()`/`decide_access()` iterate `config.scanners` instead of importing the module-level `SCANNERS` constant directly. `onboard.py`'s `identify_targets()`/`_onboard_resource()`/`onboard_targets()` gain an optional `scanners` parameter (defaulting to the module constant, so every existing call site is unaffected); `main()` loads the project's real registry once and threads it through, so a config-declared scanner is identified/onboarded via the CLI too, not just at live hook-decision time.
+
+**Implementation-time correction (Neo, Phase 1, endorsed at code review):** `cache_refresh_worker.py` (STORY-1003's background-refresh worker) stays on the module-level `SCANNERS` constant this epic, not threaded to `config.scanners` as originally planned above. It's a detached subprocess with no shared memory with the parent process — making it see a config-declared scanner would require passing the project's `policy_path` across the subprocess boundary (through `_spawn_background_refresh()`/`refresh_if_needed()`, neither of which carries it today) purely so it can reload `PolicyConfig` itself. Real plumbing, zero payoff this epic (no config-declared scanner ships). Documented in-code as a bounded, non-silent gap: a background refresh for such a resource no-ops (`return 2`) until the next lookup retries via the normal fail-safe path — never a wrong/missing result, just a delayed one. Revisit if a real config-declared scanner ever ships.
+
+**`PolicyRule.scanner`'s validation moves.** Today `PolicyRule.__post_init__` validates `self.scanner in SCANNERS` against the module constant — that can no longer be correct once the registry is config-driven (a rule and the `scanners:` section are both parsed from the same YAML document, and `PolicyRule` has no way to see a dynamically-loaded registry from inside its own `__post_init__`). Validation moves to `PolicyConfig.from_yaml`: build `scanners` from the `scanners:` section *first*, then validate each parsed rule's `scanner` field against that dict, raising the same `PolicyConfigError` as before. Direct `PolicyRule(...)` construction (as several existing unit tests do, bypassing `from_yaml`) no longer fail-fast on a bad `scanner` name at construction time — this is a deliberate, real behavior change, not an oversight; Trin should audit `tests/test_policy_config.py` for any test relying on the old construction-time check and adjust it to assert at the `from_yaml` boundary instead.
+
+**Explicitly deferred, not designed here:** a config-registered scanner's `.scan()` method is free to implement scanning however it wants, but if it wants the existing subprocess-isolation boundary (`run_scanner()`/`scan_worker.py`, STORY-601), `scan_worker.py`'s `_SCANNERS` dispatch table and `subprocess_isolation.py`'s `_KNOWN_SCAN_TYPES` set are **not** made config-driven this epic — both stay hardcoded to `{"secrets", "reputation"}`. No real enterprise scanner ships this sprint (Cypher's story is explicit about this), so there is no concrete case yet to design that extension against; making the isolation boundary itself pluggable without a real second scan-type to validate it against would be speculative. A future epic that ships a real config-registered scanner needing subprocess isolation must revisit this — noted so it isn't silently assumed solved.
+
+### 18.2 STORY-1502: hardcoded restricted paths for `FileScanner`
+
+New module-level constant in `scanner.py`:
+
+```python
+_HARDCODED_RESTRICTED_PREFIXES = (
+    "/etc",
+    os.path.expanduser("~/.ssh"),
+)
+```
+
+`FileScanner.scan()` checks `resource.identity` against this list *before* calling `run_scanner("secrets", ...)` — a match short-circuits to `ScanResult(label="sensitive", reason="path matches a hardcoded restricted system location")` without ever invoking the secrets-scan subprocess. This is deliberate, not just an optimization: Scalene should not need to read the byte contents of `~/.ssh/id_rsa` to know it's sensitive. Resolves Smith's Gate 1 non-blocking note — the `reason` string is textually distinct from a real secrets-scan finding, so a developer inspecting the audit log can tell "hardcoded system path" apart from "an actual secret pattern matched."
+
+**Resolves Cypher's open question #2 (canonical path list):** kept to exactly the two paths the user named (`/etc`, `~/.ssh`) — not expanded to a broader guessed list (`~/.aws`, `~/.gnupg`, etc.). Those are real candidates but weren't asked for; adding them speculatively risks surprising a developer with a restriction they didn't request and can't find documented anywhere. If a broader default set is wanted later, it's a small, explicit follow-up to this same constant — not something to pre-guess now. `scalene_policy.yaml`'s `rules:` section already lets a developer add their own restricted paths today (§14.1), so nothing is blocked by keeping the hardcoded set narrow.
+
+**Implementation-time correction (Neo, Phase 2, endorsed at code review) — no `resource_verifier.py` change needed.** This section originally proposed an implicit `PolicyRule(sensitivity="restricted", mode="block")` in `resource_verifier.py` to reach the tri-level `sensitivity` axis. Tracing `decide_access()`'s actual control flow (§15.3) shows that's unreachable dead code, not a real gap: `is_bad` (true whenever the scan-cache entry's `label` is in `_BAD_LABELS`, which includes `"sensitive"`) is checked **before** any rule is even matched, and a `confirmed_bad` resource returns `AccessDecision(allowed=False, ...)` immediately — no rule, however written, can ever move a `label="sensitive"` resource into `validated_allow`. `FileScanner`'s hardcoded short-circuit alone therefore already makes a hardcoded-restricted path unconditionally, un-overridably blocked via the live `decide_access()` path — exactly the "regardless" the user asked for — with zero changes outside `scanner.py`. The tri-level `sensitivity` axis (`PolicyRule.sensitivity`/`taint.sensitivity`) is a *display/escalation* tag for calls that are actually *permitted* (`validated_allow`'s branch); a call this section blocks outright never reaches that branch, so there's nothing for a "restricted" tag to escalate — the call simply doesn't happen. Kept as a private, single-consumer helper inside `scanner.py` (no cross-module `is_hardcoded_restricted()` API, since only `FileScanner.scan()` needs it).
+
+### 18.3 STORY-1503: real external reputation source for `URLScanner`
+
+**Concrete pick: [URLhaus](https://urlhaus.abuse.ch/) (abuse.ch), host lookup endpoint** (`POST https://urlhaus-api.abuse.ch/v1/host/`, form field `host=<hostname>`).
+
+**Correction (Tank's Phase 3 review, 2026-07-21):** this section originally described the endpoint as keyless, per its public documentation. Tank verified directly against the live API (not just its docs, per this section's own original instruction to "specifically verify, not assume") and found it now requires a real `Auth-Key` header — an unauthenticated request returns a bare `{"error": "Unauthorized"}`. User decision (2026-07-21, given 3 options): obtain a free Auth-Key (registration at `https://auth.abuse.ch/`, no cost) and supply it via `SCALENE_URLHAUS_AUTH_KEY` (documented in `.env.example`, never hardcoded/committed). `_query_urlhaus()` checks this env var *before* ever sending a request — if unset, it raises `ReputationCheckUnavailable` immediately with a message pointing at the signup URL, rather than making a request already known to fail. This is real setup friction this project didn't have before (§7.4/STORY-501's "no credentials to provision" v1 preference no longer holds universally — it holds for the always-on local heuristics, not for real external verification), which is why this needed a real decision rather than a silent workaround.
+
+New class in `reputation.py`, implementing the existing `ReputationChecker` protocol (unused until now — built for exactly this extensibility in Sprint 1, per §7.4's own note):
+
+```python
+class URLHausChecker:
+    def check(self, target: str) -> ReputationResult: ...  # raises ReputationCheckUnavailable on network/timeout/bad-response
+```
+
+A new exception, `ReputationCheckUnavailable`, distinguishes "checked, found bad" from "couldn't check" — the composite step below must never conflate the two. New composition function, `reputation.composite_check(target) -> ReputationResult`, called by `scan_worker.py::_scan_reputation` in place of today's direct `LocalHeuristicChecker().check(target)`:
+
+1. Always run `LocalHeuristicChecker` (free, offline, unchanged).
+2. Attempt `URLHausChecker` (short timeout, ~3s). On success, combine: `is_trusted = local.is_trusted and remote.is_trusted` (ANY-bad-wins, §13.1.1's existing convention), `score = min(local.score, remote.score)` (conservative — the worse signal wins, mirroring §14.4's most-restrictive-wins aggregation), `reason` joins both non-empty reasons.
+3. On `ReputationCheckUnavailable` (network error, timeout, non-200, malformed response): fall back to the local-only result, but **append a distinguishing marker to `reason`** (e.g. `"; external reputation check unavailable: <cause>"`) — resolves Smith's Gate 1 non-blocking note. A developer reading the audit trail can tell "checked externally, came back clean" apart from "external check didn't run this time."
+
+Runs inside `scan_worker.py`'s existing isolated subprocess (STORY-601, `SCALENE_BYPASS=1`) — the same boundary that already isolates file reads for secrets scanning is the correct place for a new outbound network call, not a new isolation mechanism. No new dependency: implemented with `urllib.request` (stdlib), matching this project's existing minimal-dependency posture.
+
+**Flagged for Tank, not resolved here** (per Cypher's story and standing Cypher-Tank protocol): outbound network call to a third-party service, timeout/rate-limit behavior under real load, and whether URLhaus's usage policy is compatible with this project's expected call volume (a scan can happen on every first-sighting of a new URL, project-wide, across potentially many concurrent sessions). Tank must review before this ships — scheduled as an explicit phase task, not folded silently into Neo's implementation.
+
+### 18.4 STORY-1504: new project's own folder defaults to trusted + Internal Only
+
+Resolves Smith's Gate 1 hard requirement (discoverability) and Cypher's own flagged tension with PRD Goal 5 (fail-safe defaults).
+
+**Correction (direct user request, 2026-07-21, after the first implementation had already been gated and approved):** the original design (below, kept for the record) made this an implicit `PolicyRule` constructed in code — real for the purposes of `decide_access()`, but invisible to a developer who didn't know to run `scg onboard --list`. The user's own framing: *"if a yaml doesn't exist then create one with a rule for the project folder but with the timestamp uninitialized so that it scans on first tool use — trying to avoid an implicit special case."* Reworked accordingly:
+
+**Scoping "the project's own folder"** (Cypher's open question #5, unchanged): wherever `scalene_policy.yaml` lives or would live — `cli.py`'s `--policy-path`, resolved to an absolute parent directory.
+
+**Mechanism: write a real rule to a real file, not an in-memory special case.** `policy_config.write_default_project_policy(path, project_root)` — called by `cli.py`'s `main()` only when `policy_path` doesn't exist yet — writes a brand-new `scalene_policy.yaml` containing exactly one ordinary `rules:` entry:
+
+```yaml
+rules:
+  - tool: ".*"
+    pattern: "^<project_root>(/|$)"
+    sensitivity: internal
+    mode: allow
+    scanner: secrets
+    description: "project folder default (auto-created)"
+```
+
+This is the *same shape* as a hand-written or `scg onboard`-authored rule — parsed by the ordinary `PolicyConfig.from_yaml()` path, with no new `PolicyConfig` field and no `__post_init__` special-casing. **"Timestamp uninitialized" (the user's own phrase):** this function never touches `ScanCache` — no cache entry is pre-seeded, so the project folder's first real tool-use still runs a genuine scan and goes through `decide_access()`'s ordinary `uncleared → validated_allow` progression, identical to any other resource under any other rule. What changes versus an ordinary file with no matching rule at all: today, a file with no rule stays `uncleared` forever, so a *second* unrelated uncleared resource in the same session blocks; under this rule, a clean project file becomes `validated_allow` after its one real scan, so a long session touching only its own project files never hits that wall. **Coexists with §18.2 by construction**: `_HARDCODED_RESTRICTED_PREFIXES` paths are forced to `label="sensitive"` by the scanner itself, so `is_clean_entry` is never true for them — this rule's `mode=allow` can never fire for a restricted subpath.
+
+**A real ordering hazard this design introduces, found and fixed during implementation**: `_find_matching_rule()` returns the *first* declaration-order match, and this rule's pattern is deliberately broad (matches almost anything under the project root). Since the default rule is written *first* (before any onboarding has ever happened), a naive append-only rule-writer would place any later `scg onboard`-authored rule *after* it in the file — meaning the broad default would always match first, silently and permanently shadowing a developer's later, more specific trust decision (e.g. explicitly `mode: block`-ing one sensitive file inside their own project). Fixed in `onboard.py::_write_rule()`: it now inserts a newly-authored rule *before* the auto-created default (identified by its fixed `description`, shared as `PROJECT_FOLDER_DEFAULT_DESCRIPTION` between `policy_config.py` and `onboard.py`) rather than appending after it — every other rule-write keeps its existing append-at-end behavior unchanged, this insertion-point adjustment only applies when the auto-created default is present.
+
+**Discoverability (Smith's Gate 1 hard requirement) is satisfied by construction, not a bolted-on display line**: the rule lives in the developer's own `scalene_policy.yaml`, in plain YAML, exactly where every other rule they'd hand-author or onboard lives — no separate synthetic `--list` line is needed (the prior implementation's synthetic line, and the `trust=trusted` wording bug found in it, are both removed; see git history / this section's prior revision for that finding, now moot since the underlying mechanism changed).
+
+**Fail-safe on write failure**: if the directory isn't writable (or any other `OSError`), `cli.py` logs a warning and falls back to a bare `PolicyConfig()` (today's pre-STORY-1504 fail-safe defaults) — same fail-safe contract as an unreadable/malformed existing policy file.
+
+**Sensitivity here is display/audit only, same as everywhere else today** — `internal` does not itself change what's gated versus what escalates `trust`; that remains the still-open, explicitly-carried STORY-1405 backlog question (does a sensitivity/reputation signal ever drive the allow/block decision itself). This section doesn't answer that question, it only participates in the existing trust-gating mechanism the same way any other `validated_allow` rule does.
+
+### 18.5 Devops/Infra impact
+
+STORY-1503 introduces the project's first default-on outbound network call (URLhaus) — flagged for Tank, per §18.3. STORY-1501's config-driven registry introduces `importlib`-based dynamic loading of developer-supplied module paths — Tank should confirm this doesn't complicate any sandboxing/CI assumptions (a config-declared `import:` path executes arbitrary developer-controlled code at policy-load time, same trust level as the `scalene_policy.yaml` file itself already has today, but worth stating explicitly rather than leaving implicit).
+
+### 18.6 Not yet decided / explicitly deferred
+
+Whether a config-registered custom scanner (STORY-1501) can use the subprocess-isolation boundary (§18.1's deferred item) — no real scanner ships this epic to validate a design against. Exact `--list` output formatting for STORY-1504's synthetic default line (implementation detail). Whether `URLHausChecker`'s short timeout (~3s) needs to be config-tunable — left at a fixed constant for v1, revisit if real-world latency becomes a complaint (same "measure before optimizing" precedent as §13.3's `NFR-Perf-FirstSighting`).
+
+## 19. Post-Sprint-9 Correction (2026-07-22) — Generic Protocol Detection, `file://` Routed to `FileScanner`
+
+Direct user session, after E15 closed. Two related corrections to `scanner.py`'s resource-identification layer (§13.2), prompted by a question about why STORY-1504's auto-created rule carried a `scanner: secrets` filter.
+
+### 19.1 `URLScanner` recognizes any protocol, not just `http(s)`
+
+**Before:** `_URL_FALLBACK_RE` matched only `https?://`. **User's framing:** URLScanner should handle "anything URL with a protocol" — `ftp://`, `ws://`, `s3://`, etc. are all real destinations a tool call could exfiltrate to or fetch from, not just web URLs. `_URI_SCHEME` (a simplified RFC 3986 scheme grammar, `[a-zA-Z][a-zA-Z0-9+.-]*://`) replaces the hardcoded `https?`, broadening both `_URL_FALLBACK_RE` and the path-exclusion span (`_ANY_URI_SPAN_RE`, replacing the old `_URL_SPAN_RE`) to any scheme.
+
+### 19.2 `file://` is the one explicit exception — routed to `FileScanner`, not `URLScanner`
+
+**User's framing:** `file://` is a filesystem reference wearing a URI shape, not a fetchable destination — it should be excluded from URL scanning and identified by `FileScanner` instead, using the same file:// → absolute-path normalization `onboard.py::_resolve_resource()` already does for the legacy single-target flow. New `_FILE_URI_RE` in `scanner.py`, checked inside `FileScanner.identify()`'s generic-fallback loop (works for `file://` appearing in *any* tool's args, not just a hardcoded field — same "traverse all scanners, don't require anyone to remember which one applies" principle behind the rest of this identification layer).
+
+**A real regex bug found while implementing this, not assumed correct:** the first attempt excluded `file://` from `_URL_FALLBACK_RE` via a `(?!file://)` negative lookahead placed at the start of the pattern. A lookahead only blocks a match *starting* at that exact position — `re.finditer` still retries starting one character later, where `(?!file://)` trivially succeeds (`"ile://..."` isn't `"file://"`) and `[a-zA-Z][a-zA-Z0-9+.-]*://` happily accepts `"ile"` as a scheme name, producing a mangled `"ile:///etc/passwd"` resource. Caught by a test that actually exercised `file://` through `URLScanner.identify()`, not by inspection. Fixed by matching *any* scheme (including `file`) in the regex, then filtering `file://` matches out in `URLScanner.identify()` itself (`_is_file_uri()`) — a plain string check has no retry-at-next-position failure mode the way a regex lookahead does.
+
+### 19.3 STORY-1504's auto-created rule drops its `scanner: secrets` filter
+
+Per the same session: the rule's pattern is an absolute filesystem path anchored with `^`, which no URL (of any scheme) or other-scheme identity can ever match — the `scanner: secrets` filter was a redundant assumption on top of an already-sufficient pattern. Removed. General principle stated by the user, applying beyond just this one rule: a rule author shouldn't need to remember/specify a scanner registry name when the pattern alone is already selective — `scanner:` remains available (and still occasionally necessary, e.g. `test_rule_scanner_filter_still_respected`'s disambiguation case) but isn't required by default.
+
+### References
+`src/scalene/scanner.py` (`_URI_SCHEME`, `_URL_FALLBACK_RE`, `_FILE_URI_RE`, `_ANY_URI_SPAN_RE`, `_is_file_uri`, `FileScanner.identify()`, `URLScanner.identify()`), `src/scalene/policy_config.py` (`write_default_project_policy()`), `tests/test_scanner.py` (new `file://`/generic-protocol tests, including the regex-retry regression).

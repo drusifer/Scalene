@@ -24,9 +24,17 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scalene.onboard import OnboardError, identify_targets, load_tool_call, main, onboard, onboard_targets
-from scalene.policy_config import PolicyConfig
+from scalene.policy_config import PolicyConfig, write_default_project_policy
 from scalene.scan_cache import ScanCache
 from scalene.scanner import Resource
+
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# sec18.3 (STORY-1503): onboarding a URL target calls URLScanner.scan()
+# synchronously (a real finding is required before writing a rule) -- this
+# would otherwise block on a real URLhaus call. See _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
 
 
 class TestIdentifyTargets(unittest.TestCase):
@@ -363,6 +371,111 @@ class TestMainNewCliSurface(unittest.TestCase):
             self.assertEqual(exit_code, 0)
 
 
+class TestCustomScannerCLI(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.1 (STORY-1501), Trin's Phase 1 UAT: not
+    just that load_scanners()/PolicyConfig can see a config-declared
+    scanner at the library level (Neo's own tests) -- the real `scg onboard`
+    CLI entry point (`main()`) has to identify and onboard through it too,
+    since that's the actual STORY-1501 AC ("traverse the registry"), not an
+    implementation detail."""
+
+    def _write_policy_with_dummy_scanner(self, tmp_path: Path) -> Path:
+        policy_path = tmp_path / "scalene_policy.yaml"
+        policy_path.write_text(
+            "scanners:\n"
+            "  extra:\n"
+            "    - name: dummy\n"
+            '      import: "fixtures_custom_scanner:DummyScanner"\n'
+        )
+        return policy_path
+
+    def test_main_identifies_and_onboards_through_a_config_declared_scanner(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = self._write_policy_with_dummy_scanner(tmp_path)
+            call_path = tmp_path / "call.json"
+            call_path.write_text('{"tool_name": "SomeTool", "tool_input": {"dummy_field": "widget-1"}}')
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "--call",
+                        str(call_path),
+                        "--yes",
+                        "--mode",
+                        "allow",
+                        "--policy-path",
+                        str(policy_path),
+                        "--cache-path",
+                        str(tmp_path / "cache.json"),
+                    ]
+                )
+            self.assertEqual(exit_code, 0)
+            self.assertIn("1 onboarded, 0 blocked", stdout.getvalue())
+            self.assertIn("dummy:widget-1", stdout.getvalue())
+
+    def test_main_list_shows_a_config_declared_scanner_after_onboarding(self):
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = self._write_policy_with_dummy_scanner(tmp_path)
+            call_path = tmp_path / "call.json"
+            call_path.write_text('{"tool_name": "SomeTool", "tool_input": {"dummy_field": "widget-2"}}')
+            cache_path = tmp_path / "cache.json"
+
+            with redirect_stdout(io.StringIO()):
+                main(
+                    [
+                        "--call",
+                        str(call_path),
+                        "--yes",
+                        "--mode",
+                        "allow",
+                        "--policy-path",
+                        str(policy_path),
+                        "--cache-path",
+                        str(cache_path),
+                    ]
+                )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(["--list", "--cache-path", str(cache_path)])
+            self.assertEqual(exit_code, 0)
+            self.assertIn("dummy:", stdout.getvalue())
+            self.assertIn("widget-2", stdout.getvalue())
+
+    def test_a_typo_scanner_name_via_cli_still_fails_loud_against_the_full_registry(self):
+        # Adversarial: --scanner must be validated against the *loaded*
+        # registry (builtins + config-declared), not just the builtins,
+        # and a genuine typo against that full set must still be rejected.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = self._write_policy_with_dummy_scanner(tmp_path)
+            call_path = tmp_path / "call.json"
+            call_path.write_text('{"tool_name": "SomeTool", "tool_input": {"dummy_field": "widget-3"}}')
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "--call",
+                        str(call_path),
+                        "--yes",
+                        "--mode",
+                        "allow",
+                        "--scanner",
+                        "dummmy",
+                        "--policy-path",
+                        str(policy_path),
+                        "--cache-path",
+                        str(tmp_path / "cache.json"),
+                    ]
+                )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("0 onboarded, 1 blocked", stdout.getvalue())
+
+
 class TestE14EndToEndUserJourney(unittest.TestCase):
     """Sprint 8 (E14) full user story, encoded as a real, repeatable test
     with assertions -- not an ad-hoc bash transcript re-verified by eye each
@@ -644,6 +757,52 @@ class TestOnboardWritesPolicyFile(unittest.TestCase):
             self.assertEqual(config.rules[0].pattern, "https://existing.example.com")
             # defaults: section (unrelated to rules) must survive the rewrite.
             self.assertEqual(config.mode, "mask")
+
+    def test_onboarded_rule_is_inserted_before_the_project_folder_default_not_after(self):
+        # docs/ARCHITECTURE.md sec18.4: the auto-created default's pattern
+        # is broad by design -- if a real onboarded rule got appended AFTER
+        # it, the default would always match first and the new, more
+        # specific decision would be silently unreachable forever.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = tmp_path / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, tmp_path)
+            target = tmp_path / "secret_config.py"
+            target.write_text("not actually secret, just an example")
+
+            onboard(
+                f"file://{target}", mode="block", sensitivity="restricted", cache_path=tmp_path / "cache.json", policy_path=policy_path
+            )
+
+            config = PolicyConfig.from_yaml(policy_path)
+            self.assertEqual(len(config.rules), 2)
+            # The newly onboarded (specific, block) rule must come first --
+            # otherwise it would never actually take effect.
+            self.assertEqual(config.rules[0].mode, "block")
+            self.assertIn("project folder default", config.rules[1].description)
+
+    def test_multiple_onboards_after_the_default_all_stay_ahead_of_it_in_order(self):
+        # Trin's UAT (2026-07-21): the fix must hold for more than one
+        # onboard call, not just the single-call case -- each newly
+        # onboarded rule should insert immediately ahead of the (still
+        # last) default, preserving onboard order among the real rules.
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            policy_path = tmp_path / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, tmp_path)
+            first = tmp_path / "first.py"
+            second = tmp_path / "second.py"
+            first.write_text("a")
+            second.write_text("b")
+
+            onboard(f"file://{first}", mode="block", cache_path=tmp_path / "cache.json", policy_path=policy_path)
+            onboard(f"file://{second}", mode="block", cache_path=tmp_path / "cache.json", policy_path=policy_path)
+
+            config = PolicyConfig.from_yaml(policy_path)
+            self.assertEqual(len(config.rules), 3)
+            self.assertRegex(str(first), config.rules[0].pattern)
+            self.assertRegex(str(second), config.rules[1].pattern)
+            self.assertIn("project folder default", config.rules[2].description)
 
     def test_malformed_existing_policy_file_raises_clear_error(self):
         with TemporaryDirectory() as tmp:

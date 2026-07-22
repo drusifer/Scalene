@@ -1,10 +1,19 @@
 # Next Steps
 
 ## Immediate Next Action
-`*user test E14` complete (2026-07-21) — full sprint end-to-end PASSED, encoded as a permanent test (`TestE14EndToEndUserJourney`) after a user correction against ad-hoc bash verification. Handed to all for `*sprint retro`.
+Sprint 9 (E15) fully closed on my end — sprint-close e2e test passed, posted `*sprint retro` (2026-07-21). On re-invocation: post my own retro entry if not already done as part of the all-persona retro round.
 
 ## Waiting On
-Nothing blocking. My retro input: I'd already been corrected once this session (mid-sprint, an individual finding) for ad-hoc bash verification, then repeated the same shortcut at the full-sprint-close scale before being corrected again. Worth internalizing harder, not just for this session: even (especially) a "just confirming the whole thing works" moment at sprint close should default to a real test, same standard as any single bug repro — the scale of the check doesn't change the rule.
+Other personas' retro posts, then Cypher's `*pm launch`.
+
+## Retro input for this sprint (when `*sprint retro` happens)
+Two real findings this sprint, both from actually running things rather than trusting a design doc or a transcript: (1) my own Phase 4 gate caught the `trust=trusted` wording naming a value that doesn't exist in this project's vocabulary; (2) I was corrected twice more this same session for reaching for ad-hoc bash (`echo | python -m scalene.cli ...`) instead of writing a real test immediately — even after already having this exact standing feedback memory from two prior sessions. Worth naming plainly in retro: knowing the rule isn't the same as applying it under time pressure mid-gate-cycle: the trigger should be "I want to verify X" → write the test, not "let me just quickly check."
+
+## Carried, not re-litigated
+STORY-1503's degraded-path message (checked via Trin's/Neo's tests, not independently re-run by me this sprint — no interactive surface there for me to gate). The `import:` path error message quality (light, non-blocking, from Gate 2) — not re-checked this pass, low priority.
+
+## Carried retro/process input (from Sprint 8, for whenever `*sprint retro` next happens)
+I'd already been corrected once this session (mid-sprint, an individual finding) for ad-hoc bash verification, then repeated the same shortcut at the full-sprint-close scale before being corrected again. Worth internalizing harder, not just for this session: even (especially) a "just confirming the whole thing works" moment at sprint close should default to a real test, same standard as any single bug repro — the scale of the check doesn't change the rule.
 
 ## Retro input carried from Sprint 7 (for whenever the next retro happens after this one)
 Sprint 7's lesson: "implement fast with the user, gate formally after" is validated as workable here — but only because the gate chain runs every time, not skipped because the code already works.

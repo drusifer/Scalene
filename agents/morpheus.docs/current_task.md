@@ -1,9 +1,67 @@
 # Current Task
 
-**Status:** `*lead review phase-2` (Sprint 8/E14) — **APPROVED after 1 fix round.** Handed to Smith for the mandatory gate.
-**Assigned to:** N/A (Smith next)
+**Status:** `*lead review phase-4` (corrected mechanism) — APPROVED. All 4 phases done, Phase 4 gated twice. Handed to Oracle for groom.
+**Assigned to:** N/A (Oracle next)
 **Started:** 2026-07-21
 **Completed:** 2026-07-21
+
+## Task Description (most recent): `*lead review phase-4` — corrected mechanism (real rule file, not implicit)
+Full review: `agents/morpheus.docs/e15_phase4_correction_review.md`. User asked for a real design change after Phase 4 was already gated — reviewed the new implementation fresh, not reused the old approval. Traced the shadowing-fix rationale myself against `resource_verifier.py`'s real `_find_matching_rule()` code — confirmed it's a genuine bug (not hypothetical) and the fix is minimal/correctly scoped. **APPROVED — Sprint 9 (E15) fully implemented and gated, all 4 phases.** Handed to Oracle for groom.
+
+## Task Description (most recent): `*lead review phase-4` — Sprint 9 (E15) final phase
+Full review: `agents/morpheus.docs/e15_phase4_review.md`. Traced the rule-priority (explicit rules win) and §18.2-coexistence claims myself, not just trusted the comments — both confirmed real. Agreed with Smith's `trust=trusted` finding/fix as a real accuracy problem, not a style nit. **APPROVED — Sprint 9 (E15) fully implemented and gated, all 4 phases.** Handed to Oracle for the groom pass.
+
+## Task Description (prior): `*lead recheck phase-3` — Auth-Key correction
+Verified the fix directly (grepped for any hardcoded key — clean). The env-var-checked-before-request design correctly avoids the doomed unauthenticated call Tank found. `.env.example` documents the new var properly. **APPROVED.** Handed back to Tank to confirm his original finding is actually resolved.
+
+## Task Description (prior): `*lead review phase-3` (E15) — APPROVED, contingent on Tank. Handed to Tank.
+
+## Task Description (most recent): `*lead review phase-3` — Sprint 9 (E15)
+Full review: `agents/morpheus.docs/e15_phase3_review.md`. Confirmed the URLHaus network call runs inside the existing isolated subprocess boundary myself (traced `_scan_reputation`'s only call site). The env-var test-gate (`SCALENE_SKIP_REMOTE_REPUTATION`) is a real, justified exception to normal test hygiene given the subprocess boundary — accepted, not generalized. Confirmed Trin's found gap (`test_scan_cache.py`) is closed. **APPROVED, contingent on Tank's required review** (network egress, no-API-key claim, rate-limit/volume behavior) — handed to Tank, not treated as closeable yet.
+
+## Task Description (prior): `*lead review phase-2` (E15) — APPROVED. Handed to Neo for Phase 3.
+
+## Task Description (most recent): `*lead review phase-2` — Sprint 9 (E15)
+Full review: `agents/morpheus.docs/e15_phase2_review.md`. Independently re-traced `decide_access()` myself (I wrote §15.3) to confirm Neo's dead-code finding — correct. Verified the prefix-boundary check against the false-positive case (`/etcetera` vs `/etc`) myself too. **APPROVED.** Handed Phase 3 to Neo.
+
+## Task Description (prior): `*lead review phase-1` (E15) — APPROVED. Handed to Neo for Phase 2.
+
+## Task Description (most recent): `*lead review phase-1` — Sprint 9 (E15)
+Full review: `agents/morpheus.docs/e15_phase1_review.md`. Reviewed the real diff, not summaries. Both of Neo's self-reported implementation-time findings independently traced and confirmed correct (onboard() legacy-path regression fix; cache_refresh_worker.py's documented scope decision). Confirmed the diagram-drift revert was the right call — noted for my own next architecture pass not to diagram a whole epic's end state before any of it is built. **APPROVED.** Handed Phase 2 to Neo.
+
+## Task Description (prior): `*lead review sprint plan E15` — APPROVED, plan LOCKED. Handed to Neo for Phase 1.
+
+## Task Description (most recent): `*lead review sprint plan` — Sprint 9 (E15)
+Full review: `agents/morpheus.docs/e15_plan_review.md`. Mouse's 4-phase breakdown matches §18 completely — checked each phase's tasks against the corresponding §18 subsection, not just skimmed. Sequencing (story-order, not hard-dependency beyond Phase 1's shared `PolicyConfig` fields) and gate placement (no gate P1/P2, Tank required P3, Smith mandatory P4) both confirmed correct independently, not rubber-stamped. **APPROVED, plan LOCKED.** Handed Phase 1 to Neo.
+
+## Task Description (prior): `*lead arch E15` complete. Handed to Smith for Gate 2.
+
+## Task Description (most recent): `*lead arch E15` — Sprint 9 architecture
+Wrote `docs/ARCHITECTURE.md` §18 covering STORY-1501-1504. Full rationale in `context.md` above; summary:
+- 1501: config-driven `SCANNERS` (in-process layer only — subprocess-isolation dispatch stays hardcoded, deferred explicitly).
+- 1502: `FileScanner` hardcoded restricted-path short-circuit (`/etc`, `~/.ssh` exactly) + implicit restricted `PolicyRule` so the tri-level sensitivity axis actually reflects it.
+- 1503: concrete pick — URLhaus (no API key), composited with `LocalHeuristicChecker` inside the existing isolated subprocess, visible degrade-on-unreachable. Flagged for Tank.
+- 1504: `project_root` field + one implicit `PolicyRule`, reuses `decide_access()` unchanged, discoverable via `scg onboard --list` (satisfies Smith's Gate 1 hard requirement).
+
+All 5 of Cypher's carried open questions resolved. Class diagram (§4) updated in the same pass. Handed to Smith for Gate 2 (`*user feedback E15`).
+
+## Progress
+- [x] Read scanner.py/policy_config.py/resource_verifier.py/reputation.py/scan_worker.py/subprocess_isolation.py before designing (found 3 hardcoded scanner registries at 2 layers, not 1).
+- [x] Wrote §18 (6 subsections) resolving all 4 stories + Smith's hard requirement + Cypher's 5 open questions.
+- [x] Updated §4 class diagram (new classes + PolicyConfig fields) in the same pass — no drift left for a future retro to catch.
+- [x] Flagged 2 items for Tank (URLHaus network call, importlib dynamic-import posture) rather than deciding infra risk myself.
+- [x] Handed to Smith (`*user feedback E15`).
+
+## Blockers
+None — awaiting Smith's Gate 2 verdict.
+
+## Oracle Consultations
+None yet — will record §18 as a decision once Smith's gate passes (per protocol: record after, not before, since Smith can still send it back).
+
+---
+*Last updated: 2026-07-21*
+
+## Task Description (prior): `*lead review phase-2` (Sprint 8/E14) — **APPROVED after 1 fix round.** Handed to Smith for the mandatory gate.
 
 ## Task Description (most recent): `*lead review phase-2` re-review after Neo's ordering fix
 Independently re-verified the fix myself (not just trusting Neo's report): mocked the exact same real run (`isatty=True`, `input` mocked) with the axis flags missing — confirmed `input()` is called **0** times now (was 1 before the fix) and the error surfaces immediately. **APPROVED.** No other issues found this round. `make test`: same 5 known Phase-3-scoped failures, no new ones.

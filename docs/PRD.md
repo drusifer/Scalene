@@ -2,7 +2,7 @@
 
 **Owner:** Cypher (PM)
 **Source:** `docs/BRD.md`
-**Status:** Sprint 1 (E1-E6) shipped 2026-07-09. Sprint 2 (E7-E8) shipped 2026-07-10. Sprint 3 (E9) implemented 2026-07-14 (retro/launch pending). Sprint 4 (E10) — Draft v1, pending Smith (UX) gate 1.
+**Status:** Sprints 1-9 (E1-E15) shipped and closed. **Reconciled 2026-07-21 (Oracle):** this line had gone stale since Sprint 4 while `docs/USER_STORIES.md`'s own status line stayed current every sprint — see that file for full per-sprint detail; this line now just points there rather than duplicating and re-drifting.
 
 ## Vision
 
@@ -51,8 +51,9 @@ AI-enabled software engineer / DevOps engineer who runs autonomous coding agents
 | E12 | Tech Debt: Config Validation, Test Feedback Loop, Doc-Drift Guard | Pulled from the Sprint 3-5 retro backlog, verified against current code before scoping (several flagged items were already resolved or moot). `PolicyRule.scanner` typo validation, `make test-q` for fast feedback, a real check that architecture diagrams reference symbols that actually exist. |
 | E13 | `scg onboard` Rule Authoring | Direct user design session (2026-07-18, post-Sprint-6, `ARCHITECTURE.md` §16): `scg onboard` becomes the single frontend for authoring a `PolicyRule` — one call both validates a resource (real scan) and declares what to do with it (writes a `rules:` entry), instead of pre-seeding the cache only and leaving rule-authoring as a separate hand-edit-the-YAML step. Explicitly reverses §14.3's "CLI surface never changes" requirement. |
 | E14 | Tool-Call-Driven Onboarding via the Scanner Framework | Retires `--target` — `scg onboard` identifies targets automatically from a real tool call by traversing the `SCANNERS` registry and calling each scanner's own `identify()` (the same logic `pre_tool_use` already uses live), instead of requiring a manually-typed URI. Adds developer confirmation of identified targets before scanning, a per-scanner inventory of onboarded targets, and a reputation score alongside the existing sensitivity label. Builds on E13/§16, doesn't replace it. |
+| E15 | Configurable Scanner Registry & Extended Scanner Coverage | Direct user request (2026-07-21): make `SCANNERS` config-driven (built-ins load by default, extra scanners registrable via config) as the extension point for future enterprise integrations (asset inventory/CMDB, data-labeling, vulnerability databases) — not building those integrations themselves this sprint. Adds hardcoded restricted+untrusted defaults for sensitive system paths (`/etc`, `~/.ssh`) to `FileScanner`, real external reputation sources to `URLScanner` beyond today's 3 local heuristics, and a trusted+Internal-Only default posture for a newly onboarded project's own folder. |
 
-E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. E12 is Sprint 6. E13 is Sprint 7. E14 is pending sprint assignment. See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
+E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. E12 is Sprint 6. E13 is Sprint 7. E14 is Sprint 8. E15 is pending sprint assignment (Sprint 9). See `docs/USER_STORIES.md` for the full story breakdown and acceptance criteria.
 
 ## Sprint 2 Goals (added 2026-07-10)
 
@@ -89,3 +90,10 @@ E7-E8 are Sprint 2. E9 is Sprint 3. E10 is Sprint 4. E11 is Sprint 5. E12 is Spr
 
 22. Close the discoverability gap between `scg onboard`'s two disconnected halves (verify a resource; separately, hand-edit a rule for it) — one command should express one complete trust decision, with CLI flags matching `PolicyRule`'s own field names so there's no separate vocabulary to learn between the CLI and the YAML schema.
 23. **(Added 2026-07-20, Smith's gate finding)** A CLI constraint that a user can violate (here: at least one of `--sensitivity`/`--mode` required) must be discoverable via `--help` before it's hit as a runtime error, not only explained after the fact — especially when the constraint is new and the naive command a returning user would type used to just work.
+
+## Sprint 9 Goals (added 2026-07-21)
+
+24. Make the scanner registry itself configurable — built-in scanners (FileScanner, URLScanner) load by default, additional scanners can be registered via config without code changes — as the extension point for future enterprise integrations (asset inventory/CMDB, data-labeling systems, vulnerability databases). Those integrations are not built this sprint.
+25. Give `FileScanner` hardcoded restricted+untrusted defaults for well-known sensitive system paths (`/etc`, `~/.ssh`) so a clean secrets scan can't make a sensitive path look safe.
+26. Extend `URLScanner` beyond today's 3 local offline heuristics to real open-source/free-tier external reputation sources.
+27. Default a newly onboarded project's own folder to trusted + Internal Only, rather than the global untrusted/sensitive-by-default posture — the project Scalene protects shouldn't start out treated like an arbitrary unrecognized resource.

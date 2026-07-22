@@ -1,0 +1,16 @@
+# Neo — Sprint 9 (E15) Phase 4 implementation notes (2026-07-21)
+
+## What shipped
+- `policy_config.py`: `PolicyConfig.project_root: Path | None = None`. `__post_init__` constructs one implicit `PolicyRule` (`mode="allow"`, `sensitivity="internal"`, pattern anchored to `project_root`) when set, appended *after* any real `rules` (user rules always win — declaration order, `_find_matching_rule` returns the first match). `from_yaml()` derives `project_root` from the policy path's own parent directory — no separate argument needed.
+- `cli.py`: both branches that construct a bare `PolicyConfig()` (no policy file yet, and the fail-safe-on-load-error fallback) now pass `project_root=policy_path.resolve().parent` explicitly, since only `from_yaml()` can derive it from its own `path` argument.
+- `onboard.py`: `_list_inventory()` gains an optional `project_root` param — prints one synthetic `implicit default: <root> -> sensitivity=internal, trust=trusted (...)` line, computed directly (never a fabricated `ScanCache` entry). `main()`'s `--list` branch always passes it (derived the same way as `cli.py`'s).
+
+## A real, wide-reaching implementation-time finding: `from_yaml()` derives `project_root` from every call, unconditionally
+Running `make test` after wiring this up **broke 7 existing tests** — every test that calls `PolicyConfig.from_yaml(path)` and then asserts an exact `len(config.rules)` now sees one extra rule (the implicit one), since *every* real policy-file load has some parent directory. This isn't a bug — it's the correct, unconditional behavior the feature requires (a real project's policy file's own directory always is its project root) — but it's real, broad test fallout, not a narrow edge case. Fixed by updating each affected assertion (`tests/test_policy_config.py`, `tests/test_onboard.py`) to account for the implicit rule, with a comment explaining why, rather than silently swallowing the discrepancy or avoiding the unconditional design to dodge the fallout.
+
+## Test coverage added
+- `tests/test_resource_verifier.py::TestProjectFolderDefault` (5 tests, using the real `FileScanner().scan()` result pre-seeded into the cache, same precedent as Phase 2): a clean project file becomes `validated_allow` and escalates `sensitivity=internal`; a *second* clean project file in an already-contaminated session still proceeds (the actual friction this story fixes); an explicit user rule wins over the implicit default; **coexistence with Phase 2's hardcoded-restricted paths** (used the real home directory as `project_root` with a target under the real `~/.ssh`, since the hardcoded prefixes are fixed absolute paths, not name-pattern-matched — an earlier version of this test used an arbitrary tmp-dir `.ssh` folder and failed, correctly, since that's not what the hardcoded check actually matches against); a file outside the project root is unaffected.
+- `tests/test_onboard.py::TestListInventory` (2 new tests): the synthetic default line appears and contains the right fields; it's distinguishable from a real onboarded entry in the same `--list` output (both present, confirmed as 2 different, non-identical lines).
+
+## Verification
+`make test`: 381/381 (374 baseline + 7 new).

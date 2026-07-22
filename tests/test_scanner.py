@@ -12,7 +12,24 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scalene.scanner import SCANNERS, FileScanner, Resource, ScanResult, ScannerMachineryError, URLScanner
+from scalene.scanner import (
+    SCANNERS,
+    FileScanner,
+    Resource,
+    ScannerRegistryError,
+    ScanResult,
+    ScannerMachineryError,
+    URLScanner,
+    load_scanners,
+)
+
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# sec18.3 (STORY-1503): URLScanner.scan() now runs inside an isolated
+# subprocess that would otherwise attempt a real URLhaus call. See
+# _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
 
 
 class TestResourceAndScanResult(unittest.TestCase):
@@ -87,6 +104,29 @@ class TestFileScannerIdentify(unittest.TestCase):
         )
         self.assertEqual(resources, [])
 
+    def test_file_uri_in_any_tool_args_is_identified_as_a_file(self):
+        # 2026-07-22 (direct user request): file:// is a filesystem
+        # reference wearing a URI shape -- FileScanner's job, regardless of
+        # which tool/field it shows up in.
+        resources = self.scanner.identify("Bash", {"command": "cat file:///etc/passwd"})
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0].identity, "/etc/passwd")
+        self.assertEqual(resources[0].kind, "file")
+
+    def test_file_uri_does_not_also_produce_a_stray_path_fragment(self):
+        # The file:// span must be excluded from the generic path fallback,
+        # so this doesn't ALSO produce a bogus "//abs/path"-shaped resource
+        # on top of the correct file:// extraction.
+        resources = self.scanner.identify("Bash", {"command": "cat file:///tmp/secret.txt"})
+        self.assertEqual([r.identity for r in resources], ["/tmp/secret.txt"])
+
+    def test_other_protocol_url_is_not_mistaken_for_a_file_path(self):
+        # A non-file, non-http(s) scheme (e.g. ftp://, s3://) is still a URL,
+        # not a file -- must be excluded from FileScanner the same way
+        # https:// already was.
+        resources = self.scanner.identify("Bash", {"command": "aws s3 cp s3://my-bucket/data.csv ."})
+        self.assertEqual(resources, [])
+
 
 class TestFileScannerScan(unittest.TestCase):
     def setUp(self):
@@ -118,6 +158,47 @@ class TestFileScannerScan(unittest.TestCase):
         # ScanResult a caller would otherwise treat as a normal decision.
         with self.assertRaises(ScannerMachineryError):
             self.scanner.scan(Resource(kind="file", identity="/no/such/path/here.md", scanner_name="secrets"))
+
+    def test_etc_path_is_sensitive_even_when_clean(self):
+        # docs/ARCHITECTURE.md sec18.2 (STORY-1502): /etc/hostname has no
+        # real secret content -- the hardcoded floor must still fire.
+        result = self.scanner.scan(Resource(kind="file", identity="/etc/hostname", scanner_name="secrets"))
+        self.assertEqual(result.label, "sensitive")
+
+    def test_etc_path_reason_is_distinct_from_a_real_secrets_finding(self):
+        # Smith's Gate 1 non-blocking note: a developer must be able to
+        # tell "hardcoded system path" apart from "an actual secret matched".
+        result = self.scanner.scan(Resource(kind="file", identity="/etc/hostname", scanner_name="secrets"))
+        self.assertIn("hardcoded restricted", result.reason)
+
+    def test_ssh_dir_path_is_sensitive_even_when_clean(self):
+        home_ssh = os.path.expanduser("~/.ssh")
+        result = self.scanner.scan(Resource(kind="file", identity=f"{home_ssh}/id_rsa", scanner_name="secrets"))
+        self.assertEqual(result.label, "sensitive")
+
+    def test_similarly_named_path_is_not_a_false_positive(self):
+        # "/etcetera/..." must not match the "/etc" prefix via a naive
+        # str.startswith("/etc").
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "etcetera" / "clean.md"
+            target.parent.mkdir()
+            target.write_text("just some ordinary docs, not under /etc")
+            result = self.scanner.scan(Resource(kind="file", identity=str(target), scanner_name="secrets"))
+            self.assertEqual(result.label, "public")
+
+    def test_exact_prefix_itself_is_restricted_not_just_subpaths(self):
+        # Trin's UAT (Phase 2): "/etc" itself (no trailing component) must
+        # match too, not only paths strictly under it.
+        result = self.scanner.scan(Resource(kind="file", identity="/etc", scanner_name="secrets"))
+        self.assertEqual(result.label, "sensitive")
+
+    def test_hardcoded_restricted_short_circuit_never_touches_the_secrets_scan_subprocess(self):
+        # A path under /etc doesn't need to exist -- the short-circuit
+        # fires before run_scanner() would ever try to read it.
+        result = self.scanner.scan(
+            Resource(kind="file", identity="/etc/this-file-does-not-actually-exist", scanner_name="secrets")
+        )
+        self.assertEqual(result.label, "sensitive")
 
     def test_reputation_stays_none_deliberately(self):
         # sec17.6: detect-secrets' open-ended finding list has no fixed-
@@ -170,6 +251,25 @@ class TestURLScannerIdentify(unittest.TestCase):
         identities = {r.identity for r in resources}
         self.assertEqual(identities, {"https://x.example.com/a", "https://x.example.com/b"})
 
+    def test_non_http_protocol_is_still_recognized_as_a_url(self):
+        # 2026-07-22 (direct user request): "any URL with a protocol", not
+        # just http(s) -- ftp/ws/s3/etc. are all real destinations a call
+        # could exfiltrate to.
+        resources = self.scanner.identify("Bash", {"command": "curl ftp://files.example.com/upload"})
+        self.assertEqual([r.identity for r in resources], ["ftp://files.example.com/upload"])
+
+    def test_file_uri_is_excluded_from_url_scanning(self):
+        # The one explicit exception -- file:// belongs to FileScanner
+        # (see TestFileScannerIdentify.test_file_uri_in_any_tool_args...).
+        resources = self.scanner.identify("Bash", {"command": "cat file:///etc/passwd"})
+        self.assertEqual(resources, [])
+
+    def test_file_uri_alongside_a_real_url_only_identifies_the_real_url(self):
+        resources = self.scanner.identify(
+            "Bash", {"command": "cat file:///tmp/local.txt https://example.com/remote.txt"}
+        )
+        self.assertEqual([r.identity for r in resources], ["https://example.com/remote.txt"])
+
 
 class TestURLScannerScan(unittest.TestCase):
     def setUp(self):
@@ -217,6 +317,66 @@ class TestScannerRegistry(unittest.TestCase):
         self.assertIn("reputation", SCANNERS)
         self.assertIsInstance(SCANNERS["secrets"], FileScanner)
         self.assertIsInstance(SCANNERS["reputation"], URLScanner)
+
+
+class TestLoadScanners(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.1 (STORY-1501): the config-driven registry."""
+
+    def test_empty_config_yields_exactly_the_builtins(self):
+        scanners = load_scanners({})
+        self.assertEqual(set(scanners), {"secrets", "reputation"})
+        self.assertIsInstance(scanners["secrets"], FileScanner)
+        self.assertIsInstance(scanners["reputation"], URLScanner)
+
+    def test_extra_scanner_is_imported_and_registered(self):
+        scanners = load_scanners(
+            {"extra": [{"name": "dummy", "import": "fixtures_custom_scanner:DummyScanner"}]}
+        )
+        self.assertIn("dummy", scanners)
+        self.assertEqual(scanners["dummy"].name, "dummy")
+        # Builtins are untouched by adding an extra scanner.
+        self.assertIn("secrets", scanners)
+        self.assertIn("reputation", scanners)
+
+    def test_extra_scanner_actually_dispatches_through_identify_and_scan(self):
+        # Not just "it imports" -- it has to behave like a real registry
+        # entry for identify()/scan() dispatch, the actual STORY-1501 AC.
+        scanners = load_scanners(
+            {"extra": [{"name": "dummy", "import": "fixtures_custom_scanner:DummyScanner"}]}
+        )
+        resources = scanners["dummy"].identify("SomeTool", {"dummy_field": "widget-1"})
+        self.assertEqual(len(resources), 1)
+        result = scanners["dummy"].scan(resources[0])
+        self.assertEqual(result.label, "public")
+
+    def test_name_colliding_with_a_builtin_raises(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": [{"name": "secrets", "import": "fixtures_custom_scanner:DummyScanner"}]})
+
+    def test_unimportable_module_raises_naming_the_offending_path(self):
+        with self.assertRaises(ScannerRegistryError) as ctx:
+            load_scanners({"extra": [{"name": "dummy", "import": "no.such.module:Whatever"}]})
+        self.assertIn("no.such.module:Whatever", str(ctx.exception))
+
+    def test_missing_class_in_a_real_module_raises(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": [{"name": "dummy", "import": "fixtures_custom_scanner:NoSuchClass"}]})
+
+    def test_class_not_satisfying_scanner_protocol_raises(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": [{"name": "dummy", "import": "fixtures_custom_scanner:NotAScanner"}]})
+
+    def test_import_missing_colon_raises_clear_error(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": [{"name": "dummy", "import": "fixtures_custom_scanner.DummyScanner"}]})
+
+    def test_extra_entry_missing_required_field_raises(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": [{"name": "dummy"}]})
+
+    def test_extra_not_a_list_raises(self):
+        with self.assertRaises(ScannerRegistryError):
+            load_scanners({"extra": "not-a-list"})
 
 
 if __name__ == "__main__":

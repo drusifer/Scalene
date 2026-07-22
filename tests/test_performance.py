@@ -42,6 +42,14 @@ from scalene.policy_config import PolicyConfig
 from scalene.scan_cache import ScanCache
 from scalene.scanner import Resource, ScanResult
 
+from _env_guards import disable_remote_reputation, restore_remote_reputation
+
+# docs/ARCHITECTURE.md sec18.3 (STORY-1503): keeps any first-sighting
+# background scan in these latency measurements local-heuristics-only, not
+# dependent on live network reachability/latency. See _env_guards.py.
+setUpModule = disable_remote_reputation
+tearDownModule = restore_remote_reputation
+
 STEADY_STATE_BUDGET_MS = 15.0
 UNCONDITIONAL_SCAN_BUDGET_MS = 45.0
 FIRST_SIGHTING_BUDGET_MS_PER_RESOURCE = 25.0
