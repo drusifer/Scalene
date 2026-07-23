@@ -1,7 +1,44 @@
 # Current Task
 
-**Status:** Sprint 9 (E15) closed. `*pm launch` posted.
+**Status:** Sprint 10 (E16) closed. `*pm launch` posted.
 **Assigned to:** Cypher
+**Started:** 2026-07-22
+
+## Task Description (most recent): Sprint 10 (E16) close — retro compile, `*pm launch`
+Full backlog: `agents/cypher.docs/e16_retro_backlog.md`. Compiled from all 6 persona retro posts (no Tank retro — task 6.3 shelved before Tank's task started). Central theme: this sprint's story origin (a fully-worked-through `*user consult` resolving both hard design questions before any story was written) produced unusually low Gate 1/2 churn — worth repeating as a pattern. 2 real mid-sprint corrections (STORY-1603's cost-conflation mis-scoping, STORY-1606's mount-verification-shelved-then-replacement-backlogged pivot), both handled by re-running the relevant gate/phase rather than assuming prior approval carried over. 439/439 tests. `*pm launch` posted.
+
+## Task Description (most recent): `*pm plan sprint` — write E16 stories (Interactive Onboarding Dashboard & Non-Blocking Review Loop)
+Origin: direct user `*user consult` with Smith (2026-07-22), fully worked through in discussion before being storied — `agents/smith.docs/e16_onboarding_tui_consult.md`. Both design questions Smith raised (hook-pause feasibility, "dirty flag" definition) were resolved in that consult, not left for me to pre-decide: the hook stays synchronous (retry guidance rides the existing `reason` field — STORY-1601), and "dirty" = `ScanCache.is_fresh()`, which already exists (display gap only — STORY-1602/1604).
+
+Read `hook_adapter.py`, `monitor_app.py`, `monitor_data.py`, `resource_verifier.py`, `scan_cache.py`, `policy_config.py` before writing, to ground ACs in real code (confirmed_bad-vs-uncleared block paths, `pending_since`, `is_fresh()`, `PolicyRule.jsonpath` already forward-compatible) rather than the consult's proposal alone. Wrote 6 stories as E16 in `docs/USER_STORIES.md`:
+- STORY-1601: differentiated retry guidance in the block `reason` (wait-and-retry vs. don't-retry), no hook contract change.
+- STORY-1602: live per-scanner activity panel in `scg monitor`, sourced from `PolicyConfig.scanners` + real `pending_since`.
+- STORY-1603: accessibility-safe tagged log (text/symbol + color, not color alone).
+- STORY-1604: Verify/Allow/Deny dashboard on block events — default Deny, Allow gated on Verify, freshness shown via `is_fresh()`.
+- STORY-1605: Allow form pre-filled from the real tool-call JSON, tight default pattern reusing E13/sec16's existing derivation, writes through the existing rule-authoring path.
+- STORY-1606: read-only-to-the-agent / writable-only-from-TUI boundary on policy/state files — flagged for Tank (same class as STORY-601), explicitly scoped to what Scalene's own setup can enforce, not third-party harness sandboxes.
+
+Carried 5 open questions to Morpheus (STORY-1606's concrete mechanism, whether dashboard review state is stateless/TUI-side or needs new on-disk state, STORY-1602's busy-definition, STORY-1605's default-pattern reuse, whether 1602/1604's freshness display share one `monitor_data.py` helper).
+
+Updated `docs/PRD.md` (E16 epic row, Sprint 10 Goals 28-32, sprint-mapping line) and `docs/USER_STORIES.md`'s header status line. Handed to Smith for Gate 1.
+
+## Progress
+- [x] Read hook_adapter.py/monitor_app.py/monitor_data.py/resource_verifier.py/scan_cache.py/policy_config.py to ground stories in current code.
+- [x] Wrote STORY-1601 through 1606 in `docs/USER_STORIES.md`.
+- [x] Deliberately left `pre_tool_use`'s contract unchanged — the consult's non-blocking resolution meant no story needed to touch hook timing.
+- [x] Updated `docs/PRD.md` epic table + Sprint 10 goals + sprint-mapping line.
+- [x] Handed to Smith (`*user review E16`).
+
+## Blockers
+None — awaiting Smith's Gate 1 verdict.
+
+## Oracle Consultations
+None yet.
+
+---
+*Last updated: 2026-07-22*
+
+## Task Description (prior): Sprint 9 (E15) closed. `*pm launch` posted.
 **Started:** 2026-07-21
 
 ## Task Description (most recent): Sprint 9 (E15) close — retro compile, `*pm launch`

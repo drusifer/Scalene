@@ -414,6 +414,23 @@ class TestDecideAccess(unittest.TestCase):
             self.assertFalse(decision.allowed)
             self.assertTrue(decision.reason)
 
+    def test_contaminated_context_unmatched_resource_is_uncleared_with_retry_guidance(self):
+        # STORY-1601 (docs/ARCHITECTURE.md sec20.1): an "uncleared" block --
+        # nothing confirmed wrong, just not yet reviewed -- must be
+        # distinguishable from a real bad finding so an agent doesn't
+        # spin-retry a hard deny, and does know to retry once reviewed.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1", trust="low")
+            decision = decide_access(
+                "WebFetch", {"url": "https://never-seen.example.com/x"}, config, cache, taint
+            )
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "uncleared")
+            self.assertIn("wait", decision.reason.lower())
+            self.assertIn("retry", decision.reason.lower())
+
     def test_validated_allow_rule_proceeds_and_escalates_sensitivity(self):
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
@@ -474,6 +491,23 @@ class TestDecideAccess(unittest.TestCase):
             decision = decide_access("WebFetch", {"url": "https://evil.example.com/x"}, config, cache, taint)
             self.assertFalse(decision.allowed)
             self.assertTrue(taint.is_clean)  # blocked call, no tag mutation
+
+    def test_scanner_confirmed_bad_is_block_kind_confirmed_bad_with_no_retry_guidance(self):
+        # STORY-1601: a real finding (or an explicit non-allow rule) must
+        # read as "don't retry without a rule/config change" -- not "wait
+        # and retry", which is the uncleared case's wording instead.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://evil.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "confirmed_bad")
+            self.assertIn("do not retry", decision.reason.lower())
 
     def test_scanner_confirmed_bad_overrides_a_matching_allow_rule(self):
         # "Known bad resources are always blocked" -- a rule can declare

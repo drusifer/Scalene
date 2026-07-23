@@ -180,5 +180,55 @@ class TestPreToolUseFirstSightingPerformance(unittest.TestCase):
             )
 
 
+class TestPreToolUseEveryCallAuditLogPerformance(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec20.3 (STORY-1603, corrected 2026-07-22):
+    every call now writes an audit-log line, allow or block -- previously
+    an allowed call with no identified resources wrote nothing at all. This
+    isolates that specific marginal cost (a single buffered file append,
+    not a scan/subprocess spawn) against the existing steady-state budget,
+    rather than assuming it's negligible. Explicitly points `audit_log_path`
+    at a tmp file, unlike the perf tests above, so repeated runs don't grow
+    this repo's own real `.scalene/audit.log`."""
+
+    def test_logging_every_allowed_call_stays_under_the_steady_state_budget(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            cache_path = state_dir / "scan_cache.json"
+            audit_log_path = state_dir / "audit.log"
+            config = PolicyConfig()
+            # No identifiable resource in this call at all -- isolates the
+            # audit-log-append cost from any resource-identification/cache
+            # cost, which the steady-state test above already covers.
+            hook_input = {
+                "session_id": "perf-session",
+                "tool_name": "Bash",
+                "tool_input": {"command": "echo hello"},
+            }
+
+            for _ in range(WARMUP_ITERATIONS):
+                pre_tool_use(hook_input, config, state_dir=state_dir, cache_path=cache_path, audit_log_path=audit_log_path)
+
+            samples_ms = []
+            for _ in range(MEASURED_ITERATIONS):
+                start = time.perf_counter()
+                pre_tool_use(hook_input, config, state_dir=state_dir, cache_path=cache_path, audit_log_path=audit_log_path)
+                samples_ms.append((time.perf_counter() - start) * 1000)
+
+            avg_ms = statistics.mean(samples_ms)
+            max_ms = max(samples_ms)
+            self.assertLess(
+                avg_ms,
+                STEADY_STATE_BUDGET_MS,
+                f"avg={avg_ms:.3f}ms max={max_ms:.3f}ms exceeds the {STEADY_STATE_BUDGET_MS}ms "
+                f"steady-state budget now that every allowed call writes an audit-log line",
+            )
+            # Confirms the log write actually happened (not skipped/short-circuited),
+            # so this is measuring the real marginal cost, not a no-op.
+            self.assertEqual(
+                sum(1 for _ in audit_log_path.open()),
+                WARMUP_ITERATIONS + MEASURED_ITERATIONS,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

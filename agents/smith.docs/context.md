@@ -61,4 +61,22 @@
 Also flagged (non-blocking, revisit at end-to-end test): STORY-1104 makes scanning fire on calls that previously silently skipped it entirely — worth checking whether the user gets any visibility signal (heuristic #1) the first time this changes observed behavior on an existing project, or if it's silent.
 
 ---
-*Last updated: 2026-07-17*
+
+## `*user consult` — Elaborate onboarding TUI, pause-and-await hook (2026-07-22)
+
+Full review: `agents/smith.docs/e16_onboarding_tui_consult.md`. Direct user request to build `scg monitor` (exists: `monitor_app.py`/`monitor_data.py`, Textual, 0.5s poll, read-only today) into an elaborate interactive onboarding surface: live scanner activity, tagged/highlighted tool-call log, and — the load-bearing new piece — the hook **pausing at `pre_tool_use`** on a trust/sensitivity violation to await a Verify/Allow/Deny decision from a separate TUI process (default Deny, Allow gated on Verify completing, Allow opens a form pre-filled from the real tool-call JSON).
+
+**Strong parts (checked against real code, not spec)**: the pre-filled-form-from-real-call idea is exactly the fix I recommended in my 2026-07-09 onboarding consult (below) — turns every block into a live worked example instead of requiring the developer to already know Claude Code's internal tool-input schema. Default-Deny + Allow-disabled-until-Verify is solid Nielsen #5. Read-only state/config inside the sandbox (agents can't edit their own rules) is the correct trust boundary.
+
+**Not mine to resolve, flagged hard**: `pre_tool_use` (`hook_adapter.py:69`) is single-shot synchronous today, zero IPC to any other process — sec15 (2026-07-17) *deliberately removed* the one prior feature with this exact "in-flight, awaiting-decision at the hook boundary" shape (STORY-702's editable/apply workflow). This proposal reintroduces that shape with a human instead of a heuristic. Whether it's even feasible depends entirely on Claude Code's real `PreToolUse` hook timeout behavior, which is **unverified anywhere in this repo** — same class of claim Tank had to live-verify against URLhaus this past sprint rather than trust docs. This is Morpheus's question, must be live-checked before any architecture commits to it.
+
+Also flagged: color-only tag highlighting fails my own SKILL.md accessibility standard (need text/symbol backup per tag); "dirty flag" is not a term this codebase defines anywhere (closest is `ScanCache.pending_since`, a different concept) — same failure shape as the `trust=trusted` bug I caught at the Sprint 9 Phase 4 gate, pin down real vocabulary before building, not after.
+
+**Recommendation**: epic-scale, route to Cypher for real stories rather than deciding scope here. I'd approve the interaction *shape* once scoped; my only blocking concern (sync/async hook feasibility) belongs to Morpheus.
+
+**Status**: discussion only, no code/stories yet. Not blocking Sprint 9 (already closed).
+
+**Follow-up same session**: user proposed a non-blocking fix for my hook-timeout concern — don't pause the hook, return a deny+"wait/retry" message via the existing `reason`/`systemMessage` channel, user types "retry" after reviewing in the TUI. This fully resolves the concern (no IPC, nothing to time out, sec15's model stays intact) — added a nuance that retry wording must differ between `confirmed_bad` and `uncleared` block paths (`resource_verifier.py:190-223`) or the agent will spin-retry a hard deny. Also: "dirty flag" = validation expired, which turns out to already exist as `ScanCache.is_fresh()` (TTL + file-mtime-changed) — corrected my earlier "undefined vocabulary" flag. Real remaining gap: the monitor's resource-cache panel never calls `is_fresh()`, so there's no visible fresh/expired signal today (Nielsen #1) — flagged as a real, scoped gap with an implementation nuance (`discover_scan_results` reads raw keyed entries, not `Resource` objects, so it can't call `is_fresh()` without a small reconstruction step). Both of my original hard concerns are now resolved in-discussion; nothing blocks Cypher scoping this as an epic. Full: `agents/smith.docs/e16_onboarding_tui_consult.md`.
+
+---
+*Last updated: 2026-07-22*

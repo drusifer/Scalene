@@ -23,8 +23,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scalene.onboard import OnboardError, identify_targets, load_tool_call, main, onboard, onboard_targets
-from scalene.policy_config import PolicyConfig, write_default_project_policy
+from scalene.onboard import OnboardError, identify_targets, load_tool_call, main, onboard, onboard_targets, write_rule
+from scalene.policy_config import PolicyConfig, PolicyRule, write_default_project_policy
 from scalene.scan_cache import ScanCache
 from scalene.scanner import Resource
 
@@ -949,6 +949,50 @@ class TestOnboardUrlTarget(unittest.TestCase):
             self.assertEqual(len(live_resources), 1)
             self.assertEqual(result["resource"].identity, live_resources[0].identity)
             self.assertEqual(result["resource"].identity, "https://internal.example.com/docs/page")
+
+
+class TestWriteRuleReadOnlyPolicyFile(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec20.6 (STORY-1606): confirms `write_rule`'s
+    existing `OSError` handling already produces a clean `OnboardError`
+    against a real read-only policy file -- an agent-side `scg onboard`
+    invocation inside a sandbox where the policy file is mounted read-only
+    fails cleanly today, not with a raw traceback. This is a test
+    confirming existing behavior, not new production code (per Morpheus's
+    architecture note, sec20.6)."""
+
+    def test_read_only_policy_file_fails_with_a_clean_onboard_error_not_a_raw_traceback(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            policy_path.write_text("rules: []\n")
+            os.chmod(policy_path, 0o444)
+            try:
+                rule = PolicyRule(tool=".*", pattern=r"https://example\.com/.*", sensitivity="public", mode="allow")
+                with self.assertRaises(OnboardError) as ctx:
+                    write_rule(policy_path, rule)
+                # Names the offending path, same standard as every other
+                # OnboardError in this module -- not a bare "Permission
+                # denied" with no context on which file.
+                self.assertIn(str(policy_path), str(ctx.exception))
+            finally:
+                os.chmod(policy_path, 0o644)
+
+    def test_read_only_policy_directory_fails_cleanly_for_a_brand_new_policy_file(self):
+        # The other real shape this takes: no policy file exists yet, and
+        # the directory itself is read-only (e.g. the whole project mount
+        # is read-only inside the agent's sandbox) -- mkdir/write both fail
+        # at the directory level, not the file level.
+        with TemporaryDirectory() as tmp:
+            ro_dir = Path(tmp) / "readonly"
+            ro_dir.mkdir()
+            policy_path = ro_dir / "scalene_policy.yaml"
+            os.chmod(ro_dir, 0o555)
+            try:
+                rule = PolicyRule(tool=".*", pattern=r"https://example\.com/.*", sensitivity="public", mode="allow")
+                with self.assertRaises(OnboardError) as ctx:
+                    write_rule(policy_path, rule)
+                self.assertIn(str(policy_path), str(ctx.exception))
+            finally:
+                os.chmod(ro_dir, 0o755)
 
 
 if __name__ == "__main__":

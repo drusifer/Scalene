@@ -91,18 +91,25 @@ def pre_tool_use(
     decision = decide_access(tool_name, tool_input, config, ScanCache(cache_path), taint)
     taint.save()
 
-    if decision.allowed:
-        return _pre_tool_use_response("allow")
-
+    # docs/ARCHITECTURE.md sec20.3 (STORY-1603, corrected 2026-07-22): every
+    # call is logged, allow or block -- not just blocks -- so scg monitor's
+    # event panel is a genuine tool-call stream, not a block-only feed. The
+    # append is a single buffered write, not a scan/subprocess spawn, so
+    # this doesn't share the measured first-sighting latency cost (sec13.3).
     _append_audit_log(
         {
-            "event": "block",
+            "event": "allow" if decision.allowed else "block",
             "session_id": session_id,
             "tool_name": tool_name,
+            "tool_input": tool_input,
             "reason": decision.reason,
+            "block_kind": decision.block_kind,
         },
         audit_log_path,
     )
+
+    if decision.allowed:
+        return _pre_tool_use_response("allow")
     return _pre_tool_use_response("deny", reason=decision.reason)
 
 

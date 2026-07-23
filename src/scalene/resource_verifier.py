@@ -163,8 +163,16 @@ def evaluate(tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache)
 
 @dataclass(frozen=True)
 class AccessDecision:
+    """docs/ARCHITECTURE.md sec20.1 (STORY-1601): `block_kind` reuses this
+    function's own real internal distinction (confirmed_bad vs uncleared,
+    below) verbatim -- not new vocabulary -- so a block's `reason` and its
+    structured `block_kind` never drift apart, and downstream consumers
+    (the audit log, sec20.4's dashboard) don't have to re-derive it by
+    string-matching `reason`."""
+
     allowed: bool
     reason: str = ""
+    block_kind: str | None = None  # "confirmed_bad" | "uncleared" | None (allowed)
 
 
 def decide_access(
@@ -200,7 +208,11 @@ def decide_access(
 
     if confirmed_bad:
         details = "; ".join(f"{resource.identity} ({why})" for resource, why in confirmed_bad)
-        return AccessDecision(allowed=False, reason=f"Blocked: {details}.")
+        return AccessDecision(
+            allowed=False,
+            reason=f"Blocked: {details}. Do not retry without a rule/config change.",
+            block_kind="confirmed_bad",
+        )
 
     for resource, rule in validated_allow:
         taint.escalate_sensitivity(rule.sensitivity)
@@ -218,6 +230,7 @@ def decide_access(
         reason=(
             f"Blocked: {names} has no validated, explicitly-allowed rule, and this session "
             f"has already touched sensitive/untrusted data (trust={taint.trust}, "
-            f"sensitivity={taint.sensitivity})."
+            f"sensitivity={taint.sensitivity}). Wait for review, then retry."
         ),
+        block_kind="uncleared",
     )

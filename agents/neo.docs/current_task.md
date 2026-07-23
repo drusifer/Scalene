@@ -1,7 +1,29 @@
-**Status:** DONE — post-E15-close correction: generic protocol detection + file:// routing. `make test`: 396/396.
+**Status:** Phase 1 (E16) APPROVED. Starting Phase 2 (tagged accessible event log UI) next.
 **Assigned to:** Neo
 **Started:** 2026-07-22
-**Finished:** 2026-07-22
+**Finished:** 2026-07-22 (Phase 1)
+
+## Task Description (most recent): `*swe impl phase-1` — E16 retry guidance & audit-log foundation
+Full detail: `task.md` Sprint 10 Phase 1, `docs/ARCHITECTURE.md` §20.1/§20.3. `AccessDecision` gained `block_kind` ("confirmed_bad"/"uncleared"), set at `resource_verifier.decide_access`'s two real block-return sites, with matching retry-guidance text appended to `reason` inline (no new AccessDecision field for the text itself). `pre_tool_use` (`hook_adapter.py`) now writes an audit-log line on every call, allow or block, not just blocks — `tool_input` and `block_kind` included on every entry. `monitor_data.py`'s `BlockEvent` renamed to `ToolCallEvent` (new `event`/`block_kind`/`tool_input` fields, all defaulted so an old block-only audit-log line still parses). Added a real measured benchmark (`tests/test_performance.py::TestPreToolUseEveryCallAuditLogPerformance`) isolating the marginal cost of logging every allowed call — confirmed under the existing 15ms steady-state NFR, pointed at a tmp `audit_log_path` (unlike the pre-existing perf tests, which write into this repo's real `.scalene/audit.log` — flagged to Trin/Mouse as a pre-existing test-hygiene gap, not fixed here, out of this phase's scope).
+
+**Self-correction caught by Trin's UAT, not by me**: I speculatively added `AccessDecision.resources` for a future phase's benefit, but nothing consumes it and it contradicts my own (Morpheus) architecture note that the dashboard re-derives targets via `identify_targets()` directly — removed after Trin flagged it. `make test`: 402/402.
+
+## Progress
+- [x] `block_kind` + retry-guidance text at both `decide_access` block-return sites, with 2 new tests.
+- [x] `pre_tool_use` logs every call; 3 new/changed tests in `test_hook_adapter.py` (one repurposed from "no audit entry when allowed" to "allow entry IS appended").
+- [x] `ToolCallEvent` rename + backward-compat fields in `monitor_data.py`, `monitor_app.py` updated, tests updated (2 new: allow-events-read, old-format-still-parses).
+- [x] Real measured benchmark added and passing.
+- [x] Trin's dead-field catch applied; `make test`: 402/402.
+- [x] Morpheus review APPROVED. `task.md` Phase 1 marked PASSED.
+
+## Blockers
+None.
+
+## Oracle Consultations
+None yet.
+
+---
+*Last updated: 2026-07-22*
 
 ## Task Description (most recent): direct user session, post-E15-close — generic URL protocol detection, `file://` → FileScanner
 User questioned STORY-1504's `scanner: secrets` filter, which surfaced a broader design gap: `URLScanner` only matched `http(s)://`, and no scanner recognized `file://` URIs at all. Broadened `_URL_FALLBACK_RE` to any URI scheme (`_URI_SCHEME` grammar), added `_FILE_URI_RE` to `FileScanner.identify()` so `file://` is recognized as a file resource regardless of which tool/field it appears in, and removed the now-redundant `scanner: secrets` filter from the auto-created project-folder rule (the anchored absolute-path pattern was already sufficient — general principle: don't require a rule author to remember scanner registry names).

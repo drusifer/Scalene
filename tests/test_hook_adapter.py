@@ -208,7 +208,35 @@ class TestPreToolUseAuditLog(unittest.TestCase):
             self.assertEqual(entry["event"], "block")
             self.assertTrue(entry["reason"])
 
-    def test_no_audit_log_entry_when_allowed(self):
+    def test_block_event_carries_block_kind_and_tool_input(self):
+        # docs/ARCHITECTURE.md sec20.1/20.4 (STORY-1601/1604): the dashboard
+        # reconstructs matched scanner(s)/target(s) from the real tool_input,
+        # and the log's tag rendering needs block_kind without re-running
+        # decide_access.
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            audit_log = Path(tmp) / "audit.log"
+            taint = TaintState(session_id="s1", trust="low", state_dir=state_dir)
+            taint.save()
+            config = PolicyConfig()
+            tool_input = {"url": "https://unseen.example.com/x"}
+
+            pre_tool_use(
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": tool_input},
+                config,
+                state_dir=state_dir,
+                cache_path=state_dir / "cache.json",
+                audit_log_path=audit_log,
+            )
+            entry = json.loads(audit_log.read_text().strip())
+            self.assertEqual(entry["block_kind"], "uncleared")
+            self.assertEqual(entry["tool_input"], tool_input)
+
+    def test_allow_event_appended_to_audit_log(self):
+        # docs/ARCHITECTURE.md sec20.3 (STORY-1603, corrected 2026-07-22 per
+        # direct user correction of an earlier, incorrectly-scoped-down
+        # draft): every call is logged, not only blocks, so scg monitor's
+        # event panel is a genuine tool-call stream.
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             audit_log = Path(tmp) / "audit.log"
@@ -221,7 +249,10 @@ class TestPreToolUseAuditLog(unittest.TestCase):
                 cache_path=state_dir / "cache.json",
                 audit_log_path=audit_log,
             )
-            self.assertFalse(audit_log.exists())
+            entry = json.loads(audit_log.read_text().strip())
+            self.assertEqual(entry["event"], "allow")
+            self.assertEqual(entry["tool_name"], "Bash")
+            self.assertIsNone(entry["block_kind"])
 
 
 class TestPostToolUseIsANoOp(unittest.TestCase):

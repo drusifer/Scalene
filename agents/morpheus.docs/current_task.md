@@ -1,7 +1,14 @@
 # Current Task
 
-**Status:** `*lead review phase-4` (corrected mechanism) — APPROVED. All 4 phases done, Phase 4 gated twice. Handed to Oracle for groom.
-**Assigned to:** N/A (Oracle next)
+**Status:** `*lead arch E16` — `docs/ARCHITECTURE.md` §20 written. Handed to Smith for Gate 2.
+**Assigned to:** Smith (Gate 2) next
+**Started:** 2026-07-22
+**Completed:** 2026-07-22
+
+## Task Description (most recent): `*lead arch E16` — Interactive Onboarding Dashboard & Non-Blocking Review Loop
+Full design: `docs/ARCHITECTURE.md` §20. Summary in `context.md` above. Key outcome: STORY-1606 (read-only-to-agent boundary) is mostly already satisfied by existing `OSError` handling in `onboard.py`, needs docs + a Tank verification task, not new production code. STORY-1603 scope corrected down to the block-events log that actually exists (flagged, not silently narrowed). Handed to Smith Gate 2.
+
+## Task Description (prior): `*lead review phase-4` (corrected mechanism) — APPROVED. All 4 phases done, Phase 4 gated twice. Handed to Oracle for groom.
 **Started:** 2026-07-21
 **Completed:** 2026-07-21
 

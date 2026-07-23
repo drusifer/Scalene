@@ -1,7 +1,21 @@
 # Current Task
 
-**Status:** `*user test E15` sprint-close end-to-end — PASSED. Handed to all for retro.
+**Status:** `*user review` Gate 1 — E16 — APPROVED with notes. Handed to Morpheus for architecture.
 **Assigned to:** Smith
+**Started:** 2026-07-22
+**Completed:** 2026-07-22
+
+## Task Description (most recent): `*user review` Gate 1 — E16 (Interactive Onboarding Dashboard & Non-Blocking Review Loop)
+Full review: `agents/smith.docs/e16_gate1_review.md`. Cypher formalized my own consult into 6 testable stories — approved, both hard concerns I raised in the consult (hook-pause feasibility, undefined "dirty flag") confirmed resolved by construction in the story ACs themselves. 2 non-blocking notes carried to Gate 2: (1) STORY-1604's dashboard needs an explicit attention signal (bell/title-change), not just silent availability — Nielsen #1, same failure shape as this project's prior focus-loss/cursor-desync bugs; (2) multiple simultaneous block events unaddressed, architecture-shaped. Also carried forward Oracle's 2026-07-15 lesson ("row-content check is not a rendering check") as a mandatory real-screenshot UAT standard for STORY-1603/1604. Hard-requirement watch-items for Gate 2: STORY-1606's concrete read-only-boundary mechanism, and whichever attention-signal design Morpheus picks.
+
+## Task Description (prior): `*user consult` — elaborate onboarding TUI / pause-and-await hook — feedback given, recommended routing to Cypher for epic scoping.
+**Started:** 2026-07-22
+**Completed:** 2026-07-22 (consult only — no gate to close, nothing implemented)
+
+## Task Description (most recent): `*user consult` — elaborate scg TUI, hook pauses on violation for interactive Verify/Allow/Deny
+Full review: `agents/smith.docs/e16_onboarding_tui_consult.md`. Grounded in real code before answering (`hook_adapter.py`, `monitor_app.py`/`monitor_data.py`, `policy_config.py`, `scan_cache.py`) rather than the proposal alone. Praised the pre-filled-form-from-real-call idea (closes my 2026-07-09 onboarding-discoverability gap) and the default-Deny/Allow-gated-on-Verify flow (Nielsen #5). Flagged hard: this reverses sec15's deliberate removal of an in-flight awaiting-decision hook state, and the whole design rests on an unverified claim about Claude Code's real `PreToolUse` hook timeout — Morpheus must live-verify that first, same standard as Tank's URLhaus check last sprint. Also flagged color-only tagging (fails my own accessibility standard) and an undefined "dirty flag" term (same failure shape as the trust=trusted bug). Recommended Cypher scope this as a real epic rather than deciding here.
+
+## Task Description (prior): `*user test E15` sprint-close end-to-end — PASSED. Handed to all for retro.
 **Started:** 2026-07-21
 **Completed:** 2026-07-21
 

@@ -502,3 +502,91 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 - No Tank phase in the Sprint 8 sense (deploy/CI) — but Phase 3 has a **required Tank review task** (network dependency), sequenced last within that phase per standing protocol, same as any sprint introducing new external service calls.
 - Sequencing (1→2→3→4) follows story order, not a hard technical dependency beyond Phase 1's shared `PolicyConfig` fields — if re-planning becomes useful mid-sprint (e.g. Phase 3's Tank review takes longer than expected), Phases 2 and 4 have no dependency on Phase 3 and could reorder ahead of it without disruption. Flagging this now so a re-sequence isn't treated as a plan failure if it happens.
 - Carried, not part of this sprint: STORY-1405 (reputation-drives-decision), STORY-1406 (post-call scanning), Smith's `scg onboard` CLI UX findings (`agents/smith.docs/e14_cli_ux_review.md`), and `docs/ARCHITECTURE.md` §5's stale diagram — all still in Cypher's/Morpheus's backlogs, none silently folded into E15's scope.
+
+# Sprint 10
+
+**Owner:** Mouse
+**Status:** Planned 2026-07-22 — Cypher stories, Smith Gate 1, Morpheus architecture (§20), Smith Gate 2 all passed same day, including one direct mid-planning user correction (STORY-1603 restored to full-call-log scope after the team incorrectly conflated scan cost with log-append cost). Pending Morpheus's plan review before Phase 1 starts.
+**Source:** `docs/USER_STORIES.md` E16 (STORY-1601-1606) + `docs/ARCHITECTURE.md` §20 (Morpheus's `*lead arch E16`, 2026-07-22) + Smith's Gate 1/2 reviews (`agents/smith.docs/e16_gate1_review.md`/`e16_gate2_review.md`)
+**Scope:** Extends `scg monitor` into an interactive onboarding surface — differentiated retry guidance on blocked calls, a full tool-call log (not just blocks) with accessible tags, a live per-scanner activity panel, a Verify/Allow/Deny review dashboard on block events (default Deny, Allow gated on Verify, pre-filled from the real tool-call JSON), and a read-only-to-the-agent policy-file boundary. The hook itself stays fully synchronous throughout — no pause/await mechanism anywhere in this sprint.
+
+6 phases. Phase 1 is a hard prerequisite for Phases 2 and 4 (both consume the audit-log schema it establishes). Phases 3 and 6 have no real dependency on anything but Phase 1's shared files and could run in a different order without disruption.
+
+## Phase 1 — Retry Guidance & Audit-Log Foundation
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing. No Smith gate — no user-visible surface yet, this phase only changes internal data (`AccessDecision`, the audit-log schema).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `AccessDecision` gains `block_kind: str \| None` (`"confirmed_bad"` \| `"uncleared"` \| `None`), set at `decide_access`'s two existing block-return sites using those sites' own real local variable names. Each block `reason` gets an explicit retry-guidance suffix matching its `block_kind`. | §20.1, STORY-1601 |
+| 1.2 | `pre_tool_use` logs every call, not only blocks — `_append_audit_log` runs on the `allowed` branch too (`"event": "allow"`), reusing one `identify_targets`-style traversal (already computed for the access decision) so an allow entry can still carry which resource(s)/scanner(s) were touched. Block entries additionally carry `block_kind` and the real `tool_input`. | §20.1, §20.3, §20.4, STORY-1601, STORY-1603 |
+| 1.3 | `monitor_data.py`'s `BlockEvent`/`AuditTail` generalize to a `ToolCallEvent` covering both allow and block rows, backward-compatible with any pre-existing block-only audit-log lines (missing `block_kind`/`tool_input` on old lines doesn't crash the reader). | §20.3, STORY-1603 |
+
+**Exit criteria — PASSED (2026-07-22):** Trin UAT — distinguishably-worded `reason` strings confirmed for both `uncleared` and `confirmed_bad` paths; a real allowed call now produces an audit-log line where none existed before; an old-format (block-only) audit-log line still parses without crashing. Real measured benchmark (`TestPreToolUseEveryCallAuditLogPerformance`) confirms logging every allowed call stays under the 15ms steady-state budget, isolated from resource-identification/scan cost. **Trin found and fixed a real issue during UAT**: `AccessDecision.resources`, added speculatively in this phase, was never consumed anywhere and contradicted §20.4's own design (the dashboard re-derives targets via `identify_targets()` directly) — removed. Morpheus review confirmed `block_kind`'s two values are exhaustive by direct trace of `decide_access`'s control flow. `make test`: 402/402.
+
+## Phase 2 — Tagged, Accessible Event Log UI
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: Phase 1 (consumes `ToolCallEvent`/`block_kind`).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 2.1 | `#events` panel renders every `ToolCallEvent` (allow and block), with a short text tag per row (e.g. `[ALLOW]`/`[WAIT]`/`[DENY]`) plus color layered on top as a secondary cue — never color alone. | §20.3, STORY-1603 |
+| 2.2 | Real rendered-screenshot UAT (per Oracle's 2026-07-15 lesson, carried forward at Smith's Gate 1) at a realistic terminal width, and a second pass with ANSI color stripped, confirming every row is still fully legible without color. | §20.3, STORY-1603 |
+
+**Exit criteria — mandatory Smith gate — PASSED (2026-07-23):** `#events` gained a Tag column ([ALLOW]/[DENY]/[WAIT], generic [BLOCK] fallback for pre-sec20 audit lines), color layered on top via Rich `Text` styles. Trin independently verified the color claim (not just text) by inspecting `.style` directly — 3 distinct real styles, not assumed. Smith drove the real `MonitorApp` herself (headless, real `export_screenshot()`), confirming all 3 tags render as plain `<text>`-node content (which carries no color info) while 11 distinct fill colors exist separately in the same SVG — color is additive, not load-bearing. `make test`: 408/408.
+
+## Phase 3 — Per-Scanner Activity Panel
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new (independent of Phases 1-2's files) — sequenced here per story order, not a real dependency.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 3.1 | `MonitorApp` gains a `policy_path` parameter, loads a `PolicyConfig` once at startup (defaulting to the 2 builtins when no policy file exists, same as every other `PolicyConfig` consumer). New `monitor_data.discover_scanner_activity(cache_path, scanners)` groups `ScanCache.all_entries()` by scanner-name prefix, `busy` = an unexpired `pending_since` for that scanner. | §20.2, STORY-1602 |
+| 3.2 | New panel row per configured scanner (name + idle/busy), updated on the existing 0.5s poll — no new polling mechanism. | §20.2, STORY-1602 |
+
+**Exit criteria — PASSED (2026-07-23):** `MonitorApp` loads `PolicyConfig` at startup (same from_yaml-or-bare-default pattern as `cli.py`/`onboard.py`). New Scanners panel, one row per configured scanner. Trin independently verified the full reserve→complete lifecycle (busy on `try_reserve`, idle again after `put()` — not just the trigger direction) and confirmed a config-declared scanner (E15's `DummyScanner` fixture) appears with zero monitor code changes. `make test`: 415/415.
+
+## Phase 4 — Review Queue & Dashboard (read side)
+*Chain: Neo → Trin → Morpheus*
+*Depends on: Phase 1 (`tool_input`/`block_kind` on block entries).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 4.1 | In-memory `_pending_reviews` FIFO queue on `MonitorApp`, populated from new block events (via `AuditTail`, same mechanism as today). Not a live gate — the hook already resolved/denied the call synchronously before the TUI ever sees it, so an unreviewed entry just stays queued, no timeout logic. | §20.4, STORY-1604 |
+| 4.2 | Dashboard view for the oldest queued entry: tool name, real `tool_input` JSON, matched scanner(s)/target(s) via `onboard.identify_targets()` (the same function `scg onboard` already uses — no second identification mechanism), each target's onboarded/validated status and `ScanCache.is_fresh()` freshness. | §20.4, STORY-1604 |
+| 4.3 | **Verify** action: runs `scanner_obj.scan(resource)` + `ScanCache(cache_path).put(...)` per listed target (the same two calls `onboard._onboard_resource` already makes, invoked directly — no rule written yet), with a visible in-progress indicator per target while running (reuses Phase 3's activity signal where applicable). Per-target Verify-completion tracked on the queue entry. | §20.4, STORY-1604 |
+
+**Exit criteria — PASSED (2026-07-23):** `_pending_reviews` FIFO queue + `ReviewScreen` ('r' keybinding) built. Trin independently verified 2 edge cases beyond Neo's own tests: pressing 'r' with an empty queue safely no-ops (no crash, no screen pushed), and escape correctly dismisses back to the main screen. Verify runs a real scan and writes a real `ScanCache` entry (confirmed directly, not simulated). `make test`: 427/427.
+
+## Phase 5 — Dashboard Actions: Allow/Deny + Attention Signal
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: Phase 4 (dashboard must exist).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 5.1 | **Deny** action (pre-selected default) closes the review with no write. **Allow is disabled/unreachable until every listed target's Verify has completed** (Phase 4.3's per-target tracking). | §20.4, STORY-1604 |
+| 5.2 | Allow (post-Verify) opens a form pre-filled from the real `tool_input`, default `pattern = re.escape(resource.identity)` (`onboard.py`'s existing default, reused verbatim — no new derivation), `sensitivity`/`mode` fields. Submitting constructs a `PolicyRule` and writes it via `onboard.write_rule` (renamed from `_write_rule` — a second real caller now exists outside `onboard.py`). | §20.5, STORY-1605 |
+| 5.3 | Attention signal on any new queued block event: `self.bell()` + a pending-count in `self.title`. **Verify against the actually-installed Textual version's real API during implementation, not assumed from the architecture doc.** | §20.4, STORY-1604 |
+
+**Exit criteria — mandatory Smith gate — PASSED (2026-07-23):** Full end-to-end flow (block → dashboard → Verify → Allow → real retry now succeeds) verified for real via `test_allow_writes_a_real_rule_and_a_retry_of_the_same_call_is_then_allowed` — real Textual `Pilot` clicks, real `pre_tool_use` calls before/after, real `PolicyConfig.from_yaml` reload, nothing mocked. Trin added 2 more real adversarial tests: `mode=block` override, multi-target Allow. Allow confirmed genuinely `disabled=True` (Textual's real state) until Verify completes. Real test-infrastructure bug found and fixed during this phase (default 80×24 headless viewport clipped the Allow form off-screen — a test-sizing fix, not a product bug). `make test`: 436/436, confirmed clean across 2 separate full runs.
+
+## Phase 6 — Read-Only Policy Boundary (scope reduced mid-phase, 2026-07-23)
+*Chain: Neo → Trin*
+*Depends on: nothing (independent of every other phase's files).*
+
+**Corrected mid-phase, direct user decision, before task 6.3 started**: task 6.3 (Tank's Docker/OS-mount live-verification) is shelved — Tank's own live-verification standard doesn't extend to infrastructure this project doesn't control or deploy, and an unenforced mount convention doesn't stop an agent from tampering with whatever registers the hook in the first place. A replacement mechanism (hash-snapshot detect-and-restore, fully in application code — see `docs/ARCHITECTURE.md` §20.6) was designed but **backlogged, not built this sprint**, per direct user decision. Phase 6 closes with only tasks 6.1/6.2.
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 6.1 | Trin: test confirming `onboard.write_rule`'s existing `OSError`/`PermissionError` handling already produces a clean `OnboardError` (not a raw traceback) against a real read-only policy file — verifying existing behavior, not writing new production code. | §20.6, STORY-1606 |
+| 6.2 | Operator documentation (`docs/USER_GUIDE.md`) describing the recommended shape: policy/audit-log files read-only wherever the agent's own tool execution runs, `scg monitor`/the TUI run outside that boundary with normal write access. | §20.6, STORY-1606 |
+| ~~6.3~~ | ~~Tank: live-verify a read-only bind mount on a reference environment.~~ **Shelved 2026-07-23** — see correction note above. | §20.6, STORY-1606 |
+
+**Exit criteria — PASSED with reduced scope (2026-07-23):** Trin's tests pass against real chmod'd-read-only files (a policy file and a read-only directory, not mocked) — `tests/test_onboard.py::TestWriteRuleReadOnlyPolicyFile`. `docs/USER_GUIDE.md` gained a Deployment section. `make test`: 438/438. STORY-1606's full original AC (detect-and-restore, or OS-level enforcement) is carried to Cypher's backlog, not silently dropped — see the story's own mechanism note in `docs/USER_STORIES.md`.
+
+## Notes
+- Phase ordering (1→2→3→4→5→6) follows story order and Phase 1's shared prerequisite; Phase 3 and Phase 6 have no real dependency on anything past Phase 1 and could reorder without disruption if useful mid-sprint.
+- Phase 2 and Phase 5 both carry mandatory Smith gates (accessibility, and the epic's core interactive flow respectively) — same "no skipping gates" rule as every prior sprint.
+- Mid-planning correction, recorded here for the record: STORY-1603 was first scoped down to block-events-only over an (incorrect) hot-path cost concern, then corrected back to full scope by the user directly — see `docs/ARCHITECTURE.md` §20.3's superseded-decision note. Phase 1/2 tasks above already reflect the corrected, full scope.
+- Carried, not part of this sprint: STORY-1603's original over-cautious framing is resolved, but the underlying "measure hot-path changes for real" discipline stays a standing rule, not just this phase's exit criterion. `docs/ARCHITECTURE.md` §5's stale diagram (recurring, still not fixed) and STORY-1405/1406 remain in the backlog, untouched by E16.
+- **New backlog item from Phase 6 (2026-07-23)**: STORY-1606's hash-snapshot detect-and-restore mechanism (policy-file tamper detection, operator-only notification via `scg monitor`'s attention signal) is fully designed in `docs/ARCHITECTURE.md` §20.6 but not built — ready to pick up as its own future phase/sprint whenever prioritized.

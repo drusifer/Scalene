@@ -210,7 +210,7 @@ class PolicyConfig:
         )
 
 
-# sec18.4: shared with onboard.py's _write_rule(), so a later, more specific
+# sec18.4: shared with onboard.py's write_rule(), so a later, more specific
 # onboarded rule can be inserted ahead of this one rather than being
 # silently shadowed by it forever (see write_default_project_policy's
 # docstring for why order matters here).
@@ -235,7 +235,7 @@ def write_default_project_policy(path: Path, project_root: Path) -> None:
     (matches almost anything under the project root) -- if it's ever first
     in the file and a later, more specific `scg onboard`-authored rule for
     the same path is simply appended after it, the specific rule would be
-    silently unreachable forever. `onboard.py::_write_rule()` accounts for
+    silently unreachable forever. `onboard.py::write_rule()` accounts for
     this by inserting new rules *before* this one, not after -- see there.
 
     No `scanner:` filter (2026-07-22, direct user request): the pattern is

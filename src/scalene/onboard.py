@@ -86,7 +86,7 @@ from .scanner import SCANNERS, Resource, Scanner, ScannerMachineryError
 
 DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
 
-_BLOCKED_LABELS = ("sensitive", "untrusted")
+BLOCKED_LABELS = ("sensitive", "untrusted")
 # 'mask' is deliberately excluded -- see onboard()'s docstring/comment for why.
 _ONBOARD_VALID_MODES = ("allow", "block")
 
@@ -169,7 +169,11 @@ def load_tool_call(call_path: str | None = None) -> tuple[str, dict]:
     return payload["tool_name"], payload.get("tool_input", {})
 
 
-def _write_rule(policy_path: Path, rule: PolicyRule) -> None:
+def write_rule(policy_path: Path, rule: PolicyRule) -> None:
+    """docs/ARCHITECTURE.md sec20.5 (STORY-1605): renamed from `_write_rule`
+    (2026-07-23) -- `monitor_app.ReviewScreen`'s Allow action is now a
+    second real caller outside this module, so the underscore-private
+    convention no longer described its actual usage."""
     if policy_path.exists():
         try:
             data = yaml.safe_load(policy_path.read_text())
@@ -286,7 +290,7 @@ def _onboard_resource(
     except ScannerMachineryError as exc:
         raise OnboardError(f"Onboarding blocked: scan machinery failed — {exc}") from exc
 
-    if result.label in _BLOCKED_LABELS and mode != "block":
+    if result.label in BLOCKED_LABELS and mode != "block":
         raise OnboardError(
             f"Onboarding blocked: {resource.scanner_name} check failed — {result.reason}. "
             f"(Use --mode block to explicitly declare this resource blocked based on this finding.)"
@@ -309,7 +313,7 @@ def _onboard_resource(
     except ScanCacheError as exc:
         raise OnboardError(f"Onboarding blocked: could not write to the scan cache — {exc}") from exc
 
-    _write_rule(policy_path, rule)
+    write_rule(policy_path, rule)
 
     return {"resource": resource, "label": result.label, "reputation": result.reputation, "rule": rule}
 

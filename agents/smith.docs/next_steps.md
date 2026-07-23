@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 9 (E15) fully closed on my end — sprint-close e2e test passed, posted `*sprint retro` (2026-07-21). On re-invocation: post my own retro entry if not already done as part of the all-persona retro round.
+E16 Gate 1 approved with notes (2026-07-22), handed to Morpheus (`*lead arch E16`). Full review: `agents/smith.docs/e16_gate1_review.md`. On re-invocation: do Gate 2 (`*user feedback`) on Morpheus's architecture — verify my 2 carried notes landed (dashboard attention signal, STORY-1606's concrete read-only mechanism), same weight as prior hard-requirement carries (e.g. STORY-1504's discoverability precedent).
 
 ## Waiting On
-Other personas' retro posts, then Cypher's `*pm launch`.
+Morpheus's E16 architecture, then my own Gate 2.
 
 ## Retro input for this sprint (when `*sprint retro` happens)
 Two real findings this sprint, both from actually running things rather than trusting a design doc or a transcript: (1) my own Phase 4 gate caught the `trust=trusted` wording naming a value that doesn't exist in this project's vocabulary; (2) I was corrected twice more this same session for reaching for ad-hoc bash (`echo | python -m scalene.cli ...`) instead of writing a real test immediately — even after already having this exact standing feedback memory from two prior sessions. Worth naming plainly in retro: knowing the rule isn't the same as applying it under time pressure mid-gate-cycle: the trigger should be "I want to verify X" → write the test, not "let me just quickly check."

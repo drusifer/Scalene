@@ -208,3 +208,39 @@ When adding a new rule/config entry that will be written to a file *before* any 
 
 ### References
 - **Files:** `src/scalene/onboard.py` (`_write_rule()`'s insertion-before-default logic), `src/scalene/policy_config.py` (`PROJECT_FOLDER_DEFAULT_DESCRIPTION`, `write_default_project_policy()`), `tests/test_onboard.py` (`test_onboarded_rule_is_inserted_before_the_project_folder_default_not_after`, `test_multiple_onboards_after_the_default_all_stay_ahead_of_it_in_order`)
+
+---
+
+## [2026-07-23] Sprint 10: Two Different Operations Can Share an NFR Concern Only If They Share a Cost Class
+
+> **Tags:** #Morpheus #Neo #Performance #Architecture
+
+### Context
+Morpheus's first-pass E16 architecture (§20.3) scoped STORY-1603's tool-call log down to block-events-only, reasoning that logging every allowed call too would add "unconditional new hot-path I/O" comparable to the measured first-sighting scan-spawn cost (§13.3, ~6.6ms avg — the reason NFR-Perf-FirstSighting exists as its own budget, separate from the steady-state one). The user corrected this directly: a single buffered `open().write()` audit-log append and a subprocess spawn for a real scan are not the same cost class at all — the append is orders of magnitude cheaper, and conflating "this is new I/O on the hot path" with "this is exactly as risky as the thing we already measured" produced an over-cautious, incorrect scope cut.
+
+### The Issue
+The reasoning pattern that failed: treating "adds cost to the hot path" as one undifferentiated risk bucket, instead of asking what *kind* of cost the new operation actually is. This project already has a real, measured number for subprocess-spawn cost (§13.3) — reusing that number's *weight* to justify caution about an unrelated, much cheaper operation (a file append, no subprocess, no scan) borrowed the wrong precedent. The fix, once corrected, was straightforward: restore full scope, add a real isolated benchmark for the *actual* new operation (`TestPreToolUseEveryCallAuditLogPerformance`) rather than either assuming it's fine or assuming it's as expensive as the operation that happened to be measured before.
+
+### The Rule (The "Lesson")
+When flagging a new hot-path addition against an existing NFR, name the *specific* operation (subprocess spawn? file append? network call? in-memory computation?) and confirm it's actually the same cost class as whatever was previously measured — don't let "this is new I/O" alone trigger the same caution level as a previously-measured, structurally different cost. If a new operation's cost class is genuinely uncertain, benchmark that operation specifically (cheap, appropriate to what's actually being risked) rather than either skipping verification or over-applying a strict standard borrowed from a different operation's measured cost.
+
+### References
+- **Files:** `docs/ARCHITECTURE.md` §20.3 (both the superseded and corrected decision, recorded in place), `tests/test_performance.py` (`TestPreToolUseEveryCallAuditLogPerformance`), `src/scalene/hook_adapter.py` (`pre_tool_use`'s unconditional `_append_audit_log` call)
+
+---
+
+## [2026-07-23] Sprint 10: A Simulated UI Click at an Off-Screen Widget Region Is a Silent No-Op, Not an Error
+
+> **Tags:** #Neo #Trin #Testing #Textual
+
+### Context
+Two new Textual `Pilot`-driven tests for E16's Allow/Deny dashboard (`tests/test_monitor_app.py`) failed with no traceback and no obvious cause: `pilot.click()` on a real button, inside a container just made visible (`display = True`) in the same screen, appeared to have no effect — the button's own handler never ran. Root-caused by reading Textual's own `screen.py` (`Screen.dismiss()` schedules its result callback via `requester.call_next(...)`, confirming that was a real, separate, correctly-fixed timing gap) and then, once that fix alone didn't resolve it, by reasoning about layout: the default 80×24 headless test terminal size was too short to fit the full `ReviewScreen` composition (Header, 2 static rows, a `DataTable`, a button row, and the newly-revealed multi-widget Allow form) — the form was rendered *below the visible viewport*, so a click computed against its widget region landed off-screen and simply did nothing.
+
+### The Issue
+An off-screen or clipped widget doesn't raise on `pilot.click()` — Textual resolves the click to real screen coordinates and dispatches whatever's there (or nothing), which looks identical to "the click fired but the handler had no effect" from the test's side. This is a distinct failure shape from Oracle's existing 2026-07-15 lesson ("a row-content check is not a rendering check," about DataTable column truncation) — that one was about *content* being unreadable once rendered; this one is about a widget not being reachable by simulated interaction at all once it's outside the rendered viewport. Both share the same root fix category (a real, sized render — `size=(w, h)` on `run_test()`/checking the actual screenshot — beats reasoning about the DOM tree in the abstract).
+
+### The Rule (The "Lesson")
+When a `Pilot`-driven interaction test on a multi-widget screen doesn't behave as expected and there's no traceback, check the test's terminal size against the screen's real composed height before assuming the bug is in application logic (event scheduling, message handlers, state) — a taller `run_test(size=(w, h))` is a one-line fix for an entire class of "click did nothing" failures that look like deeper bugs. Conversely, once a genuine scheduling gap is found (like `dismiss()`'s `call_next`), fix that too rather than assuming a single explanation covers every symptom — this session had both causes stacked in the same failure.
+
+### References
+- **Files:** `tests/test_monitor_app.py` (`test_allow_writes_a_real_rule_and_a_retry_of_the_same_call_is_then_allowed`, `test_bad_finding_blocks_allow_unless_mode_is_block` — both fixed with `size=(100, 50)`), `.venv/lib/python3.13/site-packages/textual/screen.py` (`Screen.dismiss()`, `ResultCallback.__call__`)

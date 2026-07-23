@@ -1,7 +1,13 @@
 # Current Task
 
-**Status:** Sprint 9 (E15) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
+**Status:** Sprint 10 (E16) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
 **Assigned to:** Mouse
+**Started:** 2026-07-22
+
+## Task Description (most recent): `*sm plan sprint E16`
+6 phases from STORY-1601-1606 (`docs/USER_STORIES.md`) + `docs/ARCHITECTURE.md` §20. Phase 1 (retry guidance + audit-log schema) is a hard prerequisite for Phase 2 (tagged log UI) and Phase 4 (dashboard); Phase 3 (scanner activity) and Phase 6 (read-only boundary) are independent and could reorder without disruption. Two mandatory Smith gates: Phase 2 (accessibility — color-stripped render) and Phase 5 (the epic's core Verify/Allow/Deny flow, same weight as prior mandatory onboard-flow gates). Phase 6 has a required Tank task, same standing pattern as Sprint 9's Phase 3. Recorded the mid-planning STORY-1603 scope correction (block-only → full log, user-corrected a cost-conflation error) directly in `task.md`'s Notes so the phase history isn't silently rewritten. Handed to Morpheus (`*lead review sprint plan`).
+
+## Task Description (prior): Sprint 9 (E15) phase breakdown written to `task.md`. Handed to Morpheus for plan review.
 **Started:** 2026-07-21
 
 ## Task Description (most recent): `*sm plan sprint` (Sprint 9 / E15)

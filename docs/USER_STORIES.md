@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped and closed 2026-07-21, full formal cycle, 3 phases, 1 fix round; STORY-1406 remains flagged, not committed. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) shipped and closed 2026-07-21** — full formal cycle, 4 phases, Phase 4 gated twice after a direct mid-sprint user design correction (implicit in-memory rule replaced with a real on-disk one), 1 real infra finding from Tank (URLhaus's "no API key" premise was false, resolved with a real Auth-Key + env var). 389/389 tests.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped and closed 2026-07-21, full formal cycle, 3 phases, 1 fix round; STORY-1406 remains flagged, not committed. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) shipped and closed 2026-07-21** — full formal cycle, 4 phases, Phase 4 gated twice after a direct mid-sprint user design correction (implicit in-memory rule replaced with a real on-disk one), 1 real infra finding from Tank (URLhaus's "no API key" premise was false, resolved with a real Auth-Key + env var). 389/389 tests. **Sprint 10 (E16, Interactive Onboarding Dashboard & Non-Blocking Review Loop) shipped 2026-07-23** — full formal cycle, 6 phases, 2 mandatory Smith gates (accessibility, core interactive flow) both passed. Origin: direct user `*user consult` with Smith. One mid-planning correction (STORY-1603 restored to full-call-log scope after a cost-conflation error, direct user catch) and one mid-implementation correction (STORY-1606's OS-mount verification shelved and its replacement design backlogged, direct user decision) — both recorded, not silently absorbed. 439/439 tests.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -508,5 +508,84 @@ As a developer setting up Scalene on a new project, I want the project's own fol
 3. **Resolved**: URLhaus (abuse.ch) — though its "no API key" premise turned out false in practice (Tank's finding); resolved with a real, free Auth-Key via `SCALENE_URLHAUS_AUTH_KEY`.
 4. **Not resolved, deliberately carried** — still an open, separate backlog item (see Cypher's `next_steps.md`), not folded into E15.
 5. **Resolved, and changed mid-sprint**: originally an implicit rule keyed off `PolicyConfig.project_root`; corrected per direct user request to a real `rules:` entry written to a real `scalene_policy.yaml` on first run (`policy_config.write_default_project_policy()`), wherever `--policy-path` resolves to. No `scg init` command needed or added — `scalene-guard`'s own hot path creates the file on first use.
+
+---
+
+# Sprint 10
+
+## E16 — Interactive Onboarding Dashboard & Non-Blocking Review Loop
+
+**Origin:** Direct user `*user consult` (2026-07-22), fully worked through with Smith before being storied — see `agents/smith.docs/e16_onboarding_tui_consult.md` for the full exchange. The user wants onboarding to be "super easy" while allow-list decisions stay "plainly obvious," via an elaborate extension of the existing `scg monitor` TUI (E7/E10 Phase 5: `monitor_app.py`, `monitor_data.py`) run in a separate shell/process from the agent session. Two design questions Smith raised were resolved in the same consult, not left open here: (1) the hook stays fully synchronous — a block returns immediately with retry guidance in its existing `reason` field, instead of the hook process pausing to await a decision (this is why there is no STORY here changing `pre_tool_use`'s timing/contract); (2) "dirty" means validation-expired, which already exists as `ScanCache.is_fresh()` — no new cache concept needed, only a display gap to close.
+
+Deliberately NOT storied this epic, per the consult: enforcement inside third-party agent harnesses Scalene doesn't control (STORY-1606 covers only what Scalene's own setup can enforce); any change to `pre_tool_use`'s hook contract itself (none is needed).
+
+### STORY-1601
+As an agent operator, when a tool call is blocked, I want the block reason to tell me whether to wait-and-retry or not-retry-without-a-rule-change, so an agent doesn't spin-retry a call that was explicitly denied, and does know to retry once review completes.
+
+**Acceptance Criteria**
+- [x] A block on the `uncleared` path (`resource_verifier.py`'s `decide_access`: no matching rule yet, nothing confirmed wrong) produces a `reason` ending in explicit wait/retry guidance (e.g. "wait for review, then retry"). `AccessDecision.block_kind="uncleared"`, verified via `tests/test_resource_verifier.py::test_contaminated_context_unmatched_resource_is_uncleared_with_retry_guidance`.
+- [x] A block on the `confirmed_bad` path (a real scanner finding, or a rule explicitly setting a non-allow mode) produces a `reason` explicitly stating not to retry without a rule/config change. `block_kind="confirmed_bad"`, verified via `test_scanner_confirmed_bad_is_block_kind_confirmed_bad_with_no_retry_guidance`.
+- [x] No change to `pre_tool_use`'s contract, timing, or exit-code semantics — still fully synchronous, still resolved in one hook invocation, same as today. Confirmed by Phase 1's Morpheus review and the unchanged `SCALENE_BYPASS` short-circuit path.
+- [x] Verified for real: an agent reading only the `reason` text (not source code) can tell the two cases apart. Both test cases above assert on the literal `reason` string, not internal state.
+
+### STORY-1602
+As a developer watching `scg monitor`, I want to see each configured scanner and whether it currently has a resource pending verification, so I know a review is expected to resolve rather than wondering if anything is happening.
+
+**Acceptance Criteria**
+- [x] A new panel/row exists per configured scanner (from `PolicyConfig.scanners`, so it reflects config-driven registration from E15/STORY-1501, not a hardcoded list). Verified against a real config-declared scanner (E15's `DummyScanner` fixture), no monitor code change needed.
+- [x] Each row shows at least: scanner name, and idle/busy — busy meaning at least one real `ScanCache.pending_since` reservation for that scanner, not a simulated indicator. Trin independently verified the full reserve→complete lifecycle (busy on `try_reserve`, idle again after `put()`), not just the trigger direction.
+- [x] Updates on the existing 0.5s poll cycle (`POLL_INTERVAL_SECONDS`) — no new polling mechanism introduced. `refresh_scanner_activity()` is called from the same `poll_data()` as every other panel.
+
+### STORY-1603
+As a developer watching `scg monitor`, I want a log of every tool call (not just blocked ones), showing which rule/tag matched (if any) using both a color and a text/symbol marker, so I can scan for sensitive-call activity even without color (SSH sessions, monochrome terminals, colorblind users).
+
+**Acceptance Criteria**
+- [x] The log shows every tool call the hook evaluates, allowed or blocked — not only blocks (today's `#events` panel is block-only; this story generalizes it to the full stream, per direct user correction 2026-07-22 of an earlier, incorrectly-scoped-down draft — see `docs/ARCHITECTURE.md` §20.3). `pre_tool_use` writes an `"allow"` audit entry too now.
+- [x] Every log row shows a short text tag identifying its sensitivity/mode/outcome — not color alone. `[ALLOW]`/`[WAIT]`/`[DENY]`/`[BLOCK]` (old-format fallback).
+- [x] Color is layered on top of the text tag as a secondary cue, never the only signal. Trin independently verified 3 distinct real Rich styles via direct `.style` inspection.
+- [x] Verified for real in a color-stripped render (no ANSI color codes) that every row's information is still fully legible. Smith drove the real `MonitorApp` herself (real `export_screenshot()`), confirmed all 3 tags present in the color-stripped `<text>`-node extraction with 11 distinct fill colors existing separately in the same SVG.
+- [x] A real, measured benchmark confirms logging every call (not just blocks) doesn't regress the existing `<15ms` hot-path NFR (`docs/ARCHITECTURE.md` §13.3) — the added cost is a single buffered file append, not a scan/subprocess spawn, but this project measures rather than assumes the size of a hot-path change. `tests/test_performance.py::TestPreToolUseEveryCallAuditLogPerformance`.
+
+### STORY-1604
+As a developer, when a call is blocked and I have `scg monitor` open, I want a dashboard showing the tool being called, which scanner(s)/rule(s) matched, and each identified target's onboarded/validated status and freshness, so I have everything needed to decide without leaving the TUI.
+
+**Acceptance Criteria**
+- [x] A new block event (via the existing `AuditTail`/AuditLog mechanism) surfaces a dashboard view for that event: tool name, the real tool-call JSON, matched scanner(s), identified target(s). `MonitorApp._pending_reviews` + `ReviewScreen`, populated via `build_review_entry()`/`onboard.identify_targets()`.
+- [x] Each listed target shows its onboarded/validated status and a fresh/expired indicator — real `ScanCache.is_fresh()`, not simulated. `monitor_data.target_status()` — the `Resource`-reconstruction Smith flagged is a natural side effect of reusing `identify_targets()`, not a separate helper.
+- [x] Three actions are available: **Verify**, **Allow**, **Deny**. Default selection is **Deny**. Deny is pre-selected/always-valid; Allow requires Verify first (below).
+- [x] **Allow is disabled/unreachable until Verify has completed** for every listed target. Textual's real `disabled=True` state, confirmed by Trin, not just a visual hint.
+- [x] Verify triggers a real scan via the existing scan machinery, confirmed via `ScanCache` gaining a real entry (not simulated). **Reconciled 2026-07-23 (Oracle)**: "visible in-progress indicator per target" as literally worded would mean a per-row spinner inside the dashboard table; what shipped instead reuses STORY-1602's Scanners panel (busy/idle) as the in-progress signal during Verify — `action_verify()` wraps each scan in `try_reserve()`/`put()`, the same real reservation state the Scanners panel already reads. Satisfies the AC's real intent (the operator can see a scan is in flight) via the existing signal rather than a second, duplicate one, matching the architecture's own "reuses STORY-1602's activity signal" framing — not a silently-skipped requirement.
+
+### STORY-1605
+As a developer allowing a blocked call from the dashboard, I want a form showing the real tool-call JSON with the match-expression fields (tool, pattern, sensitivity, mode) pre-filled with tight, narrow defaults derived from the actual call, so I don't have to hand-author a `PolicyRule` from scratch.
+
+**Acceptance Criteria**
+- [x] Choosing Allow (post-Verify) opens a form populated from the real blocked `tool_input` for that event, not a blank form. Sensitivity/mode inputs pre-filled `public`/`allow`; the underlying `tool_input` JSON is shown above the form.
+- [x] The default `pattern` is derived as narrowly as E13/sec16's existing `scg onboard` flow already produces for the same target — not a wildcard, and not a new/separate default-derivation mechanism. `re.escape(resource.identity)`, reused verbatim from `onboard.py`.
+- [x] Submitting writes a real `PolicyRule` via the existing rule-authoring path (`onboard.py`'s writer) to the real on-disk policy file — no separate/parallel write mechanism. `onboard.write_rule` (renamed public from `_write_rule`, a second real caller now exists).
+- [x] Verified end-to-end: after submitting, retrying the exact same original call (per STORY-1601's retry guidance) is now allowed. `tests/test_monitor_app.py::test_allow_writes_a_real_rule_and_a_retry_of_the_same_call_is_then_allowed` — real Textual `Pilot` clicks, real `pre_tool_use` calls before/after, real `PolicyConfig.from_yaml` reload, nothing mocked. Smith's mandatory Phase 5 gate verified this directly.
+
+### STORY-1606 — shipped scope reduced 2026-07-23; hash-snapshot detection backlogged
+As an operator, I want Scalene to detect and revert any change to `scalene_policy.yaml` that didn't happen through its own legitimate write path, and record that it happened, so an agent that edits the policy file directly can't grant itself a rule it wasn't given.
+
+**Mechanism note (corrected 2026-07-23, direct user request, before Tank's originally-planned OS/mount verification task started)**: the original AC (read-only mount of the policy file inside the agent's own execution environment, verified by Tank across local/Docker/cloud targets) is shelved — Tank's own live-verification standard doesn't extend to infrastructure this project doesn't control or deploy, and as the user put it, an unenforced convention doesn't stop an agent from just editing whatever wrote the hook registration in the first place. Replacement design (hash-snapshot detect-and-restore, fully inside Scalene's own application code, no external infra dependency) recorded in `docs/ARCHITECTURE.md` §20.6 — **backlogged, not built this sprint**, per direct user decision, not silently dropped.
+
+**Shipped this sprint** (the still-true parts of the original write-up): `onboard.write_rule`'s existing `OSError`/`PermissionError` handling degrades cleanly against a real read-only policy file (Trin's tests, Phase 6.1), and `docs/USER_GUIDE.md` documents the read-only-mount deployment recommendation for operators who control their own deployment target (Phase 6.2). Both are real defense-in-depth, just not this story's full original AC.
+
+**Acceptance Criteria (backlogged — not this sprint)**
+- [ ] A policy file edited outside `write_rule`/`write_default_project_policy` is detected on the next load (hash mismatch against `.scalene/policy_snapshot.json`).
+- [ ] On detection: the on-disk file is restored to the last legitimately-written content, and the current call's access decision uses the trusted content even if the disk restore itself fails (e.g. a genuinely read-only mount).
+- [ ] A `policy_tamper` event is appended to `.scalene/audit.log` with enough detail to identify when it happened.
+- [ ] `scg monitor` surfaces a tamper event via the same attention signal as a queued review (bell + title) — operator-visible, not agent-visible.
+- [ ] A brand-new project (no snapshot yet, a real pre-existing policy file) bootstraps trusting current content as the baseline, not a false-positive tamper alarm on first load.
+- [ ] Explicitly out of scope, unchanged from the original AC: enforcing anything inside third-party agent harnesses Scalene doesn't control (an agent could still find and edit the hook registration itself, outside Scalene's own file-integrity boundary — this story protects the policy file specifically, not the whole trust chain).
+
+## Open Questions for Architecture (Morpheus) — E16
+
+1. **STORY-1606's concrete mechanism** — read-only bind mount? OS file permissions (chmod)? A separate writable staging file the TUI reconciles into the real policy file? The AC states the goal, not the design.
+2. **STORY-1604's dashboard state** — is a review keyed off the audit-log block event alone (stateless, TUI-side only, matching this project's "poll real files, don't invent a parallel store" precedent — sec15's `BlockEvent` docstring), or does it need new on-disk state so a second monitor instance or a restart mid-review doesn't lose track? Recommend stateless first; confirm or override.
+3. **STORY-1602's "busy" definition** — a simple boolean (≥1 `pending_since` reservation for that scanner) is recommended over any duration/progress tracking, unless Morpheus finds a concrete need.
+4. **STORY-1605's default-pattern reuse** — confirm reusing E13/sec16's existing onboard default-derivation mechanism exactly, rather than the form needing its own (e.g. broader-by-one-directory-level) default logic.
+5. Whether STORY-1602 and STORY-1604's freshness/activity displays share one `Resource`-reconstruction helper in `monitor_data.py`, or need separate ones — an implementation-shape call, not a product one.
 
 ---

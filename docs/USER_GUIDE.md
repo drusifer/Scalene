@@ -94,6 +94,14 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 Launches a live TUI over `.scalene/audit.log`, session trust/sensitivity tags, and the resource cache — see block events as they happen, and see what's actually in `.scalene/scan_cache.json` (resource, label, last-scanned time) without leaving the terminal. The resource panel reads the cache file directly — it's not a separate summary that could drift from what the live hook actually consults. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
 
+Every call is logged, not just blocked ones — the event log is a genuine tool-call stream, tagged `[ALLOW]`/`[WAIT]`/`[DENY]` (color is a secondary cue, never the only signal). A Scanners panel shows each configured scanner's real idle/busy state. Press **`r`** to open the review dashboard for the oldest unreviewed block: the real tool call, which scanner(s)/target(s) matched, and each target's onboarded/validated status and freshness. Three actions:
+
+- **Verify** — runs a real scan against every listed target (populates the scan cache; writes no rule).
+- **Allow** — only reachable once every target is Verified. Opens a form pre-filled from the real blocked call, with sensitivity/mode fields; submitting writes a real `rules:` entry, the same mechanism `scg onboard` uses. A subsequent retry of the identical original tool call is then allowed.
+- **Deny** — closes the review with no write.
+
+Pressing Escape instead of choosing an action just closes the dashboard for now — the review stays queued, it isn't a live gate on the original call (that was already resolved, synchronously, the moment it happened).
+
 ## The access-control model
 
 Scalene's core decision (docs/ARCHITECTURE.md §15) is whether a tool call is **permitted**, not whether its content gets scrubbed. Every session carries two independent, sticky tags, both clean at session start and only ever ratcheting toward more restrictive:
@@ -139,6 +147,16 @@ rules:
 **Trust vs. sensitivity are independent.** Trust answers "could this source cause the agent to do something malicious" (verified per exact resource — onboarding one path never vouches for a whole host). Sensitivity answers "what's the blast radius if something does go wrong," exactly three levels (`public`/`internal`/`restricted`), set per-rule.
 
 Full field-level class model (`PolicyConfig`, `PolicyRule`, `Scanner`, `TaintState`, `AccessDecision`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §15.
+
+## Deployment: keeping the policy file read-only from the agent
+
+`scalene_policy.yaml` and `.scalene/audit.log` are the rules constraining an agent session and the record of what it did — an agent that could edit either would defeat the point. Scalene's own code already fails cleanly if a write is attempted against a read-only policy file (a clear "Onboarding blocked: could not write \<path\> — \<reason\>" message, not a raw traceback), but Scalene doesn't control the sandbox an agent harness runs its tool calls in, so the actual read-only *enforcement* is an operator/deployment choice, not application code:
+
+- Run the agent's own tool execution (wherever `scalene-guard` is invoked as a hook) with `scalene_policy.yaml` and `.scalene/audit.log` mounted **read-only**.
+- Run `scg monitor` — and any `scg onboard` invocation you make yourself — **outside** that boundary, with normal write access to the same underlying files, so Allow/onboard decisions still work for you as the operator.
+- Concretely: a read-only bind mount (Docker: `-v $(pwd)/scalene_policy.yaml:/workspace/scalene_policy.yaml:ro`) or OS file permissions, depending on how the agent harness is deployed.
+
+This is the same class of isolation question as scanner-subprocess isolation (docs/ARCHITECTURE.md §6/§18.5) — the concrete mechanism depends on your environment (local/Docker/cloud), not something Scalene prescribes a single answer for.
 
 ## Troubleshooting
 
