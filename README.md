@@ -10,6 +10,7 @@ Scalene tracks trust and sensitivity during an agent session and blocks a tool c
 |---|---|
 | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Clean-clone walkthrough — see Scalene block, then explicitly clear, a real call in under 5 minutes |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Full CLI reference, policy config, onboarding workflow, troubleshooting |
+| [docs/MONITOR_GUIDE.md](docs/MONITOR_GUIDE.md) | `scg monitor` TUI walkthrough, with real screenshots |
 | [docs/BRD.md](docs/BRD.md) | Business requirements (source of truth for scope) |
 | [docs/PRD.md](docs/PRD.md) | Product requirements |
 | [docs/USER_STORIES.md](docs/USER_STORIES.md) | User stories + acceptance criteria |

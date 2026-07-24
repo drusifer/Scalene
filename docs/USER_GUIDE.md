@@ -92,15 +92,9 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 ### `scg monitor`
 
-Launches a live TUI over `.scalene/audit.log`, session trust/sensitivity tags, and the resource cache — see block events as they happen, and see what's actually in `.scalene/scan_cache.json` (resource, label, last-scanned time) without leaving the terminal. The resource panel reads the cache file directly — it's not a separate summary that could drift from what the live hook actually consults. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags yet.
+Launches a live TUI over `.scalene/audit.log`, session trust/sensitivity tags, and the resource cache — every tool call tagged and legible without color, a per-scanner activity panel, and an interactive Verify/Allow/Deny dashboard for reviewing and clearing blocked calls without leaving the terminal. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags.
 
-Every call is logged, not just blocked ones — the event log is a genuine tool-call stream, tagged `[ALLOW]`/`[WAIT]`/`[DENY]` (color is a secondary cue, never the only signal). A Scanners panel shows each configured scanner's real idle/busy state. Press **`r`** to open the review dashboard for the oldest unreviewed block: the real tool call, which scanner(s)/target(s) matched, and each target's onboarded/validated status and freshness. Three actions:
-
-- **Verify** — runs a real scan against every listed target (populates the scan cache; writes no rule).
-- **Allow** — only reachable once every target is Verified. Opens a form pre-filled from the real blocked call, with sensitivity/mode fields; submitting writes a real `rules:` entry, the same mechanism `scg onboard` uses. A subsequent retry of the identical original tool call is then allowed.
-- **Deny** — closes the review with no write.
-
-Pressing Escape instead of choosing an action just closes the dashboard for now — the review stays queued, it isn't a live gate on the original call (that was already resolved, synchronously, the moment it happened).
+**Full walkthrough with screenshots: [docs/MONITOR_GUIDE.md](MONITOR_GUIDE.md).**
 
 ## The access-control model
 
