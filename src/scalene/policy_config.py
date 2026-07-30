@@ -257,22 +257,21 @@ def write_default_project_policy(path: Path, project_root: Path) -> None:
     only its contents). pathspec's GitIgnoreSpec handles the "/etc" vs.
     false-positive "/etcetera" boundary correctly on its own.
 
-    `scanner: secrets` is now REQUIRED here (reverses the 2026-07-22 "no
-    scanner filter needed" decision): pattern syntax is scanner-owned as of
-    this same change, so without this filter `_find_matching_rule()` would
-    also hand this gitignore-shaped pattern to URLScanner's (or any other
-    scanner's) plain-regex match() for an unrelated resource -- "**" isn't
-    valid regex ("nothing to repeat"), so that would raise, not just fail
-    to match. Declaring the scanner this pattern's syntax actually belongs
-    to prevents that outright, and is more honest now that the pattern
-    isn't scanner-agnostic in the first place."""
+    Still no `scanner:` filter -- sec19.3's principle holds (a rule author
+    shouldn't need to remember/specify a scanner registry name when the
+    pattern alone is already selective). A gitignore-shaped pattern handed
+    to a different scanner's plain-regex match() (e.g. URLScanner, for an
+    unrelated URL resource) could raise ("**" isn't valid regex) rather
+    than just fail to match -- but Scanner.match()'s base regex path now
+    catches `re.error` and fails safe (no match), so this is handled at
+    the matcher level, not by re-adding a filter here for every scanner-
+    specific pattern syntax that comes along."""
     escaped_root = escape_gitignore_literal(str(project_root))
     rule = {
         "tool": ".*",
         "pattern": f"{escaped_root}\n{escaped_root}/**",
         "sensitivity": "internal",
         "mode": "allow",
-        "scanner": "secrets",
         "description": PROJECT_FOLDER_DEFAULT_DESCRIPTION,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

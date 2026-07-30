@@ -390,14 +390,14 @@ class TestWriteDefaultProjectPolicy(unittest.TestCase):
             rule = config.rules[0]
             self.assertEqual(rule.sensitivity, "internal")
             self.assertEqual(rule.mode, "allow")
-            # 2026-07-30 (reverses the 2026-07-22 decision): pattern syntax
-            # is now scanner-owned (gitignore for FileScanner, regex
-            # elsewhere) -- this rule's pattern must declare which one it
-            # is, or _find_matching_rule() would also hand it to another
-            # scanner's plain-regex match() for an unrelated resource,
-            # which would raise ("**" isn't valid regex), not just fail to
-            # match.
-            self.assertEqual(rule.scanner, "secrets")
+            # 2026-07-22 (sec19.3): no scanner filter needed -- a rule
+            # author shouldn't have to name a scanner when the pattern
+            # alone is already selective. Still true after 2026-07-30's
+            # gitignore-syntax pattern change: Scanner.match()'s base
+            # regex path now catches re.error and fails safe (no match)
+            # for a scanner this pattern wasn't meant for, so the filter
+            # was never re-needed for correctness.
+            self.assertEqual(rule.scanner, "")
 
     def test_written_rule_matches_a_file_under_the_project_root(self):
         with TemporaryDirectory() as tmp:

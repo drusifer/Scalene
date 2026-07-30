@@ -967,3 +967,64 @@ None, following the correction above — the hash-snapshot mechanism is pure app
 
 ### References
 `src/scalene/resource_verifier.py` (`AccessDecision.block_kind`, `decide_access`), `src/scalene/hook_adapter.py` (`_append_audit_log`'s new `block_kind`/`tool_input` fields), `src/scalene/monitor_app.py`/`monitor_data.py` (new scanner-activity panel, dashboard, review queue), `src/scalene/onboard.py` (`identify_targets`, `write_rule` renamed from `_write_rule`, `re.escape(resource.identity)` default pattern reused), `agents/smith.docs/e16_onboarding_tui_consult.md`, `agents/smith.docs/e16_gate1_review.md`.
+
+## 21. Post-E16 Correction (2026-07-30) — Scanner-Owned Matching, Persisted Review State, Monitor UX
+
+Fast-tracked directly with the user across a single session, dogfooding `scg monitor` after E16 shipped — no formal `*pm plan sprint` cycle; recorded here per this project's own convention (get real bugs/design fixed first, formalize the doc after).
+
+### 21.1 `Scanner.match()`: pattern matching becomes scanner-owned, not one generic regex check
+
+**Problem**: `resource_verifier._find_matching_rule()` applied a single `re.search(rule.pattern, resource.identity)` to every resource regardless of which scanner produced it — no awareness of how `FileScanner` vs. `URLScanner` shape their own identity strings, so the two could drift out of sync with no way for either to correct it.
+
+**Fix**: `Scanner` (`scanner.py`) becomes a real base class (was a structural `Protocol` — `load_scanners()`'s conformance check is still duck-typed `hasattr`, so a third-party scanner that doesn't inherit from it at all is unaffected) with a concrete default `match(rule, resource) -> bool` (plain regex, unchanged behavior). `FileScanner` overrides it to interpret `rule.pattern` as **gitignore syntax** (`pathspec.GitIgnoreSpec`, a real, familiar library/convention rather than a bespoke glob — user's own suggestion mid-session) instead of regex; `URLScanner` doesn't override it (URL identities aren't path-shaped). Compiled specs are `functools.lru_cache`d (hot path: every `pre_tool_use` call re-checks every rule against every resource).
+
+A directory-wide rule needs **2 gitignore lines** — the root path itself, and `root/**` for everything under it (plain gitignore semantics don't match a bare directory via `root/**` alone, only its contents) — this is what "match the whole project folder recursively" actually resolves to. `write_default_project_policy` (§18.4) is updated to this 2-line form.
+
+**Blast radius**:
+- `PolicyRule.pattern` is no longer regex-validated at construction time (`policy_config.py`) — its syntax is scanner-owned now, and a real gitignore pattern (a leading `**/`) is often not valid regex at all ("nothing to repeat"). Only `tool` (always regex, every scanner) is still validated eagerly.
+- The base `Scanner.match()`'s regex path catches `re.error` and fails safe (no match, not a crash) — necessary once `pattern` isn't guaranteed valid regex for whichever scanner ends up evaluating it.
+- 3 call sites that write a FileScanner-targeted default pattern (`onboard.py`, `monitor_app.py`'s Allow form, `write_default_project_policy`) switched from `re.escape(identity)` to a new `scanner.escape_gitignore_literal(identity)` — gitignore has different special characters than regex (`*?[]!#`, not `.()+`).
+- New hard dependency: `pathspec>=0.12` in `pyproject.toml`'s base `dependencies` (not an extra like `textual`/monitor) — `FileScanner.match()` runs on the hot-path hook adapter unconditionally.
+- **§19.3's principle re-confirmed, not reversed**: an earlier pass through this fix re-added a `scanner: secrets` filter to `write_default_project_policy`'s rule, reasoning that a gitignore-shaped pattern handed to another scanner's regex matcher could raise. Caught on review (direct user question, "did you read the docs?") — §19.3 already states a rule author shouldn't need a `scanner:` filter when the pattern alone is selective, and the `re.error` catch above already handles the raise case at the matcher level. The filter was removed again; §19.3's rule stands.
+
+### 21.2 `Scanner.from_config()`: config-declared scanners can take settings
+
+**Gap**: `load_scanners()` (§18.1) instantiated every scanner via a bare `cls()` — no way for a config-declared scanner (§18.1's own motivating case: enterprise CMDB/vuln-DB scanners) to receive settings (an endpoint URL, a credentials path) from `scalene_policy.yaml`.
+
+**Fix**: `Scanner.from_config(raw_config: dict) -> Scanner` classmethod, default `return cls()` (every existing scanner needs zero changes). `load_scanners()` reads an optional `scanners.extra[].config` sub-block and calls `cls.from_config(config)` if the class defines it, else falls back to bare `cls()` (so a third-party scanner that doesn't inherit `Scanner` at all, like this project's own `DummyScanner` test fixture, keeps working unchanged).
+
+### 21.3 Review queue and Verify status now survive a monitor restart
+
+**Resolves §20.8's explicitly-flagged open question** ("today's design: no, [Verify state is] in-memory only... revisit only if operators report losing review state as a real complaint") — an operator did, in this session, for both Verify status *and* the pending-review queue itself.
+
+**Verify status**: `ReviewEntry.verified` (an in-memory `dict[str, bool]`, reset empty every time `build_review_entry()` reconstructs an entry — including on every restart) is replaced with `is_verified()`/`all_verified()` methods computed live from the real `ScanCache` (`monitor_data.py`) — the same source `target_status()` already reads. A Verify from a previous session stays valid across a restart as long as the cache entry is still fresh (§13.3's existing 24h/mtime freshness, unchanged).
+
+**Review queue**: `AuditTail`'s read offset always starts at 0 for a fresh instance, so every monitor restart re-read the *entire* audit log and re-queued every historical block event — including ones already Denied or Allowed, since neither action recorded "resolved" anywhere. Fixed by appending a `{"event": "review_resolved", "resolved_offset": N}` marker to the same `audit.log` when a review is dequeued (`monitor_app._on_review_resolved`), where `N` is the original block event's own byte offset in the log (`ToolCallEvent.log_offset`, new field — a stable identity that costs nothing extra to compute, `AuditTail.poll()` already reads the file line-by-line). A restart's first `poll()` re-reads the whole file in file order and nets a `block` back out against any later matching `review_resolved`, the same way a live in-session Deny/Allow already worked. A review nobody has acted on yet is unaffected — still reappears, per §20.4's original "no timeout, an ignored entry just stays queued" design.
+
+`hook_adapter._append_audit_log` is renamed to `append_audit_log` (drops the underscore) — same precedent as `write_rule`'s own rename (§20.5): a second real caller (`monitor_app.py`) now exists outside its original module.
+
+### 21.4 `scg monitor` CLI flags + visible state paths
+
+**Problem**: all 4 of `scg monitor`'s state paths (`--policy-path`/`--cache-path`/`--state-dir`/`--audit-log-path`) default to cwd-relative — correct for `scalene-guard`, a hook Claude Code invokes from a fixed project root, but `scg monitor` is launched by hand in a separate terminal, where a different cwd between runs (or between the monitor and wherever the hook is actually running) silently points it at a different `.scalene/`/`scalene_policy.yaml` entirely — indistinguishable from "it forgot," and initially mistaken for exactly that before the real cause (§21.3) was found.
+
+**Fix**: `monitor.py` gains the same 4 flags `scg onboard` already exposes (not new defaults, just an escape hatch to pin them explicitly). `MonitorApp.__init__` resolves all 4 to absolute paths and shows them in `sub_title` (the Header widget's second line) — a cwd mismatch is now visible in the TUI itself, not silent.
+
+### 21.5 ReviewScreen: Next/Prev navigation, editable Allow fields, compact layout
+
+- **Next/Prev + "Review X of Y"**: `ReviewScreen` now takes the full pending-review list + an index (was: a single `ReviewEntry`) so multiple queued reviews can be browsed without closing/reopening the screen. Exposed a latent bug: `dismiss()` used to report a bare `True`/`False`, and `MonitorApp` closed over the *original* entry the screen opened with to know what to dequeue — once Next/Prev can move to a *different* entry before Deny/Allow, that closure would dequeue the wrong one. Fixed: `dismiss()` now passes back the actual `ReviewEntry` resolved (or `None` for a plain Escape).
+- **Editable Tool/Pattern in the Allow form**: `tool` defaults to the exact tool name (was hardcoded `".*"`), always editable — call-level, one value for every target in the call. `pattern` defaults to an exact-match gitignore pattern per target; for a multi-target call, a typed pattern now writes **one shared rule** covering every target (not disabled, and not the same pattern duplicated once per target — an earlier pass disabled the field for multi-target calls, corrected on direct follow-up).
+- **Sensitivity/Mode become a `RadioSet` grid**, not free-text Input — can't type an invalid value. Single-select is the correct semantic (each is exactly one value), not a checkbox group.
+- **Fewer clicks**: Allow auto-focuses the Pattern field; Enter in either text field submits directly.
+- **Compact layout**: every `Button`/`Input`/`RadioButton` in `ReviewScreen` uses `compact=True` (a documented Textual option) so the whole Allow form fits an 80x24 terminal. Two real bugs found and fixed while building this, both the same underlying shape — an unconstrained widget silently defaulting to a `1fr` share of remaining space instead of "size to my content": an empty `Static`/`Input` defaulting to `width: 1fr` pushed a sibling off the right edge of the screen entirely (`OutOfBounds` on click); a `Vertical` (`#allow-form`) with no explicit `height` defaulted to `height: 1fr` and got compressed by exactly 1 row once a 2-target call made the targets table 1 row taller, silently overlapping `#allow-error` on top of `#submit-btn` and swallowing every click on it with no visible error. Both fixed with explicit `width: auto`/`height: auto`; both now have geometry-bounds/overlap regression tests, not just eyeballing.
+
+### 21.6 Directory scan target: Verify no-op fixed
+
+`FileScanner.scan()` → `scan_worker._scan_secrets()` called `open(target).read()` unconditionally; a directory target raised `IsADirectoryError`, surfaced as `ScannerMachineryError`, caught by `monitor_app.action_verify()`'s per-target `except: continue` — correct fail-safe behavior for the live TUI, but the net effect was Verify silently doing nothing for a directory target, with no error shown. Fixed: `_scan_secrets()` now walks a directory recursively (`os.walk`), scanning every file and aggregating findings; an individual unreadable file is skipped, not fatal to the whole directory.
+
+### 21.7 Not yet decided / explicitly deferred
+
+- `ScanCache` freshness for a directory resource keys off the directory's own mtime (changes only when direct children are added/removed, not when a nested file's *contents* change deeper in the tree) — a directory-target Allow rule's cached freshness can go stale without the mtime check catching it. Not fixed here (§21.6's fix was "no effect" → "has effect," not freshness correctness); worth a follow-up if directory-target Allow rules become common.
+- Whether `Scanner.from_config()` needs a `get_config()`/introspection counterpart (e.g. for `scg monitor`'s Scanners panel to display a scanner's current settings) — nothing concrete wants this yet.
+
+### References
+`src/scalene/scanner.py` (`Scanner` base class, `match()`, `from_config()`, `escape_gitignore_literal`), `src/scalene/policy_config.py` (`PolicyRule.pattern` validation dropped, `write_default_project_policy`), `src/scalene/resource_verifier.py` (`_find_matching_rule` threads `scanners` through), `src/scalene/scan_worker.py` (`_scan_secrets` directory walk), `src/scalene/monitor_data.py` (`ReviewEntry.is_verified`/`all_verified`, `ToolCallEvent.log_offset`, `ReviewResolution`, `AuditTail.poll()`), `src/scalene/monitor_app.py` (`ReviewScreen` Next/Prev, Allow form fields, compact CSS, `sub_title`), `src/scalene/monitor.py` (CLI flags), `src/scalene/hook_adapter.py` (`append_audit_log`), `pyproject.toml` (`pathspec` dependency).
