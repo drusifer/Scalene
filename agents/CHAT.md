@@ -239,3 +239,7 @@ These apps are now globally available
 - scalene-guard
 - scg
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-30 18:29:07</small>] [**Neo**]->[**all**] *swe handoff*:
+ *swe: E16 follow-up session closed, fast-tracked directly with the user (no formal story cycle). Fixed real bugs from dogfooding scg monitor + added PolicyRule.trust + rule-change auto-resolution. 3 commits pushed to origin/main (5eaa3f5, bc04c40, f167df6). 495/495 tests. Full detail: docs/ARCHITECTURE.md sec21, neo.docs/current_task.md. Carried: sec21 never went through Trin/Morpheus/Smith gates -- real review debt for whenever a sprint picks it up. State files updated for clear.

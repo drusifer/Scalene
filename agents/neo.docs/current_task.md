@@ -1,5 +1,34 @@
-**Status:** Phase 1 (E16) APPROVED. Starting Phase 2 (tagged accessible event log UI) next.
+**Status:** E16 follow-up session closed (2026-07-30). Pushed to `origin/main`. Nothing in-flight for Neo.
 **Assigned to:** Neo
+**Started:** 2026-07-30
+**Finished:** 2026-07-30
+
+## Task Description (most recent): E16 follow-up — monitor bugs/gaps fast-tracked directly with the user
+No formal `*pm plan sprint`/Bloop cycle — user drove this hands-on across a single long session, reporting real bugs from actually using `scg monitor`, each fixed and tested immediately. Full writeup: `docs/ARCHITECTURE.md` §21 (§21.1-§21.10), `agents/neo.docs/e16_followup_directory_scan_and_review_nav.md`, `agents/neo.docs/e16_followup_scanner_match_and_from_config.md`. Condensed list in `context.md` above. 3 commits pushed: `5eaa3f5`, `bc04c40`, `f167df6`.
+
+## Progress
+- [x] Directory-target Verify no-op fixed.
+- [x] `make install-system` (pipx) Makefile target added.
+- [x] `ReviewScreen` Next/Prev nav + position counter.
+- [x] `Scanner.match()` (gitignore-syntax FileScanner matching) + `Scanner.from_config()`.
+- [x] Self-caught regression: reversed §19.3's no-scanner-filter decision without realizing it; found via direct doc-read, fixed, `docs/ARCHITECTURE.md` §21 written to close the doc-drift gap this whole session would otherwise have left behind.
+- [x] Allow form: editable Tool/Pattern (shared-rule-for-multi-target), RadioSet Sensitivity/Mode, compact layout (2 real 1fr-default overlap bugs found+fixed via geometry regression tests).
+- [x] Verify status + pending-review queue persistence across a monitor restart.
+- [x] `scg monitor` CLI flags (`--policy-path` etc.) + `sub_title` path visibility.
+- [x] `PolicyRule.trust` field, symmetric to `sensitivity`.
+- [x] Adding a rule auto-resolves other pending reviews it now validates.
+- [x] All 3 commits pushed to `origin/main`. 495/495 tests passing.
+
+## Blockers
+None.
+
+## Oracle Consultations
+None this session — worth a look next time: `agents/oracle.docs/lessons.md` should probably get an entry for "read the actual architecture doc before touching a decision that already has a documented rationale, not just the inline code comments citing it" (this session's own real near-miss).
+
+---
+*Last updated: 2026-07-30*
+
+## Task Description (prior): Phase 1 (E16) APPROVED. Starting Phase 2 (tagged accessible event log UI) next.
 **Started:** 2026-07-22
 **Finished:** 2026-07-22 (Phase 1)
 
