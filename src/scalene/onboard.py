@@ -82,7 +82,7 @@ from .policy_config import (
     VALID_SENSITIVITIES,
 )
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache, ScanCacheError
-from .scanner import SCANNERS, Resource, Scanner, ScannerMachineryError
+from .scanner import SCANNERS, Resource, Scanner, ScannerMachineryError, escape_gitignore_literal
 
 DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
 
@@ -296,10 +296,19 @@ def _onboard_resource(
             f"(Use --mode block to explicitly declare this resource blocked based on this finding.)"
         )
 
+    # 2026-07-30 (Scanner.match(), scanner.py): the default pattern's
+    # escaping must match whichever syntax that resource's scanner
+    # interprets patterns as -- FileScanner ("secrets") reads gitignore
+    # syntax, everything else still reads plain regex.
+    default_pattern = (
+        escape_gitignore_literal(resource.identity)
+        if resource.scanner_name == "secrets"
+        else re.escape(resource.identity)
+    )
     try:
         rule = PolicyRule(
             tool=tool,
-            pattern=pattern or re.escape(resource.identity),
+            pattern=pattern or default_pattern,
             sensitivity=sensitivity,
             mode=mode,
             scanner=scanner,

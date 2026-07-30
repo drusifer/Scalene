@@ -62,7 +62,7 @@ from dataclasses import dataclass
 
 from .policy_config import MatchResult, PolicyConfig, PolicyRule
 from .scan_cache import ScanCache, refresh_if_needed
-from .scanner import Resource
+from .scanner import Resource, Scanner
 from .taint_state import TaintState
 
 _FILE_SCANNER_NAME = "secrets"
@@ -75,33 +75,51 @@ _SENSITIVITY_RANK = {"public": 0, "internal": 1, "restricted": 2}
 _MODE_RANK = {"allow": 0, "mask": 1, "block": 2}
 
 
-def _find_matching_rule(tool_name: str, resource: Resource, rules: tuple[PolicyRule, ...]) -> PolicyRule | None:
+def _find_matching_rule(
+    tool_name: str, resource: Resource, rules: tuple[PolicyRule, ...], scanners: dict[str, Scanner]
+) -> PolicyRule | None:
+    # Pattern matching is scanner-owned (Scanner.match(), scanner.py) so
+    # each scanner's own identity shape stays in sync with how its patterns
+    # are interpreted (e.g. FileScanner's glob vs. the plain-regex default)
+    # instead of one generic matcher applied blindly to every resource kind.
+    scanner = scanners.get(resource.scanner_name)
     for rule in rules:
         if rule.scanner and rule.scanner != resource.scanner_name:
             continue
         if not re.search(rule.tool, tool_name):
             continue
-        if not re.search(rule.pattern, resource.identity):
+        if scanner is not None:
+            matches = scanner.match(rule, resource)
+        else:
+            # No registered scanner for this resource's scanner_name (only
+            # reachable via direct construction, not real identify() output)
+            # -- same plain-regex default Scanner.match() itself uses.
+            matches = bool(re.search(rule.pattern, resource.identity))
+        if not matches:
             continue
         return rule
     return None
 
 
 def _resolve_rule_for_resource(
-    tool_name: str, resource: Resource, rules: tuple[PolicyRule, ...], default_mode: str
+    tool_name: str, resource: Resource, rules: tuple[PolicyRule, ...], default_mode: str, scanners: dict[str, Scanner]
 ) -> tuple[str, str]:
-    rule = _find_matching_rule(tool_name, resource, rules)
+    rule = _find_matching_rule(tool_name, resource, rules, scanners)
     if rule is None:
         return "public", default_mode
     return rule.sensitivity, rule.mode
 
 
 def _resolve_sensitivity_and_mode(
-    tool_name: str, resources: list[Resource], rules: tuple[PolicyRule, ...], default_mode: str
+    tool_name: str,
+    resources: list[Resource],
+    rules: tuple[PolicyRule, ...],
+    default_mode: str,
+    scanners: dict[str, Scanner],
 ) -> tuple[str, str]:
     if not resources:
         return "public", default_mode
-    resolved = [_resolve_rule_for_resource(tool_name, r, rules, default_mode) for r in resources]
+    resolved = [_resolve_rule_for_resource(tool_name, r, rules, default_mode, scanners) for r in resources]
     sensitivity = max((s for s, _ in resolved), key=_SENSITIVITY_RANK.get)
     mode = max((m for _, m in resolved), key=_MODE_RANK.get)
     return sensitivity, mode
@@ -148,7 +166,7 @@ def evaluate(tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache)
     is_trusted = any(trusted_flags) if trusted_flags else not config.untrusted_by_default
 
     sensitivity, mode = _resolve_sensitivity_and_mode(
-        tool_name, file_resources + url_resources, config.rules, config.mode
+        tool_name, file_resources + url_resources, config.rules, config.mode, config.scanners
     )
 
     return MatchResult(
@@ -195,7 +213,7 @@ def decide_access(
         entry = refresh_if_needed(resource, cache)
         is_bad = entry is not None and entry.label in _BAD_LABELS
         is_clean_entry = entry is not None and entry.label in _CLEAN_LABELS
-        rule = _find_matching_rule(tool_name, resource, config.rules)
+        rule = _find_matching_rule(tool_name, resource, config.rules, config.scanners)
 
         if is_bad:
             confirmed_bad.append((resource, "the scanner found a real issue with it"))

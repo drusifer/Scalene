@@ -181,7 +181,9 @@ class TestOnboardTargets(unittest.TestCase):
             results = onboard_targets(
                 [resource], mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
             )
-            self.assertEqual(results[0]["rule"].pattern, re.escape(str(target)))
+            # 2026-07-30: gitignore syntax, not regex -- see
+            # TestOnboardRuleDefaults.test_pattern_defaults_to_exact_resolved_resource.
+            self.assertEqual(results[0]["rule"].pattern, str(target))
             self.assertEqual(results[0]["rule"].tool, ".*")
 
     def test_result_includes_reputation_when_present(self):
@@ -678,7 +680,12 @@ class TestOnboardRuleDefaults(unittest.TestCase):
             result = onboard(
                 f"file://{target}", mode="allow", cache_path=tmp_path / "cache.json", policy_path=tmp_path / "policy.yaml"
             )
-            self.assertEqual(result["rule"].pattern, re.escape(os.path.abspath(target)))
+            # 2026-07-30: FileScanner's default pattern is now gitignore
+            # syntax (escape_gitignore_literal), not regex -- an ordinary
+            # path has no gitignore-special characters, so it's the literal
+            # path unchanged (unlike re.escape, which would backslash-escape
+            # the "." in ".md").
+            self.assertEqual(result["rule"].pattern, os.path.abspath(target))
 
     def test_tool_defaults_to_any(self):
         with TemporaryDirectory() as tmp:

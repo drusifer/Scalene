@@ -21,14 +21,26 @@ their generic fallback over every tool's args unconditionally.
 
 from __future__ import annotations
 
+import functools
 import importlib
 import os
 import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+import pathspec
+
 from .subprocess_isolation import run_scanner
+
+if TYPE_CHECKING:
+    # Deferred: policy_config.py imports SCANNERS/Scanner/etc. from this
+    # module, so a real top-level `from .policy_config import PolicyRule`
+    # here would be circular. Only needed for Scanner.match()'s type hint --
+    # `from __future__ import annotations` (above) already makes annotations
+    # lazy strings, so this is resolved for type checkers only, never at
+    # runtime.
+    from .policy_config import PolicyRule
 
 # Per-tool field that carries a file path directly, as opposed to a value
 # that merely might contain one (STORY-1002: known fields first, generic
@@ -117,20 +129,84 @@ class ScannerMachineryError(Exception):
     always returned as a ScanResult, never raised."""
 
 
-class Scanner(Protocol):
+class Scanner:
+    """Base class, not a structural Protocol -- `match()` and `from_config()`
+    below need a real default implementation subclasses inherit rather than
+    each having to redefine it. `load_scanners()` still validates
+    conformance by hasattr (duck typing), so a third-party scanner that
+    doesn't inherit from this class at all keeps working exactly as before,
+    provided it defines `.name`/`.identify()`/`.scan()`; it just won't get
+    match()/from_config()'s default behavior for free."""
+
     name: str  # "secrets", "reputation", ... -- the label namespace this scanner owns
 
     def identify(self, tool_name: str, args: dict) -> list[Resource]:
         """Find candidate resources this scanner cares about within a call's args."""
-        ...
+        raise NotImplementedError
 
     def scan(self, resource: Resource) -> ScanResult:
         """Verify one resource. Runs in an isolated subprocess; never raises."""
-        ...
+        raise NotImplementedError
+
+    def match(self, rule: "PolicyRule", resource: Resource) -> bool:
+        """Does `rule.pattern` select `resource`? Default: plain regex
+        against `resource.identity`, same behavior as before this method
+        existed. A scanner whose identity strings have their own shape
+        (e.g. FileScanner's filesystem paths) can override this rather than
+        resource_verifier.py applying one generic matcher to every resource
+        kind with no awareness of how each scanner's identities are formed.
+
+        PolicyRule no longer validates `pattern` as regex at construction
+        time (policy_config.py: pattern's syntax is scanner-owned, so it
+        can't know at construction whether a given rule is meant for a
+        scanner that reads it as regex or as something else, e.g. gitignore
+        syntax for FileScanner). A pattern authored for a different syntax
+        (e.g. a gitignore "**/" prefix) is often not valid regex at all --
+        this must fail safe (no match), not raise and take the whole
+        hot-path hook call down with it."""
+        try:
+            return bool(re.search(rule.pattern, resource.identity))
+        except re.error:
+            return False
+
+    @classmethod
+    def from_config(cls, raw_config: dict) -> "Scanner":
+        """Construct an instance from this scanner's own `scanners.extra[]`
+        config sub-block (STORY-1501's registry, `load_scanners()` below).
+        Default: ignore config, exactly today's bare `cls()` behavior -- a
+        scanner that needs settings (an enterprise CMDB/vuln-DB endpoint,
+        credentials path, etc., STORY-1501's own motivating rationale)
+        overrides this; every existing scanner needs no change to keep
+        working unchanged."""
+        return cls()
 
 
 def _string_args(args: dict) -> list[str]:
     return [value for value in args.values() if isinstance(value, str) and value]
+
+
+@functools.lru_cache(maxsize=256)
+def _compiled_gitignore_spec(pattern: str) -> pathspec.GitIgnoreSpec:
+    # Cached: FileScanner.match() runs on the hot path (every pre_tool_use
+    # call re-checks every rule against every identified resource) --
+    # compiling the same rule's pattern from scratch on every single call
+    # would be wasted work. `pattern` may be multiple gitignore lines (a
+    # directory-wide rule needs 2: the root path itself, and "root/**" for
+    # everything under it -- plain gitignore semantics don't match a bare
+    # directory via "dir/**" alone), so split on newlines here rather than
+    # forcing every caller to do it.
+    return pathspec.GitIgnoreSpec.from_lines(pattern.splitlines())
+
+
+_GITIGNORE_SPECIAL_CHARS = set("*?[]!#\\")
+
+
+def escape_gitignore_literal(literal: str) -> str:
+    """gitignore-pattern analog of re.escape()/glob.escape() -- for a
+    caller (onboard.py, monitor_app.py, policy_config.py) that wants a
+    FileScanner rule's pattern to match one exact literal path, not
+    interpret any of its characters as gitignore wildcard syntax."""
+    return "".join("\\" + ch if ch in _GITIGNORE_SPECIAL_CHARS else ch for ch in literal)
 
 
 # docs/ARCHITECTURE.md sec18.2 (STORY-1502): kept to exactly the two paths
@@ -154,8 +230,22 @@ def _is_hardcoded_restricted(identity: str) -> bool:
     return False
 
 
-class FileScanner:
+class FileScanner(Scanner):
     name = "secrets"
+
+    def match(self, rule: "PolicyRule", resource: Resource) -> bool:
+        """gitignore syntax, not regex -- file paths are the case this
+        match() override exists for (user request: familiar wildcard
+        matching for "the whole project folder recursively", same syntax
+        as .gitignore rather than inventing a bespoke convention). `pattern`
+        may be multiple lines (see _compiled_gitignore_spec) -- a
+        directory-wide rule needs 2 lines (the root itself, and "root/**"
+        for everything under it), since plain gitignore semantics don't
+        match a bare directory via "root/**" alone, only its contents.
+        pathspec's GitIgnoreSpec handles the absolute-path leading "/" and
+        the "/etc" vs. false-positive "/etcetera" boundary correctly on its
+        own -- no bespoke boundary-check code needed here."""
+        return _compiled_gitignore_spec(rule.pattern).match_file(resource.identity)
 
     def identify(self, tool_name: str, args: dict) -> list[Resource]:
         identities: list[str] = []
@@ -202,8 +292,11 @@ class FileScanner:
         return ScanResult(label="sensitive", reason=result.get("reason", ""))
 
 
-class URLScanner:
+class URLScanner(Scanner):
     name = "reputation"
+    # No match() override -- URL identities aren't path-shaped, so the
+    # base class's plain-regex default (unchanged from before match()
+    # existed) is still the right behavior here.
 
     def identify(self, tool_name: str, args: dict) -> list[Resource]:
         urls: list[str] = []
@@ -301,8 +394,16 @@ def load_scanners(raw_config: dict) -> dict[str, Scanner]:
                 f"'scanners.extra[{i}].import' {import_path!r}: module has no attribute {class_name!r}"
             ) from exc
 
+        raw_scanner_config = entry.get("config", {}) or {}
+        if not isinstance(raw_scanner_config, dict):
+            raise ScannerRegistryError(f"'scanners.extra[{i}].config' must be a mapping")
         try:
-            instance = cls()
+            # A third-party class that doesn't inherit Scanner (e.g. this
+            # project's own DummyScanner test fixture) has no from_config()
+            # at all -- fall back to the pre-existing bare cls(), same
+            # behavior as before this method existed.
+            from_config = getattr(cls, "from_config", None)
+            instance = from_config(raw_scanner_config) if from_config is not None else cls()
         except Exception as exc:
             raise ScannerRegistryError(f"'scanners.extra[{i}]' ({import_path}) could not be constructed: {exc}") from exc
 

@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from textual.widgets import DataTable, Input, Static
+from textual.widgets import DataTable, Input, RadioButton, Static
 
 from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE, _event_tag, _format_relative_time
 from scalene.monitor_data import ToolCallEvent
@@ -427,6 +427,62 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app._pending_reviews), 2)
             self.assertEqual(app._pending_reviews[0].targets[0].identity, "https://first.example.com/x")
 
+    async def test_next_prev_navigates_between_queued_reviews_and_shows_position(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://first.example.com/x")
+        self._append_block_with_url("WebFetch", "https://second.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+
+            self.assertEqual(app.screen.query_one("#review-position", Static).content, "Review 1 of 2")
+            self.assertTrue(app.screen.query_one("#prev-btn").disabled)
+            self.assertFalse(app.screen.query_one("#next-btn").disabled)
+            table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(table.get_row_at(0)[0], "https://first.example.com/x")
+
+            await pilot.click(app.screen.query_one("#next-btn"))
+            await pilot.pause()
+            self.assertEqual(app.screen.query_one("#review-position", Static).content, "Review 2 of 2")
+            self.assertFalse(app.screen.query_one("#prev-btn").disabled)
+            self.assertTrue(app.screen.query_one("#next-btn").disabled)
+            table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(table.get_row_at(0)[0], "https://second.example.com/x")
+
+            await pilot.click(app.screen.query_one("#prev-btn"))
+            await pilot.pause()
+            self.assertEqual(app.screen.query_one("#review-position", Static).content, "Review 1 of 2")
+            table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(table.get_row_at(0)[0], "https://first.example.com/x")
+
+    async def test_denying_after_navigating_to_the_second_review_dequeues_that_one_not_the_first(self):
+        # Regression test for the dismiss()-closure bug Next/Prev would
+        # otherwise expose: the entry dequeued must be whichever one was
+        # actually showing when Deny was pressed, not always the entry the
+        # screen was originally opened with.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://first.example.com/x")
+        self._append_block_with_url("WebFetch", "https://second.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.click(app.screen.query_one("#next-btn"))
+            await pilot.pause()
+
+            await pilot.click(app.screen.query_one("#deny-btn"))
+            await pilot.pause()
+
+            self.assertEqual(len(app._pending_reviews), 1)
+            self.assertEqual(app._pending_reviews[0].targets[0].identity, "https://first.example.com/x")
+
     async def test_review_screen_shows_the_real_tool_call_and_target_status(self):
         _write_state(self.state_dir, "s1", trust="low")
         self._append_block_with_url("WebFetch", "https://evil.example.com/x")
@@ -489,6 +545,151 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             entry = ScanCache(self.cache_path).get(Resource(kind="file", identity=str(target_path), scanner_name="secrets"))
             self.assertIsNotNone(entry)
             self.assertEqual(entry.label, "public")
+
+    async def test_verified_status_survives_a_monitor_restart(self):
+        # Direct user report: "restarted scg monitor and it lost the
+        # verified status." Root cause: verification used to live in a
+        # separate in-memory ReviewEntry.verified dict that build_review_entry()
+        # always reconstructs empty -- including on every restart -- even
+        # though the real ScanCache entry Verify wrote was still there and
+        # still fresh. Verified is derived live from that same real cache
+        # now, so a second MonitorApp instance pointed at the same
+        # cache_path (simulating a restart) must already show the target
+        # verified and Allow already enabled, with no second Verify click.
+        _write_state(self.state_dir, "s1", trust="low")
+        target_path = Path(self._tmp.name) / "clean.md"
+        target_path.write_text("nothing sensitive here")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": str(target_path)},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.click(first_run.screen.query_one("#verify-btn"))
+            await pilot.pause()
+            self.assertFalse(first_run.screen.query_one("#allow-btn").disabled)
+
+        # A brand-new MonitorApp/ReviewScreen -- same as actually restarting
+        # `scg monitor` -- pointed at the same real .scalene/ state.
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            table = second_run.screen.query_one("#targets", DataTable)
+            self.assertEqual(table.get_row_at(0)[3], "yes")
+            self.assertFalse(second_run.screen.query_one("#allow-btn").disabled)
+
+    async def test_denied_review_does_not_reappear_after_a_monitor_restart(self):
+        # Direct user report: "review status is not persisted (always
+        # resets to 6 pending reviews on restart)". Root cause: a fresh
+        # AuditTail always starts at byte offset 0, so every restart
+        # re-read the whole audit log and re-queued every historical block
+        # event, including ones already Denied -- Deny wrote nothing
+        # anywhere marking it dealt with. Denying now appends a
+        # `review_resolved` marker (referencing the block event's own
+        # log_offset) to the same real audit.log; a restart's first poll()
+        # nets it back out instead of re-queuing it.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(first_run._pending_reviews), 1)
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.click(first_run.screen.query_one("#deny-btn"))
+            await pilot.pause()
+            self.assertEqual(first_run._pending_reviews, [])
+
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
+            self.assertNotIn("pending review", second_run.title)
+
+    async def test_allowed_review_does_not_reappear_after_a_monitor_restart(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        target_path = Path(self._tmp.name) / "clean.md"
+        target_path.write_text("nothing sensitive here")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": str(target_path)},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+        policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+        first_run = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=policy_path
+        )
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.click(first_run.screen.query_one("#verify-btn"))
+            await pilot.pause()
+            await pilot.click(first_run.screen.query_one("#allow-btn"))
+            await pilot.pause()
+            await pilot.click(first_run.screen.query_one("#submit-btn"))
+            await pilot.pause()
+            self.assertEqual(first_run._pending_reviews, [])
+
+        second_run = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=policy_path
+        )
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
+
+    async def test_still_pending_reviews_do_reappear_after_a_monitor_restart(self):
+        # The other half of the same fix, guarding against overcorrecting:
+        # sec20.4's own design is "an entry that never gets reviewed just
+        # stays queued" -- a review nobody has acted on yet must still
+        # reappear, not be silently dropped.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(first_run._pending_reviews), 1)
+
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(second_run._pending_reviews), 1)
 
     async def test_allow_button_is_disabled_until_verify_completes(self):
         _write_state(self.state_dir, "s1", trust="low")
@@ -656,7 +857,8 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
                 Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
                 ScanResult(label="untrusted", reason="known bad reputation"),
             )
-            app.screen._entry.verified["https://evil.example.com/x"] = True
+            # Verified is derived live from this same real cache entry now
+            # (2026-07-30) -- no separate flag to seed.
             app.screen.refresh_targets()
 
             await pilot.click(app.screen.query_one("#allow-btn"))
@@ -693,14 +895,14 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
                 Resource(kind="url", identity="https://evil.example.com/x", scanner_name="reputation"),
                 ScanResult(label="untrusted", reason="known bad reputation"),
             )
-            app.screen._entry.verified["https://evil.example.com/x"] = True
+            # Verified is derived live from this same real cache entry now
+            # (2026-07-30) -- no separate flag to seed.
             app.screen.refresh_targets()
 
             await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             await pilot.pause()
-            mode_input = app.screen.query_one("#mode-input", Input)
-            mode_input.value = "block"
+            await pilot.click(app.screen.query_one("#mode-block"))
             await pilot.click(app.screen.query_one("#submit-btn"))
             await pilot.pause()
             await pilot.pause()
@@ -758,6 +960,310 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             self.assertIn(r"first\.example\.com", written)
             self.assertIn(r"second\.example\.com", written)
             self.assertEqual(written.count("mode: allow"), 2)
+
+
+class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
+    """Direct user requests (2026-07-30): editable tool/pattern fields
+    (defaulting to the exact tool name / exact-match pattern, widenable
+    before submit), a fixed-value RadioSet grid for sensitivity/mode
+    instead of free-text, and a compact layout where every allow-form
+    field stays on-screen at a standard 80x24 terminal."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block_with_url(self, tool_name: str, url: str) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": tool_name,
+                        "tool_input": {"url": url},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+    async def _open_allow_form(self, pilot, app):
+        app.poll_data()
+        await pilot.pause()
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.click(app.screen.query_one("#verify-btn"))
+        await pilot.pause()
+        await pilot.click(app.screen.query_one("#allow-btn"))
+        await pilot.pause()
+
+    async def test_tool_field_defaults_to_the_exact_tool_name(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            self.assertEqual(app.screen.query_one("#rule-tool-input", Input).value, "WebFetch")
+
+    async def test_pattern_field_defaults_to_exact_match_and_is_editable(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            self.assertFalse(pattern_input.disabled)
+            self.assertEqual(pattern_input.value, r"https://evil\.example\.com/x")
+
+            # Widen it (the actual point of making this editable) and
+            # confirm the widened value, not the default, is what's written.
+            pattern_input.value = r"https://evil\.example\.com/*"
+            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.pause()
+            written = self.policy_path.read_text()
+            self.assertIn(r"https://evil\.example\.com/*", written)
+
+    async def test_pattern_field_is_enabled_and_blank_by_default_for_a_multi_target_call(self):
+        # 2026-07-30 (direct user follow-up): was disabled here originally
+        # ("a single text field can't represent N distinct identities") --
+        # corrected once it was clear a typed pattern should write one
+        # shared rule for all targets instead, not attempt to represent
+        # each target's own identity.
+        _write_state(self.state_dir, "s1", trust="low")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "curl https://a.example.com/x https://b.example.com/y"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            self.assertFalse(pattern_input.disabled)
+            self.assertEqual(pattern_input.value, "")
+
+    async def test_typed_pattern_writes_one_shared_rule_for_a_multi_target_call(self):
+        # The actual point of no longer disabling pattern-input for a
+        # multi-target call: typing a pattern writes ONE rule covering
+        # every target, not the same pattern duplicated N times. Uses 2
+        # real files under a shared directory (not URLs) so the real
+        # scanner involved is FileScanner -- deterministic, no dependency
+        # on a real network reputation lookup's outcome for a made-up host.
+        _write_state(self.state_dir, "s1", trust="low")
+        project_dir = Path(self._tmp.name) / "project"
+        project_dir.mkdir()
+        file_a = project_dir / "a.py"
+        file_b = project_dir / "b.py"
+        file_a.write_text("print('a')")
+        file_b.write_text("print('b')")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": f"cat {file_a} {file_b}"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.value = f"{project_dir}\n{project_dir}/**"
+            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.pause()
+
+            self.assertEqual(app._pending_reviews, [])
+            self.assertTrue(self.policy_path.exists())
+            written = self.policy_path.read_text()
+            self.assertEqual(written.count("pattern:"), 1)
+            self.assertIn(str(project_dir), written)
+
+    async def test_sensitivity_and_mode_default_to_public_and_allow(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            self.assertTrue(app.screen.query_one("#sensitivity-public", RadioButton).value)
+            self.assertTrue(app.screen.query_one("#mode-allow", RadioButton).value)
+
+    async def test_selecting_a_different_sensitivity_and_mode_is_what_gets_written(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            await pilot.click(app.screen.query_one("#sensitivity-restricted"))
+            await pilot.click(app.screen.query_one("#mode-block"))
+            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.pause()
+            written = self.policy_path.read_text()
+            self.assertIn("sensitivity: restricted", written)
+            self.assertIn("mode: block", written)
+
+    async def test_cannot_select_more_than_one_option_per_radio_set(self):
+        # The whole reason RadioSet (not a checkbox group) is the right
+        # widget: sensitivity/mode are each exactly one value.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            await pilot.click(app.screen.query_one("#sensitivity-restricted"))
+            self.assertTrue(app.screen.query_one("#sensitivity-restricted", RadioButton).value)
+            self.assertFalse(app.screen.query_one("#sensitivity-public", RadioButton).value)
+            self.assertFalse(app.screen.query_one("#sensitivity-internal", RadioButton).value)
+
+    async def test_enter_in_pattern_input_submits_without_clicking_submit(self):
+        # Fewer clicks/steps (direct user request): Enter submits directly.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertTrue(self.policy_path.exists())
+            self.assertEqual(app._pending_reviews, [])
+
+    async def test_allow_button_focuses_the_pattern_input_for_a_single_target(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_allow_form(pilot, app)
+            self.assertEqual(app.focused, app.screen.query_one("#rule-pattern-input"))
+
+    async def test_allow_form_fields_all_stay_within_a_standard_80x24_screen(self):
+        # Regression test for a real bug hit while building this feature:
+        # an unconstrained empty Static/Input defaults to width 1fr (fill
+        # remaining space), which silently pushed a sibling widget's x
+        # coordinate past the right edge of the screen entirely --
+        # Pilot.click() on it then raised OutOfBounds. This asserts every
+        # allow-form widget's region stays inside the real screen size,
+        # not just that clicking happens to still work today.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:  # default size: 80x24
+            await self._open_allow_form(pilot, app)
+            screen = app.screen
+            for widget_id in (
+                "prev-btn", "review-position", "next-btn",
+                "rule-tool-input", "rule-pattern-input",
+                "sensitivity-radio", "mode-radio",
+                "submit-btn", "allow-error",
+            ):
+                region = screen.query_one(f"#{widget_id}").region
+                self.assertLessEqual(
+                    region.x + region.width, app.size.width, f"#{widget_id} extends past the right edge"
+                )
+                self.assertLessEqual(
+                    region.y + region.height, app.size.height, f"#{widget_id} extends past the bottom edge"
+                )
+
+    async def test_submit_button_does_not_overlap_allow_error_with_multiple_targets(self):
+        # Regression test for a real bug found while building this feature:
+        # #allow-form (a Vertical) had no explicit `height` and silently
+        # defaulted to 1fr (a *share* of remaining screen space), same class
+        # of bug as the width-1fr issue above. With only 1 target the share
+        # happened to be enough; with 2 targets, #targets grew by 1 row,
+        # shrinking allow-form's 1fr share by that same row and silently
+        # compressing its rendered content -- #allow-error (the next
+        # sibling) then started 1 row too early, exactly overlapping
+        # #submit-btn's row and silently swallowing every click on it (no
+        # exception, no OutOfBounds -- the click just hit the wrong
+        # widget). The bounds-only test above didn't catch this because
+        # overlap isn't the same as "out of bounds".
+        _write_state(self.state_dir, "s1", trust="low")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "curl https://a.example.com/x https://b.example.com/y"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:  # default size: 80x24
+            await self._open_allow_form(pilot, app)
+            submit_region = app.screen.query_one("#submit-btn").region
+            error_region = app.screen.query_one("#allow-error").region
+            overlaps = (
+                submit_region.x < error_region.x + error_region.width
+                and error_region.x < submit_region.x + submit_region.width
+                and submit_region.y < error_region.y + error_region.height
+                and error_region.y < submit_region.y + submit_region.height
+            )
+            self.assertFalse(
+                overlaps, f"#submit-btn {submit_region} overlaps #allow-error {error_region} -- clicks would be swallowed"
+            )
+
+    async def test_sub_title_shows_the_resolved_policy_and_state_paths(self):
+        # Direct user report: "monitor decisions not persisting across
+        # sessions" traced to cwd-relative default paths -- showing the
+        # resolved absolute paths makes a cwd mismatch between runs visible
+        # instead of silently looking like state was forgotten.
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        self.assertIn(str(self.policy_path.resolve()), app.sub_title)
+        self.assertIn(str(self.state_dir.resolve()), app.sub_title)
 
 
 class TestMonitorAppScannerActivityPanel(unittest.IsolatedAsyncioTestCase):
@@ -1006,7 +1512,14 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.screen.query_one("#tool-input", Static).content, json.dumps({"file_path": str(target_path)}, indent=2))
             targets_table = app.screen.query_one("#targets", DataTable)
             self.assertEqual(targets_table.get_row_at(0)[0], str(target_path))
-            self.assertEqual(targets_table.get_row_at(0)[2], "not yet scanned")
+            # "not yet scanned", or already "public (fresh)" if the
+            # background refresh worker E10's fail-safe path spawned for
+            # this never-before-seen resource (during the pre_tool_use()
+            # call above) won its own real race against this assertion --
+            # both are correct, real cache-derived states; asserting one
+            # specific side of a legitimate race was the actual flake here,
+            # not a bug in the dashboard.
+            self.assertIn(targets_table.get_row_at(0)[2], ("not yet scanned", "public (fresh)"))
 
             # Verify -> real scan -> Allow unlocked.
             await pilot.click(app.screen.query_one("#verify-btn"))
@@ -1017,8 +1530,12 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             await pilot.pause()
-            self.assertEqual(app.screen.query_one("#sensitivity-input", Input).value, "public")
-            self.assertEqual(app.screen.query_one("#mode-input", Input).value, "allow")
+            from scalene.policy_config import VALID_RULE_MODES, VALID_SENSITIVITIES
+
+            self.assertEqual(
+                app.screen._selected_radio_value("sensitivity-radio", VALID_SENSITIVITIES, "public"), "public"
+            )
+            self.assertEqual(app.screen._selected_radio_value("mode-radio", VALID_RULE_MODES, "allow"), "allow")
             await pilot.click(app.screen.query_one("#submit-btn"))
             await pilot.pause()
             await pilot.pause()

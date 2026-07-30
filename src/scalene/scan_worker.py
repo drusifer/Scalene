@@ -8,15 +8,44 @@ Prints a single JSON line to stdout: {"ok": bool, "reason": str}
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 from .reputation import composite_check
 from .secrets_scan import scan_text_for_secrets
 
 
+def _scan_file(path: str) -> list[str]:
+    text = open(path, encoding="utf-8", errors="replace").read()
+    return scan_text_for_secrets(text)
+
+
 def _scan_secrets(target: str) -> dict:
-    text = open(target, encoding="utf-8", errors="replace").read()
-    findings = scan_text_for_secrets(text)
+    if os.path.isdir(target):
+        # A directory target (e.g. Verify pressed on a folder in `scg
+        # monitor`) scans every file underneath it, not just the target
+        # path itself -- previously open(target) raised IsADirectoryError,
+        # surfacing as a ScannerMachineryError that silently left the
+        # dashboard row unverified (monitor_app.py's action_verify()
+        # catches that error and continues). A single unreadable file
+        # (permission denied, broken symlink) is skipped rather than
+        # failing the whole directory, so one bad entry can't block
+        # verifying the rest of the tree.
+        findings: list[str] = []
+        for root, _dirs, files in os.walk(target):
+            for name in files:
+                path = os.path.join(root, name)
+                try:
+                    file_findings = _scan_file(path)
+                except OSError:
+                    continue
+                if file_findings:
+                    findings.append(f"{path}: {'; '.join(file_findings)}")
+        if findings:
+            return {"ok": False, "reason": "; ".join(findings)}
+        return {"ok": True, "reason": ""}
+
+    findings = _scan_file(target)
     if findings:
         return {"ok": False, "reason": "; ".join(findings)}
     return {"ok": True, "reason": ""}

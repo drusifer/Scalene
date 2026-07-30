@@ -44,7 +44,17 @@ class ToolCallEvent:
     (sec20.1) is `"confirmed_bad"` / `"uncleared"` / `None` (always `None`
     for an allow). Both new fields default so an old, pre-sec20 audit-log
     line (block-only, no `block_kind`/`tool_input`) still parses instead of
-    crashing the reader."""
+    crashing the reader.
+
+    `log_offset` (2026-07-30, direct user report: "review status is not
+    persisted -- always resets to N pending reviews on restart"): the byte
+    offset where this event's own line starts in audit.log -- a stable,
+    real identity for this exact event, used to record ("review_resolved",
+    below) that a specific block event was actually dealt with, so a
+    restart's full re-read of the log doesn't re-queue it. Defaults to -1
+    (never a real file offset) for events constructed directly, not via
+    AuditTail.poll() -- most existing tests build ToolCallEvent by hand and
+    don't need this."""
 
     session_id: str
     tool_name: str
@@ -52,6 +62,19 @@ class ToolCallEvent:
     event: str = "block"
     block_kind: str | None = None
     tool_input: dict = field(default_factory=dict)
+    log_offset: int = -1
+
+
+@dataclass(frozen=True)
+class ReviewResolution:
+    """A `{"event": "review_resolved", "resolved_offset": ...}` audit-log
+    line (written by monitor_app._on_review_resolved) -- not a tool call
+    itself, just a marker that the block event at `resolved_offset` was
+    actually Denied or Allowed, so AuditTail.poll()'s caller can drop it
+    from the pending queue on a restart's full re-read instead of silently
+    re-surfacing something already dealt with."""
+
+    resolved_offset: int
 
 
 @dataclass
@@ -60,16 +83,31 @@ class ReviewEntry:
     block event. Not a live gate -- `pre_tool_use` already resolved (denied)
     this call synchronously before the TUI ever saw it (sec20.1), so an
     entry that never gets reviewed just stays queued; no timeout logic.
-    `verified` tracks per-target Verify completion by `Resource.identity`,
-    gating sec20.5's Allow action (disabled until every target is True)."""
+
+    2026-07-30 (direct user report: "restarted scg monitor and it lost the
+    verified status"): Verify completion used to be tracked in a separate
+    `verified: dict[str, bool]` field on this object, set by
+    monitor_app.action_verify() -- but `build_review_entry()` constructs a
+    brand-new `ReviewEntry` (empty dict) every time the audit log is
+    rescanned, including on every monitor restart, so that flag was never
+    actually persisted anywhere and always reset to "not verified" even
+    when the real `ScanCache` already had a perfectly fresh, valid entry
+    from before the restart. Gating Allow on `is_verified()`/`all_verified()`
+    below instead -- computed live from the one real, persisted source of
+    truth (`ScanCache`, same as `target_status()` already reads) rather
+    than a second, parallel, unpersisted flag that could (and did) drift
+    from it -- matches this project's own repeated "poll real files, don't
+    invent a parallel store" precedent."""
 
     event: ToolCallEvent
     targets: list[Resource]
-    verified: dict[str, bool] = field(default_factory=dict)
 
-    @property
-    def all_verified(self) -> bool:
-        return bool(self.targets) and all(self.verified.get(t.identity, False) for t in self.targets)
+    def is_verified(self, target: Resource, cache: ScanCache) -> bool:
+        entry = cache.get(target)
+        return entry is not None and cache.is_fresh(target, entry)
+
+    def all_verified(self, cache: ScanCache) -> bool:
+        return bool(self.targets) and all(self.is_verified(t, cache) for t in self.targets)
 
 
 def build_review_entry(event: ToolCallEvent, scanners: dict) -> ReviewEntry:
@@ -203,7 +241,7 @@ class AuditTail:
         self._path = audit_log_path
         self._offset = 0
 
-    def poll(self) -> list[ToolCallEvent]:
+    def poll(self) -> list[ToolCallEvent | ReviewResolution]:
         if not self._path.exists():
             return []
 
@@ -213,11 +251,20 @@ class AuditTail:
             # past EOF forever.
             self._offset = 0
 
-        events = []
+        items: list[ToolCallEvent | ReviewResolution] = []
         with self._path.open("r", encoding="utf-8") as f:
             f.seek(self._offset)
-            for line in f:
-                line = line.strip()
+            while True:
+                # 2026-07-30: `readline()` in a loop (not `for line in f`)
+                # so `f.tell()` reliably gives each line's own starting
+                # byte offset -- ToolCallEvent.log_offset's stable identity,
+                # used to record/recognize that a specific block event was
+                # actually resolved (see ReviewResolution above).
+                line_start = f.tell()
+                raw_line = f.readline()
+                if not raw_line:
+                    break
+                line = raw_line.strip()
                 if not line:
                     continue
                 try:
@@ -225,9 +272,14 @@ class AuditTail:
                 except json.JSONDecodeError:
                     continue
                 event = entry.get("event")
+                if event == "review_resolved":
+                    resolved_offset = entry.get("resolved_offset")
+                    if isinstance(resolved_offset, int):
+                        items.append(ReviewResolution(resolved_offset=resolved_offset))
+                    continue
                 if event not in ("allow", "block"):
                     continue
-                events.append(
+                items.append(
                     ToolCallEvent(
                         session_id=entry.get("session_id", ""),
                         tool_name=entry.get("tool_name", ""),
@@ -235,7 +287,8 @@ class AuditTail:
                         event=event,
                         block_kind=entry.get("block_kind"),
                         tool_input=entry.get("tool_input") or {},
+                        log_offset=line_start,
                     )
                 )
             self._offset = f.tell()
-        return events
+        return items

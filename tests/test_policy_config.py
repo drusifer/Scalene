@@ -26,6 +26,7 @@ from scalene.policy_config import (
     PolicyRule,
     write_default_project_policy,
 )
+from scalene.scanner import FileScanner, Resource
 
 
 def write_yaml(tmp: Path, text: str) -> Path:
@@ -135,9 +136,19 @@ class TestPolicyRule(unittest.TestCase):
         with self.assertRaises(PolicyConfigError):
             PolicyRule(tool="[unclosed", pattern=".*", sensitivity="public", mode="mask")
 
-    def test_invalid_pattern_regex_raises_clear_error(self):
-        with self.assertRaises(PolicyConfigError):
-            PolicyRule(tool=".*", pattern="[unclosed", sensitivity="public", mode="mask")
+    def test_pattern_is_not_regex_validated_at_construction_time(self):
+        # 2026-07-30: pattern's syntax is scanner-owned (Scanner.match(),
+        # scanner.py) -- FileScanner reads it as gitignore syntax, other
+        # scanners still as regex -- and a rule doesn't have to declare
+        # `scanner:` to be matched later, so PolicyRule can't know which
+        # syntax applies at construction time. A leading "**/" (ordinary,
+        # valid gitignore syntax) is not valid regex at all ("nothing to
+        # repeat"), so unconditionally regex-validating `pattern` here would
+        # reject legitimate glob patterns, not just genuine typos -- this
+        # replaces the old test_invalid_pattern_regex_raises_clear_error,
+        # whose premise no longer holds.
+        rule = PolicyRule(tool=".*", pattern="**/*.env", sensitivity="public", mode="mask")
+        self.assertEqual(rule.pattern, "**/*.env")
 
     def test_allow_mode_is_valid_on_a_rule(self):
         # docs/ARCHITECTURE.md sec14.4 amendment: the scoped suppression
@@ -379,9 +390,14 @@ class TestWriteDefaultProjectPolicy(unittest.TestCase):
             rule = config.rules[0]
             self.assertEqual(rule.sensitivity, "internal")
             self.assertEqual(rule.mode, "allow")
-            # 2026-07-22: no scanner filter -- the anchored absolute-path
-            # pattern is already selective enough on its own.
-            self.assertEqual(rule.scanner, "")
+            # 2026-07-30 (reverses the 2026-07-22 decision): pattern syntax
+            # is now scanner-owned (gitignore for FileScanner, regex
+            # elsewhere) -- this rule's pattern must declare which one it
+            # is, or _find_matching_rule() would also hand it to another
+            # scanner's plain-regex match() for an unrelated resource,
+            # which would raise ("**" isn't valid regex), not just fail to
+            # match.
+            self.assertEqual(rule.scanner, "secrets")
 
     def test_written_rule_matches_a_file_under_the_project_root(self):
         with TemporaryDirectory() as tmp:
@@ -391,7 +407,22 @@ class TestWriteDefaultProjectPolicy(unittest.TestCase):
             config = PolicyConfig.from_yaml(policy_path)
             rule = config.rules[0]
             target = str(project_root / "src" / "main.py")
-            self.assertRegex(target, rule.pattern)
+            resource = Resource(kind="file", identity=target, scanner_name="secrets")
+            self.assertTrue(FileScanner().match(rule, resource))
+
+    def test_written_rule_matches_the_project_root_itself(self):
+        # STORY-1504's original regex (`^root(/|$)`) matched the root path
+        # itself, not just files under it -- the gitignore replacement
+        # needs both "root" and "root/**" as separate lines to preserve
+        # that (a bare "root/**" alone only matches root's *contents*).
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            rule = config.rules[0]
+            resource = Resource(kind="file", identity=str(project_root), scanner_name="secrets")
+            self.assertTrue(FileScanner().match(rule, resource))
 
     def test_written_rule_does_not_match_a_path_outside_the_project_root(self):
         with TemporaryDirectory() as tmp, TemporaryDirectory() as other_tmp:
@@ -401,7 +432,24 @@ class TestWriteDefaultProjectPolicy(unittest.TestCase):
             config = PolicyConfig.from_yaml(policy_path)
             rule = config.rules[0]
             outside_target = str(Path(other_tmp) / "other.py")
-            self.assertNotRegex(outside_target, rule.pattern)
+            resource = Resource(kind="file", identity=outside_target, scanner_name="secrets")
+            self.assertFalse(FileScanner().match(rule, resource))
+
+    def test_written_rule_does_not_match_a_similarly_named_sibling_directory(self):
+        # Boundary-safety regression test, same class as scanner.py's
+        # existing "/etc" vs. false-positive "/etcetera" case -- a sibling
+        # directory whose name happens to start with the project root's
+        # name must not match.
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp) / "project"
+            project_root.mkdir()
+            policy_path = project_root / "scalene_policy.yaml"
+            write_default_project_policy(policy_path, project_root)
+            config = PolicyConfig.from_yaml(policy_path)
+            rule = config.rules[0]
+            sibling_target = str(Path(tmp) / "project-evil" / "x.py")
+            resource = Resource(kind="file", identity=sibling_target, scanner_name="secrets")
+            self.assertFalse(FileScanner().match(rule, resource))
 
     def test_no_scan_cache_entry_is_pre_seeded(self):
         # User's own explicit direction: "timestamp uninitialized so that it

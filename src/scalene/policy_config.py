@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from .scanner import SCANNERS, Scanner, ScannerRegistryError, load_scanners
+from .scanner import SCANNERS, Scanner, ScannerRegistryError, escape_gitignore_literal, load_scanners
 
 
 class PolicyConfigError(ValueError):
@@ -62,8 +62,13 @@ class PolicyRule:
     """docs/ARCHITECTURE.md sec14.1/14.5 (STORY-1102, STORY-1103): decides
     candidacy/classification of an already-identified Resource, never trust
     directly -- `identify()` (scanner.py) still finds resources; a rule's
-    `tool` (regex against tool_name) + `pattern` (regex against
-    resource.identity) decide which sensitivity/mode apply. `scanner` is an
+    `tool` (always regex against tool_name) + `pattern` decide which
+    sensitivity/mode apply. `pattern`'s syntax is scanner-owned
+    (Scanner.match(), scanner.py) rather than fixed here: FileScanner
+    interprets it as gitignore syntax (e.g. "/project/**"), everything else
+    (URLScanner, the Scanner base default) still treats it as plain regex --
+    a rule doesn't have to declare `scanner:` to be matched, so this class
+    can't know which syntax applies at construction time. `scanner` is an
     optional disambiguating filter (inferred from Resource.scanner_name when
     omitted). `jsonpath` is retained for forward-compatibility (a future
     case where a tool has multiple candidate argument fields) -- not
@@ -87,12 +92,17 @@ class PolicyRule:
         # Trin's adversarial UAT finding (Sprint 5 Phase 2): an invalid regex
         # must fail loud here, at rule-construction time -- not raise
         # re.error deep in resource_verifier.evaluate() on every subsequent
-        # call that happens to identify a resource.
-        for field_name in ("tool", "pattern"):
-            try:
-                re.compile(getattr(self, field_name))
-            except re.error as exc:
-                raise PolicyConfigError(f"'{field_name}' is not a valid regex: {getattr(self, field_name)!r} ({exc})") from exc
+        # call that happens to identify a resource. Only `tool` is validated
+        # this way now -- `pattern`'s syntax depends on which scanner ends up
+        # matching it (see class docstring), which this constructor can't
+        # know, and a real gitignore pattern (e.g. a leading "**/") is often
+        # not valid regex at all, so applying this same regex check to
+        # `pattern` unconditionally would reject legitimate glob patterns
+        # outright, not just genuine typos.
+        try:
+            re.compile(self.tool)
+        except re.error as exc:
+            raise PolicyConfigError(f"'tool' is not a valid regex: {self.tool!r} ({exc})") from exc
         # E12/STORY-1201 (Trin's Sprint 5 UAT finding): a typo'd scanner name
         # used to silently make a rule permanently ineffective (it would
         # never pass resource_verifier's `rule.scanner != resource.scanner_name`
@@ -238,17 +248,31 @@ def write_default_project_policy(path: Path, project_root: Path) -> None:
     silently unreachable forever. `onboard.py::write_rule()` accounts for
     this by inserting new rules *before* this one, not after -- see there.
 
-    No `scanner:` filter (2026-07-22, direct user request): the pattern is
-    an absolute filesystem path anchored with `^`, which no URL/other-scheme
-    identity can ever match -- adding `scanner: secrets` on top would just
-    be a redundant assumption the rule doesn't need, and rules in general
-    shouldn't require an author to know/remember a scanner registry name
-    when the pattern alone is already selective enough."""
+    2026-07-30 (Scanner.match(), scanner.py): FileScanner now matches
+    patterns as gitignore syntax, not regex (user request: familiar
+    wildcard matching for "the whole project folder recursively") -- the
+    old `^...(/|$)` regex anchoring is replaced with 2 gitignore lines (the
+    root path itself, and "root/**" for everything under it -- plain
+    gitignore semantics don't match a bare directory via "root/**" alone,
+    only its contents). pathspec's GitIgnoreSpec handles the "/etc" vs.
+    false-positive "/etcetera" boundary correctly on its own.
+
+    `scanner: secrets` is now REQUIRED here (reverses the 2026-07-22 "no
+    scanner filter needed" decision): pattern syntax is scanner-owned as of
+    this same change, so without this filter `_find_matching_rule()` would
+    also hand this gitignore-shaped pattern to URLScanner's (or any other
+    scanner's) plain-regex match() for an unrelated resource -- "**" isn't
+    valid regex ("nothing to repeat"), so that would raise, not just fail
+    to match. Declaring the scanner this pattern's syntax actually belongs
+    to prevents that outright, and is more honest now that the pattern
+    isn't scanner-agnostic in the first place."""
+    escaped_root = escape_gitignore_literal(str(project_root))
     rule = {
         "tool": ".*",
-        "pattern": f"^{re.escape(str(project_root))}(/|$)",
+        "pattern": f"{escaped_root}\n{escaped_root}/**",
         "sensitivity": "internal",
         "mode": "allow",
+        "scanner": "secrets",
         "description": PROJECT_FOLDER_DEFAULT_DESCRIPTION,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

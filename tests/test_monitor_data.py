@@ -14,6 +14,7 @@ from pathlib import Path
 
 from scalene.monitor_data import (
     AuditTail,
+    ReviewResolution,
     ScannerActivity,
     ScanResultInfo,
     SessionInfo,
@@ -210,24 +211,44 @@ class TestBuildReviewEntry(unittest.TestCase):
         entry = build_review_entry(event, SCANNERS)
         self.assertEqual(entry.targets, [])
 
-    def test_all_verified_is_false_until_every_target_is_marked_verified(self):
-        event = ToolCallEvent(
-            session_id="s1",
-            tool_name="WebFetch",
-            reason="blocked",
-            event="block",
-            tool_input={"url": "https://example.com/x"},
-        )
-        entry = build_review_entry(event, SCANNERS)
-        self.assertFalse(entry.all_verified)
-        entry.verified[entry.targets[0].identity] = True
-        self.assertTrue(entry.all_verified)
+    def test_all_verified_is_false_until_a_real_fresh_cache_entry_exists(self):
+        # 2026-07-30 (direct user report: "restarted scg monitor and it lost
+        # the verified status"): verification is now computed live from the
+        # real, persisted ScanCache -- not a separate in-memory flag that
+        # build_review_entry() reset to empty on every reconstruction
+        # (including every monitor restart). A real cache.put() is what
+        # makes all_verified() true, and it stays true across a brand-new
+        # ReviewEntry for the same event (simulating a restart), since the
+        # cache itself is untouched.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            event = ToolCallEvent(
+                session_id="s1",
+                tool_name="WebFetch",
+                reason="blocked",
+                event="block",
+                tool_input={"url": "https://example.com/x"},
+            )
+            entry = build_review_entry(event, SCANNERS)
+            self.assertFalse(entry.all_verified(cache))
+
+            cache.put(entry.targets[0], ScanResult(label="trusted", reason=""))
+            self.assertTrue(entry.all_verified(cache))
+
+            # Simulate a monitor restart: a brand-new ReviewEntry for the
+            # same event, built fresh from the audit log the way a real
+            # restart would -- still verified, because the real cache
+            # (the only thing this now reads) was never touched.
+            restarted_entry = build_review_entry(event, SCANNERS)
+            self.assertTrue(restarted_entry.all_verified(cache))
 
     def test_all_verified_is_false_with_zero_targets(self):
         # Nothing to verify shouldn't silently read as "verification done".
-        event = ToolCallEvent(session_id="s1", tool_name="Bash", reason="blocked", event="block", tool_input={})
-        entry = build_review_entry(event, SCANNERS)
-        self.assertFalse(entry.all_verified)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            event = ToolCallEvent(session_id="s1", tool_name="Bash", reason="blocked", event="block", tool_input={})
+            entry = build_review_entry(event, SCANNERS)
+            self.assertFalse(entry.all_verified(cache))
 
 
 class TestTargetStatus(unittest.TestCase):
@@ -291,7 +312,14 @@ class TestAuditTail(unittest.TestCase):
         self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "no validated rule"})
         tail = AuditTail(self.audit_log)
         events = tail.poll()
-        self.assertEqual(events, [ToolCallEvent(session_id="s1", tool_name="Bash", reason="no validated rule")])
+        # log_offset (2026-07-30) is real and non-default here (this event
+        # isn't the first line -- the skipped "onboard" line precedes it),
+        # so compare the meaningful fields, not full dataclass equality.
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].session_id, "s1")
+        self.assertEqual(events[0].tool_name, "Bash")
+        self.assertEqual(events[0].reason, "no validated rule")
+        self.assertEqual(events[0].event, "block")
 
     def test_reads_allow_events_too_not_just_blocks(self):
         # docs/ARCHITECTURE.md sec20.3 (STORY-1603, corrected 2026-07-22):
@@ -339,6 +367,44 @@ class TestAuditTail(unittest.TestCase):
         third = tail.poll()
         self.assertEqual(len(third), 1)
         self.assertEqual(third[0].session_id, "s2")
+
+    def test_each_event_gets_a_distinct_stable_log_offset(self):
+        # 2026-07-30 (direct user report: "review status is not persisted"):
+        # log_offset is this event's real byte position in the file --
+        # the stable identity a later review_resolved marker references.
+        self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "x"})
+        self._append({"event": "block", "session_id": "s2", "tool_name": "Write", "reason": "y"})
+        tail = AuditTail(self.audit_log)
+        events = tail.poll()
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].log_offset, 0)
+        self.assertGreater(events[1].log_offset, events[0].log_offset)
+
+    def test_review_resolved_marker_is_parsed_as_a_review_resolution(self):
+        self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "x"})
+        self._append({"event": "review_resolved", "resolved_offset": 0})
+        tail = AuditTail(self.audit_log)
+        items = tail.poll()
+        self.assertEqual(len(items), 2)
+        self.assertIsInstance(items[0], ToolCallEvent)
+        self.assertEqual(items[1], ReviewResolution(resolved_offset=0))
+
+    def test_review_resolved_marker_read_on_a_fresh_full_reread_nets_out_its_block_event(self):
+        # This is the actual restart scenario: a brand-new AuditTail (offset
+        # 0, same as a real monitor restart) reads the whole file in one
+        # poll() -- both the original block and its later resolution arrive
+        # in the same list, in file order.
+        self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "x"})
+        block_offset = AuditTail(self.audit_log).poll()[0].log_offset
+        self._append({"event": "review_resolved", "resolved_offset": block_offset})
+
+        fresh_tail = AuditTail(self.audit_log)
+        items = fresh_tail.poll()
+        blocks = [i for i in items if isinstance(i, ToolCallEvent)]
+        resolutions = [i for i in items if isinstance(i, ReviewResolution)]
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(len(resolutions), 1)
+        self.assertEqual(resolutions[0].resolved_offset, blocks[0].log_offset)
 
     def test_malformed_line_is_skipped_not_raised(self):
         with self.audit_log.open("a") as f:

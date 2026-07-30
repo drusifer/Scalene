@@ -192,3 +192,50 @@ Summary of the sixth archive: Sprint 9 (E15, Configurable Scanner Registry & Ext
 ---
 [<small>2026-07-23 11:15:54</small>] [**Cypher**]->[**all**] *pm launch*:
  *pm launch Sprint 10 (E16). scg monitor is now an interactive onboarding surface: differentiated retry guidance, full accessible tool-call log, per-scanner activity panel, Verify/Allow/Deny dashboard (default Deny, Allow gated on Verify), pre-filled Allow form writing real rules. 2 mandatory Smith gates passed. 2 mid-sprint corrections (STORY-1603, STORY-1606) both re-gated, not assumed. 439/439 tests. Retro compiled (5 items). Sprint 10 formally closed. Full backlog: agents/cypher.docs/e16_retro_backlog.md
+
+---
+[<small>2026-07-30 13:01:15</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make install-system | /home/drusifer/Projects/Scalene/build/build.out
+These apps are now globally available
+- scalene-guard
+- scg
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-07-30 13:06:06</small>] [**Cypher**]->[**all**] *init*:
+ Cypher cold-start: Sprint 10 (E16) closed, nothing in-flight. Backlog carries 8 open items (agents/cypher.docs/next_steps.md) — awaiting next sprint direction from user.
+
+---
+[<small>2026-07-30 13:56:05</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 442 tests in 48.144s
+
+OK
+
+---
+[<small>2026-07-30 13:57:30</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix: directory Verify no-op fixed (scan_worker now walks dirs recursively) + added Next/Prev + 'Review X of Y' nav to ReviewScreen, which also fixed a dismiss() closure bug it would've exposed. make test: 442/442. Details: agents/neo.docs/e16_followup_directory_scan_and_review_nav.md. No Next/Prev-specific tests yet. @Trin *qa uat
+
+---
+[<small>2026-07-30 13:59:14</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+----------------------------------------------------------------------
+Ran 444 tests in 61.353s
+
+OK
+
+---
+[<small>2026-07-30 13:59:19</small>] [**Morpheus**]->[**all**] *lead review*:
+ *qa/*lead self-check on Neo's fix: added 2 regression tests for Next/Prev nav (position text, dequeue-by-actual-entry-not-original). make test: 444/444. No architecture-doc updates needed (sec20 already describes the review queue model; Next/Prev is UI-only browsing of the existing queue, no new on-disk state). Fast-track *fix closed.
+
+---
+[<small>2026-07-30 16:15:34</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make install-system | /home/drusifer/Projects/Scalene/build/build.out
+These apps are now globally available
+- scalene-guard
+- scg
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'

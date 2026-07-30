@@ -200,6 +200,34 @@ class TestFileScannerScan(unittest.TestCase):
         )
         self.assertEqual(result.label, "sensitive")
 
+    def test_directory_target_scans_every_file_inside_and_is_public_when_all_clean(self):
+        # Bug fix: Verify on a directory target in scg monitor previously
+        # raised ScannerMachineryError (open() on a dir), silently leaving
+        # the row unverified. A directory now scans every file underneath.
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.md").write_text("just some ordinary docs")
+            nested = Path(tmp) / "nested"
+            nested.mkdir()
+            (nested / "b.md").write_text("more ordinary docs")
+            result = self.scanner.scan(Resource(kind="file", identity=tmp, scanner_name="secrets"))
+            self.assertEqual(result.label, "public")
+
+    def test_directory_target_with_a_secret_in_a_nested_file_is_sensitive(self):
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "clean.md").write_text("just some ordinary docs")
+            nested = Path(tmp) / "nested"
+            nested.mkdir()
+            fake_key = "AKIA" + "ABCDEFGHIJKLMNOP"
+            (nested / "leaky.env").write_text(f"AWS_KEY={fake_key}")
+            result = self.scanner.scan(Resource(kind="file", identity=tmp, scanner_name="secrets"))
+            self.assertEqual(result.label, "sensitive")
+            self.assertIn("leaky.env", result.reason)
+
+    def test_empty_directory_target_is_public(self):
+        with TemporaryDirectory() as tmp:
+            result = self.scanner.scan(Resource(kind="file", identity=tmp, scanner_name="secrets"))
+            self.assertEqual(result.label, "public")
+
     def test_reputation_stays_none_deliberately(self):
         # sec17.6: detect-secrets' open-ended finding list has no fixed-
         # heuristic-count basis for a fraction the way reputation.py's 3
@@ -309,6 +337,132 @@ class TestURLScannerScan(unittest.TestCase):
             Resource(kind="url", identity="https://203.0.113.42/path", scanner_name="reputation")
         )
         self.assertEqual(result.label, "untrusted")
+
+
+class TestScannerBaseMatch(unittest.TestCase):
+    """Scanner.match() (2026-07-30): pattern matching moved from one
+    generic regex check in resource_verifier.py to a scanner-owned method,
+    so each scanner's own identity shape stays in sync with how its
+    patterns are interpreted. The base class default is plain regex --
+    unchanged behavior from before this method existed."""
+
+    def test_default_match_is_plain_regex(self):
+        from scalene.policy_config import PolicyRule
+        from scalene.scanner import Scanner
+
+        rule = PolicyRule(tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="public", mode="mask")
+        resource = Resource(kind="url", identity="https://internal.example.com/x", scanner_name="reputation")
+        self.assertTrue(Scanner().match(rule, resource))
+
+    def test_default_match_fails_safe_on_invalid_regex_not_a_crash(self):
+        # PolicyRule no longer validates `pattern` as regex at construction
+        # time (its syntax is scanner-owned) -- a pattern meant for a
+        # different scanner's syntax (e.g. a gitignore "**/" prefix) must
+        # not crash the hot-path hook call when handed to the plain-regex
+        # default matcher.
+        from scalene.policy_config import PolicyRule
+        from scalene.scanner import Scanner
+
+        rule = PolicyRule(tool=".*", pattern="**/*.env", sensitivity="public", mode="mask")
+        resource = Resource(kind="url", identity="https://example.com/x", scanner_name="reputation")
+        self.assertFalse(Scanner().match(rule, resource))
+
+    def test_url_scanner_has_no_match_override_still_plain_regex(self):
+        from scalene.policy_config import PolicyRule
+
+        rule = PolicyRule(tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="public", mode="mask")
+        resource = Resource(kind="url", identity="https://internal.example.com/x", scanner_name="reputation")
+        self.assertTrue(URLScanner().match(rule, resource))
+
+
+class TestFileScannerMatch(unittest.TestCase):
+    """FileScanner.match() (user request: familiar, gitignore-style wildcard
+    matching so a rule can cover "the whole project folder recursively")."""
+
+    def setUp(self):
+        self.scanner = FileScanner()
+
+    def _rule(self, pattern: str):
+        from scalene.policy_config import PolicyRule
+
+        return PolicyRule(tool=".*", pattern=pattern, sensitivity="public", mode="allow")
+
+    def test_exact_literal_pattern_matches_only_that_path(self):
+        rule = self._rule("/tmp/project/clean.md")
+        self.assertTrue(self.scanner.match(rule, Resource(kind="file", identity="/tmp/project/clean.md", scanner_name="secrets")))
+        self.assertFalse(self.scanner.match(rule, Resource(kind="file", identity="/tmp/project/other.md", scanner_name="secrets")))
+
+    def test_single_star_matches_recursively_across_directories(self):
+        # Unlike shell globbing, gitignore's "*" has no special-cased
+        # directory boundary either at this depth -- "/project/*" matches
+        # arbitrarily nested files under it, which is the actual behavior
+        # the user asked for ("match the whole project folder recursively").
+        rule = self._rule("/project/*")
+        nested = Resource(kind="file", identity="/project/a/b/c.py", scanner_name="secrets")
+        self.assertTrue(self.scanner.match(rule, nested))
+
+    def test_double_star_suffix_matches_root_and_everything_nested(self):
+        rule = self._rule("/project\n/project/**")
+        self.assertTrue(self.scanner.match(rule, Resource(kind="file", identity="/project", scanner_name="secrets")))
+        self.assertTrue(
+            self.scanner.match(rule, Resource(kind="file", identity="/project/a/b/c.py", scanner_name="secrets"))
+        )
+
+    def test_double_star_suffix_does_not_match_a_similarly_named_sibling(self):
+        # Same boundary-safety class as scanner.py's own "/etc" vs.
+        # false-positive "/etcetera" handling.
+        rule = self._rule("/project\n/project/**")
+        sibling = Resource(kind="file", identity="/project-evil/x.py", scanner_name="secrets")
+        self.assertFalse(self.scanner.match(rule, sibling))
+
+    def test_negation_pattern_excludes_a_previously_matched_subpath(self):
+        # Real gitignore semantics: a later "!" line un-ignores something an
+        # earlier line matched -- free, since this is genuine gitignore
+        # syntax (pathspec.GitIgnoreSpec), not a bespoke reimplementation.
+        rule = self._rule("/project/**\n!/project/public/**")
+        self.assertTrue(
+            self.scanner.match(rule, Resource(kind="file", identity="/project/secret.env", scanner_name="secrets"))
+        )
+        self.assertFalse(
+            self.scanner.match(rule, Resource(kind="file", identity="/project/public/readme.md", scanner_name="secrets"))
+        )
+
+
+class TestScannerFromConfig(unittest.TestCase):
+    """Scanner.from_config() (user request: config-declared scanners should
+    be able to receive their own settings from scalene_policy.yaml's
+    `scanners.extra[].config`, not just an import path)."""
+
+    def test_default_from_config_ignores_config_and_returns_a_plain_instance(self):
+        from scalene.scanner import Scanner
+
+        instance = Scanner.from_config({"anything": "ignored"})
+        self.assertIsInstance(instance, Scanner)
+
+    def test_builtin_scanners_construct_via_from_config_unchanged(self):
+        self.assertIsInstance(FileScanner.from_config({}), FileScanner)
+        self.assertIsInstance(URLScanner.from_config({}), URLScanner)
+
+    def test_load_scanners_passes_the_config_subblock_to_a_scanner_that_overrides_from_config(self):
+        scanners = load_scanners(
+            {
+                "extra": [
+                    {
+                        "name": "configurable",
+                        "import": "fixtures_configurable_scanner:ConfigurableScanner",
+                        "config": {"endpoint": "https://cmdb.example.internal"},
+                    }
+                ]
+            }
+        )
+        self.assertEqual(scanners["configurable"].endpoint, "https://cmdb.example.internal")
+
+    def test_load_scanners_still_works_for_a_scanner_with_no_from_config_override(self):
+        # DummyScanner doesn't inherit Scanner at all (no from_config) --
+        # load_scanners() must fall back to bare cls(), same as before this
+        # feature existed, not raise.
+        scanners = load_scanners({"extra": [{"name": "dummy", "import": "fixtures_custom_scanner:DummyScanner"}]})
+        self.assertEqual(scanners["dummy"].name, "dummy")
 
 
 class TestScannerRegistry(unittest.TestCase):

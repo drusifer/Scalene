@@ -60,7 +60,12 @@ def _pre_tool_use_response(
     return response
 
 
-def _append_audit_log(entry: dict[str, Any], audit_log_path: Path) -> None:
+def append_audit_log(entry: dict[str, Any], audit_log_path: Path) -> None:
+    """Renamed from `_append_audit_log` (2026-07-30) -- monitor_app.py's
+    review-resolution persistence (a `review_resolved` marker written when
+    a review is Denied/Allowed, direct user report: "review status is not
+    persisted") is now a second real caller outside this module, same
+    precedent as onboard.py's `write_rule` (see its own docstring)."""
     audit_log_path.parent.mkdir(parents=True, exist_ok=True)
     with audit_log_path.open("a") as f:
         f.write(json.dumps(entry) + "\n")
@@ -96,7 +101,7 @@ def pre_tool_use(
     # event panel is a genuine tool-call stream, not a block-only feed. The
     # append is a single buffered write, not a scan/subprocess spawn, so
     # this doesn't share the measured first-sighting latency cost (sec13.3).
-    _append_audit_log(
+    append_audit_log(
         {
             "event": "allow" if decision.allowed else "block",
             "session_id": session_id,

@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test test-q setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test test-q setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -39,6 +39,10 @@ build: ## Build sdist + wheel into dist/ for distribution (usage: make setup fir
 	@.venv/bin/pip install -q build
 	@rm -rf dist
 	@.venv/bin/python -m build
+
+install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the monitor TUI (usage: make install-system)
+	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — install it first (e.g. 'apt install pipx' or 'python3 -m pip install --user pipx')" >&2; exit 1; }
+	@pipx install --force ".[monitor]"
 
 # publish is defined only in the else block below (bypass target, like demo/
 # help/chat) — it shells out to twine, which prompts for credentials
@@ -208,7 +212,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat demo test test-q setup clean build publish install-hooks install-scalene-hooks via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test test-q setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -274,6 +278,9 @@ clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info)
 	@./agents/tools/mkf.py $(V) $@
 
 build: ## Build sdist + wheel into dist/ for distribution (usage: make setup first)
+	@./agents/tools/mkf.py $(V) $@
+
+install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the monitor TUI (usage: make install-system)
 	@./agents/tools/mkf.py $(V) $@
 
 publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI credentials/token) — interactive, bypasses mkf

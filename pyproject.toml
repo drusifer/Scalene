@@ -24,6 +24,10 @@ dependencies = [
     "jsonpath-ng>=1.6",
     "filelock>=3.13",
     "detect-secrets>=1.5.0",
+    # FileScanner.match() (scanner.py) matches PolicyRule.pattern as
+    # gitignore-style syntax -- runs on the hot-path hook adapter, so this
+    # is a hard dependency, not an extra (unlike textual/monitor above).
+    "pathspec>=0.12",
 ]
 
 [project.urls]
