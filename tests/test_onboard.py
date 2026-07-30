@@ -958,6 +958,29 @@ class TestOnboardUrlTarget(unittest.TestCase):
             self.assertEqual(result["resource"].identity, "https://internal.example.com/docs/page")
 
 
+class TestWriteRuleTrustField(unittest.TestCase):
+    """sec21.8 (2026-07-30, direct user request): PolicyRule.trust is
+    written to scalene_policy.yaml only when it's not the "high" default,
+    so a rule that doesn't care about trust reads exactly like one written
+    before this field existed."""
+
+    def test_default_trust_is_not_written_to_the_yaml_file(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            rule = PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow")
+            write_rule(policy_path, rule)
+            written = yaml.safe_load(policy_path.read_text())
+            self.assertNotIn("trust", written["rules"][0])
+
+    def test_explicit_trust_level_is_written(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            rule = PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow", trust="med")
+            write_rule(policy_path, rule)
+            written = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(written["rules"][0]["trust"], "med")
+
+
 class TestWriteRuleReadOnlyPolicyFile(unittest.TestCase):
     """docs/ARCHITECTURE.md sec20.6 (STORY-1606): confirms `write_rule`'s
     existing `OSError` handling already produces a clean `OnboardError`

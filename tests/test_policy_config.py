@@ -120,6 +120,7 @@ class TestPolicyRule(unittest.TestCase):
         self.assertEqual(rule.jsonpath, "")
         self.assertEqual(rule.scanner, "")
         self.assertEqual(rule.description, "")
+        self.assertEqual(rule.trust, "high")
 
     def test_invalid_sensitivity_raises(self):
         with self.assertRaises(PolicyConfigError):
@@ -155,6 +156,21 @@ class TestPolicyRule(unittest.TestCase):
         # exception -- a rule (never PolicyConfig.mode) may set mode=allow.
         rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow")
         self.assertEqual(rule.mode, "allow")
+
+    def test_trust_defaults_to_high(self):
+        # sec21.8: "high" is trust's least-restrictive value -- a rule
+        # written before this field existed (or that just doesn't care)
+        # must not silently change decide_access() behavior.
+        rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow")
+        self.assertEqual(rule.trust, "high")
+
+    def test_explicit_trust_level_constructs(self):
+        rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", trust="low")
+        self.assertEqual(rule.trust, "low")
+
+    def test_invalid_trust_raises(self):
+        with self.assertRaises(PolicyConfigError):
+            PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", trust="paranoid")
 
     def test_valid_scanner_name_constructs(self):
         rule = PolicyRule(tool=".*", pattern=".*", sensitivity="public", mode="allow", scanner="reputation")
@@ -214,6 +230,27 @@ class TestPolicyConfigRulesLoading(unittest.TestCase):
             self.assertEqual(rule.sensitivity, "internal")
             self.assertEqual(rule.mode, "block")
             self.assertEqual(rule.description, "Internal wiki")
+
+    def test_rule_trust_parses_from_yaml_and_defaults_to_high(self):
+        with TemporaryDirectory() as tmp:
+            path = write_yaml(
+                Path(tmp),
+                """
+                rules:
+                  - tool: ".*"
+                    pattern: "/project/**"
+                    sensitivity: public
+                    mode: allow
+                    trust: low
+                  - tool: ".*"
+                    pattern: "/other/**"
+                    sensitivity: public
+                    mode: allow
+                """,
+            )
+            config = PolicyConfig.from_yaml(path)
+            self.assertEqual(config.rules[0].trust, "low")
+            self.assertEqual(config.rules[1].trust, "high")
 
     def test_rule_missing_required_field_raises_clear_error(self):
         with TemporaryDirectory() as tmp:

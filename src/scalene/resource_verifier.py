@@ -196,9 +196,9 @@ class AccessDecision:
 def decide_access(
     tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache, taint: TaintState
 ) -> AccessDecision:
-    """docs/ARCHITECTURE.md sec15.3: the core call-permission decision.
-    Mutates `taint` in place (escalate_trust/escalate_sensitivity) when the
-    call is allowed -- callers persist it (taint.save()) themselves."""
+    """docs/ARCHITECTURE.md sec15.3/sec21.8: the core call-permission
+    decision. Mutates `taint` in place (escalate_trust/escalate_sensitivity)
+    when the call is allowed -- callers persist it (taint.save()) themselves."""
     resources = [r for scanner in config.scanners.values() for r in scanner.identify(tool_name, args)]
     if not resources:
         return AccessDecision(allowed=True)
@@ -234,6 +234,13 @@ def decide_access(
 
     for resource, rule in validated_allow:
         taint.escalate_sensitivity(rule.sensitivity)
+        # sec21.8 (direct user request): a rule can explicitly declare a
+        # trust level too, not just avoid tainting by validation alone --
+        # defaults to "high" (least restrictive), a no-op for every rule
+        # written before this field existed. Still ratchet-only-restrictive
+        # (taint_state.escalate_trust) -- this can't undo trust already
+        # contaminated by something else earlier in the session.
+        taint.escalate_trust(rule.trust)
 
     if not uncleared:
         return AccessDecision(allowed=True)
@@ -252,3 +259,24 @@ def decide_access(
         ),
         block_kind="uncleared",
     )
+
+
+def is_validated_allow(tool_name: str, resource: Resource, config: PolicyConfig, cache: ScanCache) -> bool:
+    """docs/ARCHITECTURE.md sec21.9 (direct user request): True if
+    `resource` currently has a validated, `mode: allow` rule match -- i.e.
+    would land in `decide_access()`'s `validated_allow` bucket right now
+    (not `confirmed_bad`, not `uncleared`), mirroring that function's exact
+    classification rather than a second, driftable reimplementation.
+
+    A passive check only -- reads `cache.get()` directly, not
+    `refresh_if_needed()`, so calling this never itself triggers a new
+    background scan as a side effect. Used by `monitor_app.py` to detect
+    when a newly-added rule (e.g. widening an Allow to a whole project
+    folder) makes an already-queued pending review moot, so the operator
+    doesn't have to manually Deny/dismiss every review a broader rule now
+    covers."""
+    entry = cache.get(resource)
+    if entry is None or entry.label not in _CLEAN_LABELS:
+        return False
+    rule = _find_matching_rule(tool_name, resource, config.rules, config.scanners)
+    return rule is not None and rule.mode == "allow"

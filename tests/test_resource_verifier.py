@@ -12,7 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from scalene.policy_config import MatchResult, PolicyConfig, PolicyRule, write_default_project_policy
-from scalene.resource_verifier import decide_access, evaluate
+from scalene.resource_verifier import decide_access, evaluate, is_validated_allow
 from scalene.scan_cache import ScanCache
 from scalene.scanner import FileScanner, Resource, ScanResult
 from scalene.taint_state import TaintState
@@ -456,6 +456,78 @@ class TestDecideAccess(unittest.TestCase):
             self.assertEqual(taint.trust, "high")  # unaffected -- validated, not uncleared
             self.assertEqual(taint.sensitivity, "internal")
 
+    def test_rule_trust_high_default_leaves_trust_untouched(self):
+        # sec21.8: regression guard -- a rule with no trust opinion (every
+        # rule written before this field existed) must not change behavior.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="file", identity="/project/a.py", scanner_name="secrets"), ScanResult(label="public")
+            )
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("Read", {"file_path": "/project/a.py"}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "high")
+
+    def test_rule_can_explicitly_declare_a_lower_trust_level(self):
+        # sec21.8 (direct user request): a rule can say "this is validated
+        # and allowed, but I still don't fully trust it as an origin" --
+        # even from an otherwise-clean session.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://vendor.example.com/api", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://vendor\.example\.com/.*",
+                        sensitivity="public",
+                        mode="allow",
+                        trust="med",
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access(
+                "WebFetch", {"url": "https://vendor.example.com/api"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "med")
+
+    def test_rule_trust_cannot_restore_trust_already_lowered_by_something_else(self):
+        # sec21.8/sec15.1: trust only ratchets toward more restrictive --
+        # a rule's own trust value can't undo prior contamination from an
+        # earlier, unrelated resource in the same session.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*",
+                        pattern=r"https://internal\.example\.com/.*",
+                        sensitivity="public",
+                        mode="allow",
+                        trust="high",
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1", trust="low")
+            decision = decide_access(
+                "WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache, taint
+            )
+            self.assertTrue(decision.allowed)
+            self.assertEqual(taint.trust, "low")
+
     def test_validated_allow_proceeds_even_from_contaminated_context(self):
         # An explicitly validated+allowed resource bypasses the
         # block-when-contaminated gate -- that's the whole point of
@@ -804,6 +876,82 @@ class TestProjectFolderDefault(unittest.TestCase):
             decision = decide_access("Read", {"file_path": str(outside_target)}, config, cache, taint)
             self.assertTrue(decision.allowed)  # clean, unmatched -> uncleared, was_clean -> proceeds
             self.assertEqual(taint.trust, "low")  # NOT validated_allow
+
+
+class TestIsValidatedAllow(unittest.TestCase):
+    """sec21.9 (direct user request): "re-eval the match rules for
+    remaining tool calls after a new rule is added." `is_validated_allow`
+    is the passive, reusable check monitor_app.py runs against every
+    still-pending review's targets when a rule changes -- mirrors
+    decide_access()'s own validated_allow classification exactly, not a
+    second reimplementation."""
+
+    def test_true_when_rule_matches_mode_allow_and_cache_confirms_clean(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity="/project/a.py", scanner_name="secrets")
+            cache.put(resource, ScanResult(label="public"))
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            self.assertTrue(is_validated_allow("Read", resource, config, cache))
+
+    def test_false_with_no_cache_entry_even_if_a_rule_matches(self):
+        # A rule declares intent; sec15.2 requires the cache to confirm it.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity="/project/never-scanned.py", scanner_name="secrets")
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            self.assertFalse(is_validated_allow("Read", resource, config, cache))
+
+    def test_false_when_cache_entry_is_bad(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity="/project/leaky.env", scanner_name="secrets")
+            cache.put(resource, ScanResult(label="sensitive", reason="a real secret"))
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            self.assertFalse(is_validated_allow("Read", resource, config, cache))
+
+    def test_false_when_no_rule_matches_even_with_a_clean_cache_entry(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity="/elsewhere/a.py", scanner_name="secrets")
+            cache.put(resource, ScanResult(label="public"))
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            self.assertFalse(is_validated_allow("Read", resource, config, cache))
+
+    def test_false_when_matching_rule_mode_is_not_allow(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity="/project/a.py", scanner_name="secrets")
+            cache.put(resource, ScanResult(label="public"))
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="block"),)
+            )
+            self.assertFalse(is_validated_allow("Read", resource, config, cache))
+
+    def test_never_spawns_a_background_scan_as_a_side_effect(self):
+        # Passive check only -- reads cache.get() directly, not
+        # refresh_if_needed(), so calling this on many pending reviews
+        # after every rule change never itself triggers new scan
+        # subprocesses.
+        with TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "scan_cache.json"
+            cache = ScanCache(cache_path)
+            resource = Resource(kind="file", identity="/project/never-scanned.py", scanner_name="secrets")
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern="/project/**", sensitivity="public", mode="allow"),)
+            )
+            is_validated_allow("Read", resource, config, cache)
+            # No pending_since reservation was staked -- try_reserve() (the
+            # background-refresh dedup mechanism) was never called.
+            self.assertEqual(cache.all_entries(), {})
 
 
 if __name__ == "__main__":

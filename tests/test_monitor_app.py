@@ -1110,6 +1110,82 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(written.count("pattern:"), 1)
             self.assertIn(str(project_dir), written)
 
+    async def test_allowing_one_review_auto_resolves_other_pending_reviews_it_now_covers(self):
+        # Direct user request: a wildcard rule covering a whole project
+        # folder should render other already-queued reviews for files
+        # under that folder moot, not leave the operator to manually
+        # Deny/dismiss each one individually. Per sec15.2, a rule only
+        # counts once the cache confirms the resource clean -- both files
+        # are pre-seeded with real, fresh cache entries here (standing in
+        # for E10's automatic first-sight background scan) so this tests
+        # "rule now matches + already validated", not a shortcut that
+        # resolves anything a broad pattern merely touches.
+        _write_state(self.state_dir, "s1", trust="low")
+        project_dir = Path(self._tmp.name) / "project"
+        project_dir.mkdir()
+        file_a = project_dir / "a.py"
+        file_b = project_dir / "b.py"
+        file_a.write_text("print('a')")
+        file_b.write_text("print('b')")
+
+        from scalene.scan_cache import ScanCache
+        from scalene.scanner import Resource, ScanResult
+
+        cache = ScanCache(self.cache_path)
+        cache.put(Resource(kind="file", identity=str(file_a), scanner_name="secrets"), ScanResult(label="public"))
+        cache.put(Resource(kind="file", identity=str(file_b), scanner_name="secrets"), ScanResult(label="public"))
+
+        with self.audit_log.open("a") as f:
+            for target_file in (file_a, file_b):
+                f.write(
+                    json.dumps(
+                        {
+                            "event": "block",
+                            "session_id": "s1",
+                            "tool_name": "Read",
+                            "tool_input": {"file_path": str(target_file)},
+                            "reason": "blocked",
+                            "block_kind": "uncleared",
+                        }
+                    )
+                    + "\n"
+                )
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews), 2)
+
+            await pilot.press("r")
+            await pilot.pause()
+            # Both targets already have fresh cache entries -- Allow is
+            # already unlocked without needing an explicit Verify click.
+            self.assertFalse(app.screen.query_one("#allow-btn").disabled)
+            await pilot.click(app.screen.query_one("#allow-btn"))
+            await pilot.pause()
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.value = f"{project_dir}\n{project_dir}/**"
+            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.pause()
+
+            # Not just the review actually Allowed -- the *other* file's
+            # review, never explicitly touched, is gone too.
+            self.assertEqual(app._pending_reviews, [])
+
+        # And it stays gone across a restart (2026-07-30's persistence
+        # fix) -- the auto-resolution wrote a real review_resolved marker,
+        # not just an in-memory removal.
+        second_run = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
+
     async def test_sensitivity_and_mode_default_to_public_and_allow(self):
         _write_state(self.state_dir, "s1", trust="low")
         self._append_block_with_url("WebFetch", "https://evil.example.com/x")

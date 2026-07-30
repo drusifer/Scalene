@@ -33,6 +33,7 @@ from .monitor_data import (
 )
 from .onboard import BLOCKED_LABELS, write_rule
 from .policy_config import VALID_RULE_MODES, VALID_SENSITIVITIES, PolicyConfig, PolicyConfigError, PolicyRule
+from .resource_verifier import is_validated_allow
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache
 from .scanner import Resource, ScannerMachineryError, escape_gitignore_literal
 from .taint_state import DEFAULT_STATE_DIR
@@ -724,18 +725,43 @@ class MonitorApp(App):
         # leaves it queued" model as the rest of this design.
         if resolved_entry is not None and resolved_entry in self._pending_reviews:
             self._pending_reviews.remove(resolved_entry)
-            # 2026-07-30 (direct user report: "review status is not
-            # persisted -- always resets to N pending reviews on restart"):
-            # record that this exact block event (identified by its own
-            # stable log_offset) was actually dealt with, to the same real
-            # audit.log a restart re-reads from byte 0 -- poll_data() nets
-            # this back out against the original `block` event, so it
-            # doesn't silently reappear next time.
-            append_audit_log(
-                {"event": "review_resolved", "resolved_offset": resolved_entry.event.log_offset},
-                self._audit_log_path,
-            )
+            self._append_review_resolved(resolved_entry)
+            # 2026-07-30 (direct user request): a just-submitted Allow rule
+            # (e.g. widened to cover a whole project folder) may now also
+            # validate other still-queued reviews' targets -- a rule
+            # declares intent, but per sec15.2 it's the cache confirming
+            # clean that actually counts, so this only fires for targets
+            # already scanned (e.g. E10's automatic first-sight background
+            # refresh, or an earlier manual Verify), not a blanket "any
+            # pattern match resolves it" shortcut.
+            self._auto_resolve_now_covered_reviews()
         self._refresh_review_title()
+
+    def _append_review_resolved(self, entry: ReviewEntry) -> None:
+        # 2026-07-30 (direct user report: "review status is not
+        # persisted -- always resets to N pending reviews on restart"):
+        # record that this exact block event (identified by its own
+        # stable log_offset) was actually dealt with, to the same real
+        # audit.log a restart re-reads from byte 0 -- poll_data() nets
+        # this back out against the original `block` event, so it
+        # doesn't silently reappear next time.
+        append_audit_log({"event": "review_resolved", "resolved_offset": entry.event.log_offset}, self._audit_log_path)
+
+    def _auto_resolve_now_covered_reviews(self) -> None:
+        try:
+            config = PolicyConfig.from_yaml(self._policy_path) if self._policy_path.exists() else PolicyConfig()
+        except PolicyConfigError:
+            return
+        cache = ScanCache(self._cache_path)
+        still_pending = []
+        for entry in self._pending_reviews:
+            if entry.targets and all(
+                is_validated_allow(entry.event.tool_name, t, config, cache) for t in entry.targets
+            ):
+                self._append_review_resolved(entry)
+            else:
+                still_pending.append(entry)
+        self._pending_reviews[:] = still_pending
 
     def _refresh_review_title(self) -> None:
         count = len(self._pending_reviews)

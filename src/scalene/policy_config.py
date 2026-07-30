@@ -55,24 +55,42 @@ VALID_MODES = ("mask", "block")
 # one config line, defeating the point of a scoped, hand-authored exception.
 VALID_RULE_MODES = ("mask", "block", "allow")
 VALID_SENSITIVITIES = ("public", "internal", "restricted")
+# Same 3 levels as TaintState.trust (taint_state.py) -- kept as a local
+# constant here rather than importing TRUST_LEVELS from taint_state.py,
+# matching how VALID_SENSITIVITIES/VALID_RULE_MODES are already local
+# constants rather than cross-module imports.
+VALID_TRUST_LEVELS = ("low", "med", "high")
 
 
 @dataclass(frozen=True)
 class PolicyRule:
-    """docs/ARCHITECTURE.md sec14.1/14.5 (STORY-1102, STORY-1103): decides
-    candidacy/classification of an already-identified Resource, never trust
-    directly -- `identify()` (scanner.py) still finds resources; a rule's
-    `tool` (always regex against tool_name) + `pattern` decide which
-    sensitivity/mode apply. `pattern`'s syntax is scanner-owned
-    (Scanner.match(), scanner.py) rather than fixed here: FileScanner
-    interprets it as gitignore syntax (e.g. "/project/**"), everything else
-    (URLScanner, the Scanner base default) still treats it as plain regex --
-    a rule doesn't have to declare `scanner:` to be matched, so this class
-    can't know which syntax applies at construction time. `scanner` is an
-    optional disambiguating filter (inferred from Resource.scanner_name when
-    omitted). `jsonpath` is retained for forward-compatibility (a future
-    case where a tool has multiple candidate argument fields) -- not
-    required for the common case."""
+    """docs/ARCHITECTURE.md sec14.1/14.5 (STORY-1102, STORY-1103), sec21.8
+    (2026-07-30, direct user request): decides candidacy/classification of
+    an already-identified Resource -- `identify()` (scanner.py) still finds
+    resources; a rule's `tool` (always regex against tool_name) + `pattern`
+    decide which sensitivity/mode/trust apply. `pattern`'s syntax is
+    scanner-owned (Scanner.match(), scanner.py) rather than fixed here:
+    FileScanner interprets it as gitignore syntax (e.g. "/project/**"),
+    everything else (URLScanner, the Scanner base default) still treats it
+    as plain regex -- a rule doesn't have to declare `scanner:` to be
+    matched, so this class can't know which syntax applies at construction
+    time. `scanner` is an optional disambiguating filter (inferred from
+    Resource.scanner_name when omitted). `jsonpath` is retained for
+    forward-compatibility (a future case where a tool has multiple
+    candidate argument fields) -- not required for the common case.
+
+    `trust` (sec21.8): defaults to "high" (least restrictive -- a rule with
+    no opinion changes nothing, exactly today's behavior for every rule
+    written before this field existed). Since TaintState.escalate_trust()
+    only ever ratchets *toward* more restrictive (sec15.1), a validated
+    `mode: allow` match already left trust untouched by default; this field
+    only matters when a rule author explicitly wants touching a validated,
+    content-clean resource to still cap the session's trust at `med` or
+    `low` -- e.g. "this vendor's API payloads are fine, but I still don't
+    fully trust the vendor as an origin." It does not let a rule *restore*
+    trust already contaminated by something else earlier in the session --
+    the ratchet-only-restrictive rule (sec15.1) applies here exactly as it
+    does to sensitivity."""
 
     tool: str
     pattern: str
@@ -81,6 +99,7 @@ class PolicyRule:
     jsonpath: str = ""
     scanner: str = ""
     description: str = ""
+    trust: str = "high"
 
     def __post_init__(self) -> None:
         if self.sensitivity not in VALID_SENSITIVITIES:
@@ -89,6 +108,8 @@ class PolicyRule:
             )
         if self.mode not in VALID_RULE_MODES:
             raise PolicyConfigError(f"'mode' must be one of {VALID_RULE_MODES}, got {self.mode!r}")
+        if self.trust not in VALID_TRUST_LEVELS:
+            raise PolicyConfigError(f"'trust' must be one of {VALID_TRUST_LEVELS}, got {self.trust!r}")
         # Trin's adversarial UAT finding (Sprint 5 Phase 2): an invalid regex
         # must fail loud here, at rule-construction time -- not raise
         # re.error deep in resource_verifier.evaluate() on every subsequent
@@ -206,6 +227,7 @@ class PolicyConfig:
                         jsonpath=raw_rule.get("jsonpath", ""),
                         scanner=rule_scanner,
                         description=raw_rule.get("description", ""),
+                        trust=raw_rule.get("trust", "high"),
                     )
                 )
             except KeyError as exc:

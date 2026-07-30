@@ -196,6 +196,12 @@ def write_rule(policy_path: Path, rule: PolicyRule) -> None:
         rule_dict["scanner"] = rule.scanner
     if rule.description:
         rule_dict["description"] = rule.description
+    # sec21.8: "high" is trust's default/least-restrictive value -- omit it
+    # unless the rule actually declares something else, so a rule that
+    # doesn't touch trust reads exactly like one written before this field
+    # existed.
+    if rule.trust != "high":
+        rule_dict["trust"] = rule.trust
 
     # sec18.4 (STORY-1504): the auto-created project-folder default's
     # pattern is broad by design -- if a real onboarded rule for the same
