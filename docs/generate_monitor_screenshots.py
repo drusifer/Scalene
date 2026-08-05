@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -31,9 +32,12 @@ OUT_DIR = Path(__file__).resolve().parent / "images"
 
 
 async def _generate() -> None:
+    import yaml
+
     from scalene.monitor_app import MonitorApp
     from scalene.scan_cache import ScanCache
     from scalene.scanner import Resource, ScanResult
+    from textual.widgets import DataTable
 
     with TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
@@ -46,27 +50,9 @@ async def _generate() -> None:
         (state_dir / "a1b2c3d4.json").write_text(
             json.dumps({"session_id": "a1b2c3d4", "trust": "low", "sensitivity": "internal"})
         )
-        (state_dir / "f7e8d9c0.json").write_text(
-            json.dumps({"session_id": "f7e8d9c0", "trust": "high", "sensitivity": "public"})
-        )
 
+        now = time.time()
         events = [
-            {
-                "event": "allow",
-                "session_id": "a1b2c3d4",
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/workspace/src/app.py"},
-                "reason": "",
-                "block_kind": None,
-            },
-            {
-                "event": "allow",
-                "session_id": "a1b2c3d4",
-                "tool_name": "Bash",
-                "tool_input": {"command": "pytest tests/"},
-                "reason": "",
-                "block_kind": None,
-            },
             {
                 "event": "block",
                 "session_id": "a1b2c3d4",
@@ -79,31 +65,59 @@ async def _generate() -> None:
                     "Wait for review, then retry."
                 ),
                 "block_kind": "uncleared",
+                "ts": now - 125,
             },
             {
                 "event": "block",
                 "session_id": "a1b2c3d4",
-                "tool_name": "WebFetch",
-                "tool_input": {"url": "https://known-bad.example.com/x"},
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/workspace/src/secrets.env"},
                 "reason": (
-                    "Blocked: https://known-bad.example.com/x (the scanner found a real "
+                    "Blocked: /workspace/src/secrets.env (the scanner found a real "
                     "issue with it). Do not retry without a rule/config change."
                 ),
                 "block_kind": "confirmed_bad",
+                "ts": now - 12,
             },
         ]
         with audit_log.open("a") as f:
             for e in events:
                 f.write(json.dumps(e) + "\n")
 
+        # One completed scan (secrets idle) and one in-flight reservation
+        # (reputation busy) -- the status strip shows a real mixed state,
+        # not both idle.
         cache = ScanCache(cache_path)
         cache.put(
             Resource(kind="file", identity="/workspace/src/app.py", scanner_name="secrets"),
             ScanResult(label="public"),
         )
-        cache.put(
-            Resource(kind="url", identity="https://internal-wiki.example.com", scanner_name="reputation"),
-            ScanResult(label="trusted"),
+        cache.try_reserve(Resource(kind="url", identity="internal-wiki.example.com", scanner_name="reputation"))
+
+        # A real 2-rule policy file for the Rules screen screenshot -- order
+        # matters (first-match-wins), shown as-is.
+        policy_path.write_text(
+            yaml.safe_dump(
+                {
+                    "rules": [
+                        {
+                            "tool": ".*",
+                            "pattern": "/workspace/**",
+                            "sensitivity": "internal",
+                            "mode": "allow",
+                            "description": "project folder default (auto-created)",
+                        },
+                        {
+                            "tool": "Bash",
+                            "pattern": "/etc/**",
+                            "sensitivity": "restricted",
+                            "mode": "block",
+                        },
+                    ]
+                },
+                sort_keys=False,
+                default_flow_style=False,
+            )
         )
 
         OUT_DIR.mkdir(exist_ok=True)
@@ -114,14 +128,13 @@ async def _generate() -> None:
         async with app.run_test(size=(130, 42)) as pilot:
             app.poll_data()
             await pilot.pause()
-            app.selected_session_id = "a1b2c3d4"
-            app.refresh_events()
-            await pilot.pause()
             (OUT_DIR / "monitor-main.svg").write_text(app.export_screenshot(title="scg monitor"))
             print("wrote monitor-main.svg")
 
-            # Oldest queued review is the "uncleared" WebFetch block (FIFO).
-            await pilot.press("r")
+            # Open the oldest queued review (row 0 -- the queue is FIFO).
+            table = app.query_one("#queue", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("enter")
             await pilot.pause()
             (OUT_DIR / "monitor-review-dashboard.svg").write_text(
                 app.export_screenshot(title="scg monitor — review")
@@ -130,13 +143,17 @@ async def _generate() -> None:
 
             await pilot.click(app.screen.query_one("#verify-btn"))
             await pilot.pause()
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
-            (OUT_DIR / "monitor-allow-form.svg").write_text(
-                app.export_screenshot(title="scg monitor — allow")
+            (OUT_DIR / "monitor-review-verified.svg").write_text(
+                app.export_screenshot(title="scg monitor — review (verified)")
             )
-            print("wrote monitor-allow-form.svg")
+            print("wrote monitor-review-verified.svg")
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            (OUT_DIR / "monitor-rules.svg").write_text(app.export_screenshot(title="scg monitor — rules"))
+            print("wrote monitor-rules.svg")
 
     print(f"Screenshots written to {OUT_DIR}")
 

@@ -24,6 +24,7 @@ from scalene.policy_config import (
     PolicyConfig,
     PolicyConfigError,
     PolicyRule,
+    swap_rule_order,
     write_default_project_policy,
 )
 from scalene.scanner import FileScanner, Resource
@@ -498,6 +499,125 @@ class TestWriteDefaultProjectPolicy(unittest.TestCase):
             write_default_project_policy(policy_path, project_root)
             self.assertFalse((project_root / "scan_cache.json").exists())
             self.assertFalse((project_root / ".scalene").exists())
+
+
+class TestSwapRuleOrder(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec22.5 (STORY-1705): `scg monitor`'s Rules
+    screen reorder controls. Rule order is real access-control precedence,
+    not display -- this is the one function that actually rewrites it."""
+
+    def _write_rules(self, policy_path: Path, rules: list[dict]) -> None:
+        policy_path.write_text(yaml.safe_dump({"rules": rules}, sort_keys=False, default_flow_style=False))
+
+    def test_moves_a_rule_down(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            swap_rule_order(policy_path, index=0, direction=1)
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in data["rules"]], ["b", "a"])
+
+    def test_moves_a_rule_up(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            swap_rule_order(policy_path, index=1, direction=-1)
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in data["rules"]], ["b", "a"])
+
+    def test_every_field_round_trips_unchanged_except_position(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": "Bash", "pattern": "a", "sensitivity": "restricted", "mode": "block", "scanner": "secrets", "description": "first", "trust": "low"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            swap_rule_order(policy_path, index=0, direction=1)
+            data = yaml.safe_load(policy_path.read_text())
+            moved = data["rules"][1]
+            self.assertEqual(
+                moved,
+                {"tool": "Bash", "pattern": "a", "sensitivity": "restricted", "mode": "block", "scanner": "secrets", "description": "first", "trust": "low"},
+            )
+
+    def test_reordering_changes_which_rule_actually_wins(self):
+        # The real point: order is access-control precedence, verified via
+        # PolicyConfig.from_yaml + the real matching path, not just the
+        # written YAML's row order.
+        from scalene.resource_verifier import decide_access
+        from scalene.scan_cache import ScanCache
+        from scalene.taint_state import TaintState
+
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            target = str(Path(tmp) / "secret.env")
+            Path(target).write_text("nothing")
+            # Broad allow first, specific block second -- broad wins today
+            # (first-match), even though the specific rule is "more right".
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": f"{target}", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": f"{target}", "sensitivity": "restricted", "mode": "block"},
+                ],
+            )
+            cache_path = Path(tmp) / "scan_cache.json"
+            state_dir = Path(tmp) / "state"
+            state_dir.mkdir()
+
+            config_before = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1", state_dir=state_dir)
+            decision_before = decide_access("Read", {"file_path": target}, config_before, ScanCache(cache_path), taint)
+            self.assertTrue(decision_before.allowed)
+
+            swap_rule_order(policy_path, index=0, direction=1)
+
+            config_after = PolicyConfig.from_yaml(policy_path)
+            taint2 = TaintState(session_id="s2", state_dir=state_dir)
+            decision_after = decide_access("Read", {"file_path": target}, config_after, ScanCache(cache_path), taint2)
+            self.assertFalse(decision_after.allowed)
+
+    def test_missing_file_raises_policy_config_error_not_a_traceback(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "does_not_exist.yaml"
+            with self.assertRaises(PolicyConfigError):
+                swap_rule_order(policy_path, index=0, direction=1)
+
+    def test_read_only_policy_file_raises_policy_config_error(self):
+        import os
+        import stat
+
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            policy_path.chmod(stat.S_IRUSR)
+            try:
+                with self.assertRaises(PolicyConfigError):
+                    swap_rule_order(policy_path, index=0, direction=1)
+            finally:
+                policy_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+                os.chmod(tmp, 0o755)
 
 
 if __name__ == "__main__":

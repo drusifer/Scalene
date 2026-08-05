@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test test-q setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test test-q screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -72,6 +72,10 @@ test: ## Run unit tests
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests -b; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+
+screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_GUIDE.md (docs/generate_monitor_screenshots.py)
+	@if [ -x .venv/bin/python ]; then .venv/bin/python docs/generate_monitor_screenshots.py; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 via_index: ## Build the via index required by the via MCP server
@@ -212,7 +216,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat demo test test-q setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test test-q screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -269,6 +273,9 @@ test: ## Run unit tests
 	@./agents/tools/mkf.py $(V) $@
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
+	@./agents/tools/mkf.py $(V) $@
+
+screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_GUIDE.md (docs/generate_monitor_screenshots.py)
 	@./agents/tools/mkf.py $(V) $@
 
 setup: ## Create project venv and install dependencies (editable install)

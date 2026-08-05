@@ -298,3 +298,59 @@ def write_default_project_policy(path: Path, project_root: Path) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump({"rules": [rule]}, sort_keys=False, default_flow_style=False))
+
+
+def swap_rule_order(policy_path: Path, index: int, direction: int) -> None:
+    """docs/ARCHITECTURE.md sec22.5 (STORY-1705): `scg monitor`'s Rules
+    screen move-up/move-down. `direction` is `+1` (move down) or `-1` (move
+    up) -- swaps `rules[index]` with `rules[index + direction]`.
+
+    Rule order is real access-control precedence, not display: `resource_
+    verifier._find_matching_rule()` returns the *first* declaration-order
+    match (same principle `write_default_project_policy`'s own docstring
+    and `onboard.write_rule`'s insert-before-not-append behavior already
+    protect). This function is the one place that reorders `rules:` for
+    real.
+
+    Reads/writes the real YAML the same way `onboard.write_rule` already
+    does -- `yaml.safe_load`, `OSError`/`YAMLError` raised as this module's
+    own `PolicyConfigError` (not `OnboardError`, since this lives in
+    `policy_config.py`, not `onboard.py`), `yaml.safe_dump(sort_keys=False,
+    default_flow_style=False)` on write, so formatting stays consistent
+    with every other writer of this file. Rules are swapped **as raw
+    dicts**, not reconstructed via `PolicyRule` -- every field (including
+    ones a future rule might carry that this function doesn't know about)
+    round-trips unchanged except position.
+
+    Callers are responsible for bounds-checking `index`/`index + direction`
+    against the real rule count first (`RulesScreen`'s move-up/move-down
+    actions are disabled at the boundary, same pattern `ReviewScreen`'s
+    Prev/Next already uses) -- an out-of-range index raises `IndexError`
+    here rather than silently no-op'ing, since that would only happen from
+    a real caller bug, not an ordinary operator action."""
+    try:
+        raw_text = policy_path.read_text()
+    except OSError as exc:
+        raise PolicyConfigError(f"Cannot read policy file {policy_path}: {exc}") from exc
+
+    try:
+        data = yaml.safe_load(raw_text)
+    except yaml.YAMLError as exc:
+        raise PolicyConfigError(f"Invalid YAML in {policy_path}: {exc}") from exc
+
+    data = data or {}
+    if not isinstance(data, dict):
+        raise PolicyConfigError(f"Policy file {policy_path} must be a YAML mapping, got {type(data).__name__}")
+
+    rules = data.get("rules") or []
+    if not isinstance(rules, list):
+        raise PolicyConfigError(f"'rules' in {policy_path} must be a list")
+
+    other = index + direction
+    rules[index], rules[other] = rules[other], rules[index]
+    data["rules"] = rules
+
+    try:
+        policy_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+    except OSError as exc:
+        raise PolicyConfigError(f"Could not write {policy_path}: {exc}") from exc

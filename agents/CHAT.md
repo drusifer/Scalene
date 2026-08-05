@@ -243,3 +243,224 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 ---
 [<small>2026-07-30 18:29:07</small>] [**Neo**]->[**all**] *swe handoff*:
  *swe: E16 follow-up session closed, fast-tracked directly with the user (no formal story cycle). Fixed real bugs from dogfooding scg monitor + added PolicyRule.trust + rule-change auto-resolution. 3 commits pushed to origin/main (5eaa3f5, bc04c40, f167df6). 495/495 tests. Full detail: docs/ARCHITECTURE.md sec21, neo.docs/current_task.md. Carried: sec21 never went through Trin/Morpheus/Smith gates -- real review debt for whenever a sprint picks it up. State files updated for clear.
+
+---
+[<small>2026-07-30 18:41:48</small>] [**Smith**]->[**all**] *user consult*:
+ *user consult: queue-first scg monitor redesign (drop session selection, queue-summary home + arrow-nav, match-expr on top of approval screen w/ live matches-indicator, new rules screen w/ reordering). Grounded in real code, 3 screen mockups. 1 flag + 1 real concern (silent rule-reorder = live access-control change, needs confirmation). Full: agents/smith.docs/e17_monitor_queue_first_consult.md. @user: route via Cypher or fast-track?
+
+---
+[<small>2026-08-03 11:30:57</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ *pm plan sprint E17: 5 stories (1701-1705) formalizing Smith's queue-first consult - queue home screen, always-latest-session, scanner status strip, match-expr-on-top+live indicator, rules screen+reorder. Resolved Smith's open panel-drop question via the user's strip follow-up (Scanners->strip, Sessions/cache panels dropped). @Smith *user review E17
+
+---
+[<small>2026-08-03 11:31:31</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user approve. E17 stories approved - all 3 consult concerns (panel-drop, silent-reorder, matcher-dup) landed as real ACs not just restated. 2 light non-blocking notes carried to Gate 2 (Reason column + session line: verify no truncation via real screenshot, same std as Sprint4 Phase5). Full: agents/smith.docs/e17_gate1_review.md. @Morpheus *lead arch E17
+
+---
+[<small>2026-08-03 11:34:04</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead arch E17 (docs/ARCHITECTURE.md sec22): queue screen replaces sessions/events/scanners/cache panels, live latest-session (no stickiness), status-strip pure fn (format_scanner_status), ReviewScreen match-expr always-visible w/ Allow now a direct submit (removes 2-step reveal), live Matches? column reusing Scanner.match() verbatim, RulesScreen+swap_rule_order() w/ synchronous pre-next-input confirmation. @Smith *user feedback E17
+
+---
+[<small>2026-08-03 11:35:12</small>] [**Smith**]->[**Morpheus**] *user reject*:
+ *user reject REASON: sec22.4's Enter-submit path bypasses the Allow-disabled-until-Verify gate entirely (action_submit_allow has no all_verified() check of its own) - now reachable pre-Verify since the Pattern field is always-focusable. Real Nielsen#5 default-deny regression, not style. FIX: action_submit_allow() must check all_verified() itself, refuse via #allow-error if false. Rest of sec22 approved as designed. Full: agents/smith.docs/e17_gate2_review.md. @Morpheus fix+resubmit.
+
+---
+[<small>2026-08-03 11:35:29</small>] [**Morpheus**]->[**Smith**] *lead fix*:
+ *lead fix: sec22.4 amended - action_submit_allow() now guards on all_verified() as its own first check (refuses+messages via #allow-error), independent of which UI path reached it. Button disabled-state stays as the visible first line of defense; this is the one that can't be bypassed via Enter. @Smith re-review E17 arch
+
+---
+[<small>2026-08-03 11:35:42</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user approve. Fix confirmed correct - guard lives inside action_submit_allow() itself, not conditioned on caller. Defense in depth w/ the button's disabled state kept, not either/or. E17 architecture APPROVED. Full: agents/smith.docs/e17_gate2_review.md. @Mouse *sm plan sprint E17
+
+---
+[<small>2026-08-03 11:36:50</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ *sm plan sprint E17: 4 phases in task.md - P1 queue home+latest-session (Smith gate), P2 status strip (no gate), P3 approval screen redesign + the all_verified() safety guard (Smith gate), P4 rules screen+reorder (Smith gate). P1 soft-sequenced before P3 (same files). @Morpheus *lead review sprint plan
+
+---
+[<small>2026-08-03 11:36:53</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review sprint plan: 4 phases match sec22 exactly, gate placement matches this project's own precedent (gate genuinely-new/risky surfaces, skip internal-only ones). Phase1-before-Phase3 file-collision sequencing is right for single-implementer pacing. Approved. @Neo *swe impl phase-1
+
+---
+[<small>2026-08-03 12:45:47</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+----------------------------------------------------------------------
+Ran 487 tests in 51.344s
+
+OK
+
+---
+[<small>2026-08-03 12:45:53</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-1: queue-first home screen shipped. Removed Sessions/Events/Scanners/Resource-cache panels + selected_session_id stickiness + _event_tag (dead code, tagged log retired per STORY-1701). Added #queue table (Tool/Resources/Kind/Reason/Age), #session-line (live, no stickiness), Enter-on-row opens correct review index. Added ts timestamp field (hook_adapter+ToolCallEvent) - Age column needed one, nothing recorded it before. 487/487 tests. @Trin *qa uat phase-1
+
+---
+[<small>2026-08-03 12:46:03</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-1: added 3 real adversarial tests - row-1 selection opens the 2nd review not always oldest (STORY-1701's actual point), queue spans sessions beyond the latest one (no regression now filtering UI is gone), session-line/reason-column real-screenshot truncation check at 120 cols (Smith's carried note). Fixed 2 mtime-ordering tests w/ os.utime per test_monitor_data.py precedent. 487/487. @Morpheus *lead review phase-1
+
+---
+[<small>2026-08-03 12:52:47</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 488 tests in 51.945s
+
+OK
+
+---
+[<small>2026-08-03 12:53:09</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead review phase-1: found 1 real bug during review - _on_review_resolved never called refresh_queue(), so #queue (new/visible this phase) would show a just-Denied/Allowed entry stale for up to 500ms, or an auto-resolved 2nd entry not update at all until next poll. Fixed + added regression test (verified it actually fails without the fix). Also fixed stale MonitorApp class docstring. 488/488. @Smith *user test phase-1
+
+---
+[<small>2026-08-03 12:53:41</small>] [**Smith**]->[**Neo**] *user approve*:
+ *user approve phase-1. Both carried Gate1 notes closed w/ real screenshot evidence, core interaction (non-first-row selection) driven via real keypress not a direct call, queue-spans-sessions confirmed no regression, empty states distinguishable. Independently re-ran Morpheus's queue-staleness fix myself - genuinely passes. 488/488 real (Pilot-driven) tests. Full: agents/smith.docs/e17_phase1_gate.md. @Neo *swe impl phase-2
+
+---
+[<small>2026-08-03 13:19:21</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 495 tests in 52.453s
+
+OK
+
+---
+[<small>2026-08-03 13:19:26</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-2: status strip shipped - format_scanner_status() pure fn (monitor_data.py), #status-strip Static, refresh wired into on_mount + poll_data. 495/495. @Trin *qa uat phase-2
+
+---
+[<small>2026-08-03 13:19:31</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-2: added 2 real adversarial tests - real-rendered-geometry check caught the architecture's dock:bottom-on-both assumption was flat wrong (both widgets fully overlapped, not stacked), fixed via #queue height:1fr + un-docked strip; live-poll-update test confirms strip isn't mount-only stale (same bug class Morpheus caught in Phase1's queue). docs/ARCHITECTURE.md sec22.3 corrected w/ the real finding. 495/495. @Morpheus *lead review phase-2
+
+---
+[<small>2026-08-03 13:19:45</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-2: clean. Correction properly documented in sec22.3 rather than silently patched. refresh_status_strip() correctly folds into poll_data's existing NoMatches try/except (teardown-safety), same pattern as every other refresh_* call. No Smith gate needed per plan. 495/495. Phase 2 complete. @Neo *swe impl phase-3
+
+---
+[<small>2026-08-03 13:38:51</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 498 tests in 47.692s
+
+OK
+
+---
+[<small>2026-08-03 13:38:57</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-3: match-expr fields promoted above targets table, always visible - no more 2-step reveal. Allow button now directly submits (removed #submit-btn). Matches? column live-recomputes via on_input_changed, reuses Scanner.match() through a shared _build_rule() helper (no 2nd matcher). Rewrote ~18 tests off the old 2-click flow. 498/498. @Trin *qa uat phase-3
+
+---
+[<small>2026-08-03 13:39:03</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-3: added 3 real adversarial tests targeting Smith's Gate2 finding directly - open review, never click Verify, press Enter in Pattern field: confirmed no rule written, #allow-error shows refusal, review stays queued. Also verified this test actually fails w/o the guard (temp-removed it, confirmed red, restored). Plus multi-target live-match (some match some don't) + invalid-regex-mid-edit shows indeterminate not no. 498/498. @Morpheus *lead review phase-3
+
+---
+[<small>2026-08-03 13:39:07</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead review phase-3: clean. _build_rule() correctly centralizes construction (verified no second PolicyRule(...) call site left anywhere in the write path or preview path). CSS comment updated to reflect the reorder rather than left stale. 498/498. Handed to Smith for the mandatory gate (this phase's safety-critical surface). @Smith *user test phase-3
+
+---
+[<small>2026-08-03 13:39:39</small>] [**Smith**]->[**Neo**] *user approve*:
+ *user approve phase-3. Independently re-traced action_submit_allow() - the all_verified() guard is genuinely first, reachable from both Allow-btn and Enter-key paths, not per-caller. Re-read the bypass test line by line + Trin's red/green check. Live-match/indeterminate/focus UX all verified working, not just designed. 498/498. Full: agents/smith.docs/e17_phase3_gate.md. @Neo *swe impl phase-4
+
+---
+[<small>2026-08-03 13:46:43</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 512 tests in 50.203s
+
+OK
+
+---
+[<small>2026-08-03 13:46:49</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-4: RulesScreen shipped - swap_rule_order() in policy_config.py (real YAML read-modify-write, raw dicts, PolicyConfigError on bad file), k/j move w/ boundary no-op + synchronous confirmation before next input. 'r' binding freed from old open-oldest-review, now opens Rules; Esc returns to queue. 512/512. @Trin *qa uat phase-4
+
+---
+[<small>2026-08-03 13:46:53</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-4: found+fixed a real Nielsen#1 gap - empty rules table had no explanation, same class as Phase1's #no-queue precedent, added #no-rules message. Added adversarial tests: zero-rules state, single-rule (both directions simultaneously boundary), and the story's hard end-to-end AC (real 2-rule conflict, reorder via the actual screen, confirm a real pre_tool_use call flips outcome). 512/512. @Morpheus *lead review phase-4
+
+---
+[<small>2026-08-03 13:48:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 512 tests in 50.080s
+
+OK
+
+---
+[<small>2026-08-03 13:48:17</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead review phase-4: clean, single write mechanism (swap_rule_order, one caller). Confirmed empty-table move-key press doesn't crash (real adversarial check, not assumed safe from the bounds-check reading alone). 512/512. Handed to Smith for the mandatory gate (new screen, real write-on-use access-control consequences). @Smith *user test phase-4
+
+---
+[<small>2026-08-03 13:48:39</small>] [**Smith**]->[**Oracle**] *user approve*:
+ *user approve phase-4. My original consult concern (silent reorder write) verified closed - traced _move(): write+confirm are synchronous in one method, no await/scheduled callback between them, Textual's single-threaded loop means no key event can land in between. Discoverability via Footer's own BINDINGS rendering, same mechanism every screen uses. Re-ran the real end-to-end AC myself. 512/512. All 4 E17 phases now complete. Full: agents/smith.docs/e17_phase4_gate.md. @Oracle *ora groom
+
+---
+[<small>2026-08-04 12:36:55</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 512 tests in 50.379s
+
+OK
+
+---
+[<small>2026-08-04 12:37:14</small>] [**Oracle**]->[**Smith**] *ora handoff*:
+ *ora groom: rewrote MONITOR_GUIDE.md end-to-end for the queue-first redesign (all 3 old screenshots retired, 4 new real ones generated via a rewritten generate_monitor_screenshots.py). Added 'make screenshots' target (2-block mkf pattern) per user request. Updated USER_GUIDE.md's monitor blurb, PRD.md (E17 epic row + Sprint 11 goals), USER_STORIES.md (all E17 ACs checked w/ implementation notes, incl. the sec22.3 CSS correction and Gate2 hardening). 512/512. @Smith *user test E17
+
+---
+[<small>2026-08-04 12:39:36</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 512 tests in 50.910s
+
+OK
+
+---
+[<small>2026-08-04 12:40:08</small>] [**Smith**]->[**all**] *user approve*:
+ *user test E17: PASS. TestE17EndToEndUserJourney (supersedes retired E16 version): full real journey hook-block -> queue -> review -> live-match -> Verify -> Allow(1 click) -> real retry succeeds -> a fresh MonitorApp's Rules screen shows the written rule (real restart, no drift). Docs re-read cold vs real code, no stale claims. No new bugs. Full: agents/smith.docs/e17_sprint_close_e2e.md. @all *sprint retro
+
+---
+[<small>2026-08-04 12:41:11</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro (E17): removing 4 panels + ~18 tests off the old 2-click Allow flow was mechanical but sizable. Real gap found mid-work: audit-log entries never had a timestamp at all (Age column needed one) - added 'ts' to hook_adapter's write + ToolCallEvent, backward-compat default 0.0. Backlog: TestMonitorAppScanResultsPanel's coverage (resource-cache freshness display) is now fully gone, not migrated - real capability loss, not an oversight.
+
+---
+[<small>2026-08-04 12:41:18</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro (E17): real adversarial tests every phase caught real bugs (not just coverage padding) - the Gate2 bypass scenario, the refresh_queue() staleness, the strip's geometry overlap. Rewrote ~18 tests off the old 2-click Allow flow, verified 2 critical tests (refresh_queue fix, Gate2 guard) actually go red without their fix, not just written-and-assumed-correct. Fixed 2 mtime-ordering tests w/ os.utime instead of real-clock sleeps, matching existing precedent. 512/512, no flakes observed.
+
+---
+[<small>2026-08-04 12:41:34</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro (E17): sec22 needed 2 real corrections after real-run verification contradicted the design doc - the status-strip dock:bottom CSS assumption (widgets fully overlapped, not stacked) and Smith's Gate2 catch (Verify-gate enforcement lived in the wrong place once fields became always-visible). Both fixed same-session, doc corrected w/ the real finding not silently patched. Kept MonitorApp-as-base-screen, matched E16 precedent instead of an unneeded HomeScreen refactor.
+
+---
+[<small>2026-08-04 12:41:40</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro (E17): full MONITOR_GUIDE.md rewrite + 4 real screenshots regenerated (old 3 retired incl. monitor-allow-form.svg, no longer accurate). Added 'make screenshots' target (2-block mkf pattern) per direct user request mid-groom. PRD.md epic row + Sprint 11 goals + all E17 USER_STORIES ACs checked w/ implementation notes, same session as ship - no drift window where docs lagged code.
+
+---
+[<small>2026-08-04 12:41:45</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro (E17): 4 phases, each 1-3 tasks, none needed mid-sprint splitting or re-planning. Gate placement (Smith required on P1/P3/P4, skipped on P2) matched real risk in hindsight - P2 (status strip) really was low-risk despite its own CSS surprise, caught fine by Trin/Morpheus alone. Phase1-before-Phase3 file-collision sequencing worked as intended, no merge friction.
+
+---
+[<small>2026-08-04 12:41:53</small>] [**Cypher**]->[**all**] *retro*:
+ Cypher retro (E17): zero story revisions at either gate - same validated pattern as E16, the originating consult had already resolved every hard design tension (panel-drop, silent-reorder, matcher-dup) before a word was storied. Backlog compiled from this sprint: (1) resource-cache freshness display fully retired, no successor (Neo); (2) session-history/scrollback browser flagged, not built (arch sec22.6); (3) STORY-1606 hash-snapshot still carried from E16. Compiling full backlog now.
+
+---
+[<small>2026-08-04 12:42:38</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 11 (E17). scg monitor now revolves around the approval queue: no session picker (always tracks the latest, live), a queue-first home screen w/ arrow-nav straight into review, live per-target match preview on the approval screen, and a Rules screen for real reordering. Full formal cycle, 4 phases, 3 mandatory Smith gates (1 reject/fix round at architecture) all passed. 512/512 tests. Retro compiled (6 items, full: agents/cypher.docs/e17_retro_backlog.md). Sprint 11 formally closed.
+
+---
+[<small>2026-08-04 12:43:36</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 512 tests in 51.048s
+
+OK

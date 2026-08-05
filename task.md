@@ -590,3 +590,64 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 - Mid-planning correction, recorded here for the record: STORY-1603 was first scoped down to block-events-only over an (incorrect) hot-path cost concern, then corrected back to full scope by the user directly — see `docs/ARCHITECTURE.md` §20.3's superseded-decision note. Phase 1/2 tasks above already reflect the corrected, full scope.
 - Carried, not part of this sprint: STORY-1603's original over-cautious framing is resolved, but the underlying "measure hot-path changes for real" discipline stays a standing rule, not just this phase's exit criterion. `docs/ARCHITECTURE.md` §5's stale diagram (recurring, still not fixed) and STORY-1405/1406 remain in the backlog, untouched by E16.
 - **New backlog item from Phase 6 (2026-07-23)**: STORY-1606's hash-snapshot detect-and-restore mechanism (policy-file tamper detection, operator-only notification via `scg monitor`'s attention signal) is fully designed in `docs/ARCHITECTURE.md` §20.6 but not built — ready to pick up as its own future phase/sprint whenever prioritized.
+
+---
+
+# Sprint 11 (E17 — Queue-First Monitor Redesign)
+
+**Status:** Planned 2026-08-03 — Cypher → Smith Gate 1 → Morpheus (`docs/ARCHITECTURE.md` §22) → Smith Gate 2 (1 reject/fix round: `action_submit_allow()` needed its own `all_verified()` guard, independent of which UI path reaches it — fixed same session, re-approved) all passed. Phase-broken below, plan pending Morpheus's review before Neo starts Phase 1.
+**Source:** `docs/USER_STORIES.md` E17 (STORY-1701–1705) + `docs/ARCHITECTURE.md` §22. Origin: direct user `*user consult` with Smith (`agents/smith.docs/e17_monitor_queue_first_consult.md`).
+
+4 phases. Phase 1 is a soft prerequisite for Phase 3 (both touch `MonitorApp`/`ReviewScreen`'s overall screen shape; sequencing avoids two people's changes colliding on the same file mid-sprint, not a real data dependency). Phase 2 and Phase 4 have no real dependency on anything but the app existing.
+
+## Phase 1 — Queue-First Home Screen & Live Latest-Session
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: nothing. Mandatory Smith gate — this replaces the app's primary user-facing surface.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `MonitorApp.compose()` drops `#sessions`/`#events`/`#scanners`/`#scan-results` tables and their containers. New `#session-line` `Static` + `#queue` `DataTable` (`cursor_type="row"`, columns Tool/Resources/Kind/Reason/Age), oldest-first from `_pending_reviews`. Empty-queue state (`"No pending reviews."`). | §22.2, STORY-1701 |
+| 1.2 | `selected_session_id`/`show_all_sessions` removed. `refresh_session_line()` computes `discover_sessions()[0]` fresh every poll tick (no stickiness) — replaces `refresh_sessions()`. `_NO_SESSIONS_MESSAGE` reused verbatim for the zero-sessions case. | §22.2, STORY-1702 |
+| 1.3 | `Enter`/`on_data_table_row_selected` on `#queue` opens `ReviewScreen` at the selected row's index. Old `action_open_review`/`'r'`-opens-oldest binding removed (Enter-on-cursor supersedes it — `'r'` is freed for Phase 4's Rules screen, §22.1). | §22.1, §22.2, STORY-1701 |
+
+**Exit criteria — PASSED (2026-08-03):** Trin added 3 real adversarial tests beyond Neo's own (row-1 selection opens the 2nd review not always oldest, queue spans sessions beyond the latest one, session-line/reason-column real-screenshot truncation check at 120 cols). Morpheus's review caught a real bug: `_on_review_resolved` never called `refresh_queue()`, so a Denied/Allowed entry sat stale on screen until the next poll tick — fixed, with a regression test confirmed to actually fail without the fix. Smith's mandatory gate independently re-ran the fix and confirmed both carried Gate 1 truncation notes closed with real evidence. `make test`: 488/488.
+
+## Phase 2 — Scanner Status Strip
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing new. No Smith gate — small, already directly designed with the user; Trin/Morpheus sufficient.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 2.1 | `monitor_data.format_scanner_status(activities) -> str` — pure function, `"Scanners: none configured"` when empty, else `"Scanners: name idle · name busy · ..."` reusing the exact idle/busy words already used elsewhere. | §22.3, STORY-1703 |
+| 2.2 | `#status-strip` `Static` docked bottom, above `Footer`, updated on the existing poll tick. Real-screenshot check that it renders above the Footer's keybinding row, not overlapping it. | §22.3, STORY-1703 |
+
+**Exit criteria — PASSED (2026-08-03):** `format_scanner_status` covered directly (5 tests: empty/single-idle/single-busy/mixed/word-reuse, no terminal needed). §22.3's own flagged CSS uncertainty turned out to be a real wrong assumption, not a non-issue: a `widget.region` geometry test (`test_status_strip_shows_scanner_activity_and_renders_above_the_footer`) showed `#status-strip` and `Footer` fully overlapping at the identical region under the originally-designed `dock: bottom`-on-both CSS — corrected to `#queue { height: 1fr }` + un-docked `#status-strip` (lands in normal flow, one row above Footer's own self-docked bar). `docs/ARCHITECTURE.md` §22.3 updated with the correction. `make test`: 494/494.
+
+## Phase 3 — Approval Screen: Match-Expression-on-Top & Live Preview
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: Phase 1 (both touch `ReviewScreen`'s overall layout — sequencing avoids file-level collision, not a data dependency). Mandatory Smith gate — this is the epic's safety-critical surface (Smith's Gate 2 catch lives here).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 3.1 | `#allow-form` (Tool/Pattern/Sensitivity/Mode) moves to immediately after `#nav-row`, no longer conditionally hidden (`display=False` toggle removed). `#submit-btn` removed; `#allow-btn`'s handler calls `action_submit_allow()` directly, still gated by its own `disabled=all_verified()` state. | §22.4, STORY-1704 |
+| 3.2 | **Safety guard (Smith's Gate 2 finding)**: `action_submit_allow()` gains its own `all_verified()` check as its first line, independent of caller — refuses via `#allow-error` if false. Covers both the Allow button and the Enter-key (`on_input_submitted`) path. | §22.4, STORY-1704 |
+| 3.3 | `#targets` gains a `Matches?` column. `_preview_matches(target)` builds a transient `PolicyRule` from live form values (shared helper with `action_submit_allow`, not duplicated) and calls `self._scanners[target.scanner_name].match(rule, target)`. `PolicyConfigError` (e.g. invalid tool regex mid-edit) renders `"—"`, not `"no"`. Wired via `on_input_changed` on `#rule-pattern-input`. | §22.4, STORY-1704 |
+
+**Exit criteria — PASSED (2026-08-03):** Trin's UAT included the adversarial case directly targeting Smith's Gate 2 finding (open a review, never click Verify, press Enter in the Pattern field) — confirmed no rule written, `#allow-error` shows the refusal, review stays queued; verified the test actually goes red with the guard removed, not assumed correct. Live `Matches?` column and invalid-regex-mid-edit (`"—"` not `"no"`) both confirmed for real. Smith's mandatory gate independently re-traced `action_submit_allow()` and re-ran the bypass test line by line before approving. `make test`: 498/498.
+
+## Phase 4 — Rules Screen & Reordering
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: nothing (independent of Phases 1-3's files). Mandatory Smith gate — new screen with real, write-on-use access-control consequences (Smith's consult concern).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 4.1 | `policy_config.swap_rule_order(policy_path, index, direction)` — reads real YAML (same pattern as `onboard.write_rule`), swaps two rules **as raw dicts** (every field round-trips unchanged except position), writes back via the same `yaml.safe_dump` call `write_rule` already uses. | §22.5, STORY-1705 |
+| 4.2 | New `RulesScreen`: `#rules` `DataTable` (#, Tool, Pattern, Sensitivity, Mode, Trust), re-read fresh from `PolicyConfig.from_yaml` on mount and after every write. Reachable from the queue via `'r'`, `Esc` returns. | §22.5, STORY-1705 |
+| 4.3 | Move-up/move-down bound actions, disabled at index 0/len-1 (same boundary pattern as `ReviewScreen`'s Prev/Next). Each: calls `swap_rule_order`, re-reads and repopulates the table, shows a synchronous `#rule-confirm` message ("Moved rule #N → #M — saved.") **before** the next key is accepted — no auto-clear timer. | §22.5, STORY-1705 |
+
+**Exit criteria — PASSED (2026-08-03):** Trin's UAT included the story's hard end-to-end AC (real 2-rule conflict, reorder via the actual screen, a real `pre_tool_use` call flips outcome) plus boundary cases (single-rule, empty-table key-press safety) and a real Nielsen #1 gap found and fixed (`#no-rules` empty-state message, matching Phase 1's `#no-queue` precedent). Smith's mandatory gate traced `_move()` directly and confirmed the write+confirmation are synchronous in one method call, not timing-dependent. `make test`: 512/512. **All 4 E17 phases complete.**
+
+## Notes
+- No Tank phase — same reasoning as every prior monitor-focused sprint (no daemon, no new infra surface).
+- Phase 1 and Phase 3 both touch `ReviewScreen`/`MonitorApp`'s layout; sequenced (not parallelized) to avoid two in-flight changes to the same file, per this project's single-implementer-per-phase pacing.
+- 3 of 4 phases carry mandatory Smith gates (Phase 1: primary-surface replacement; Phase 3: the epic's one real safety-critical finding; Phase 4: new screen with live write-on-use access-control consequences) — Phase 2 is the only phase without one, consistent with prior sprints only gating phases with a genuine new user-facing risk.

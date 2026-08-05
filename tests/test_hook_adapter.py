@@ -255,6 +255,34 @@ class TestPreToolUseAuditLog(unittest.TestCase):
             self.assertIsNone(entry["block_kind"])
 
 
+    def test_block_event_carries_a_real_occurrence_timestamp(self):
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): scg monitor's queue
+        # screen needs a real "when did this happen" to show an Age column
+        # -- nothing recorded this before. A loose recency bound (not exact
+        # equality) since this runs against the real wall clock.
+        import time
+
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            audit_log = Path(tmp) / "audit.log"
+            taint = TaintState(session_id="s1", trust="low", state_dir=state_dir)
+            taint.save()
+            config = PolicyConfig()
+
+            before = time.time()
+            pre_tool_use(
+                {"session_id": "s1", "tool_name": "WebFetch", "tool_input": {"url": "https://unseen.example.com/x"}},
+                config,
+                state_dir=state_dir,
+                cache_path=state_dir / "cache.json",
+                audit_log_path=audit_log,
+            )
+            after = time.time()
+            entry = json.loads(audit_log.read_text().strip())
+            self.assertGreaterEqual(entry["ts"], before)
+            self.assertLessEqual(entry["ts"], after)
+
+
 class TestPostToolUseIsANoOp(unittest.TestCase):
     def test_returns_empty_and_writes_no_state(self):
         with TemporaryDirectory() as tmp:

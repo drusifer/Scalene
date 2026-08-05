@@ -1,11 +1,26 @@
 # Current Task
 
-**Status:** `*user review` Gate 1 — E16 — APPROVED with notes. Handed to Morpheus for architecture.
+**Status:** E17 (Queue-First Monitor Redesign) fully shipped and closed 2026-08-03 — full formal cycle, 4 phases, 3 mandatory gates all passed, sprint-close end-to-end PASS. Awaiting `*sprint retro` + Cypher launch.
 **Assigned to:** Smith
-**Started:** 2026-07-22
-**Completed:** 2026-07-22
+**Started:** 2026-07-30
+**Completed:** 2026-08-04
 
-## Task Description (most recent): `*user review` Gate 1 — E16 (Interactive Onboarding Dashboard & Non-Blocking Review Loop)
+## Task Description (most recent): `*user test E17` — sprint-close end-to-end
+Full report: `agents/smith.docs/e17_sprint_close_e2e.md`. Wrote `TestE17EndToEndUserJourney` (real hook + real MonitorApp, supersedes the retired E16 version whose widgets no longer exist) — full journey through every screen this epic shipped: queue, review (with live match preview), and Rules (via a genuinely fresh MonitorApp instance, confirming no drift between the write path and the read path across a real restart). **PASS**, no new bugs — every phase gate already did its job. Docs (`MONITOR_GUIDE.md`) re-read cold against the real shipped code, no stale claims found. Retro input carried: 3 real bugs this sprint, each caught by a different real-verification technique (code trace, geometry test, diff read) — worth naming as this sprint's validation that "run it for real" isn't ceremony. Also carried: a destructive `git checkout` mid-session reverted more than intended (recovered fully, no data lost, but avoidable — should have been a targeted `Edit`).
+
+## Task Description (prior): mandatory Phase 1-4 gates — all APPROVED
+- Phase 1 (queue-first home screen): `agents/smith.docs/e17_phase1_gate.md` — both carried Gate 1 truncation notes closed w/ real screenshot evidence.
+- Phase 2 (status strip): no Smith gate per plan (Trin/Morpheus sufficient).
+- Phase 3 (approval screen redesign, safety-critical): `agents/smith.docs/e17_phase3_gate.md` — independently re-traced the `all_verified()` guard fixing my own Gate 2 architecture-review finding.
+- Phase 4 (rules screen + reorder): `agents/smith.docs/e17_phase4_gate.md` — verified the write+confirmation are genuinely synchronous, not timing-dependent.
+
+## Task Description (prior): `*user review`/`*user feedback` Gates 1-2 — E17 planning
+Gate 1 (`agents/smith.docs/e17_gate1_review.md`): approved, all 3 consult concerns landed as real ACs. Gate 2 (`agents/smith.docs/e17_gate2_review.md`): **1 reject/fix round** — `action_submit_allow()` needed its own `all_verified()` guard independent of caller (promoting the Pattern field to always-visible removed the button-disabled-state's real enforcement power); fixed same session by Morpheus, re-approved.
+
+## Task Description (prior): `*user consult` — queue-first `scg monitor` redesign
+Full writeup: `agents/smith.docs/e17_monitor_queue_first_consult.md`. Direct user request to redesign the monitor around the approval queue: drop session selection (always latest), queue-summary home screen with arrow-nav into the approval screen, match-expression promoted to the top of the approval screen with a live per-target match indicator, new rules screen with reordering. Grounded every piece in real code first (`monitor_app.py`, `monitor_data.py`, `policy_config.py`, `scanner.py`) — queue is already session-agnostic, live-match reuses `Scanner.match()` (no new matcher), rule reorder is real access-control precedence not a display feature. Produced concrete mockups for all 3 surfaces. One flag (dropping Scanners/Resource-cache panels — not explicitly requested, tension with my own E16 Gate 1 attention-signal requirement) and one real concern (silent rule-reorder write needs a visible confirmation). Sprint-scale, same shape as the E16 consult.
+
+## Task Description (prior): `*user review` Gate 1 — E16 (Interactive Onboarding Dashboard & Non-Blocking Review Loop)
 Full review: `agents/smith.docs/e16_gate1_review.md`. Cypher formalized my own consult into 6 testable stories — approved, both hard concerns I raised in the consult (hook-pause feasibility, undefined "dirty flag") confirmed resolved by construction in the story ACs themselves. 2 non-blocking notes carried to Gate 2: (1) STORY-1604's dashboard needs an explicit attention signal (bell/title-change), not just silent availability — Nielsen #1, same failure shape as this project's prior focus-loss/cursor-desync bugs; (2) multiple simultaneous block events unaddressed, architecture-shaped. Also carried forward Oracle's 2026-07-15 lesson ("row-content check is not a rendering check") as a mandatory real-screenshot UAT standard for STORY-1603/1604. Hard-requirement watch-items for Gate 2: STORY-1606's concrete read-only-boundary mechanism, and whichever attention-signal design Morpheus picks.
 
 ## Task Description (prior): `*user consult` — elaborate onboarding TUI / pause-and-await hook — feedback given, recommended routing to Cypher for epic scoping.

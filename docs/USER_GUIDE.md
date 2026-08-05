@@ -92,7 +92,7 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 ### `scg monitor`
 
-Launches a live TUI over `.scalene/audit.log`, session trust/sensitivity tags, and the resource cache — every tool call tagged and legible without color, a per-scanner activity panel, and an interactive Verify/Allow/Deny dashboard for reviewing and clearing blocked calls without leaving the terminal. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags.
+Launches a live TUI that revolves around your approval queue: a home screen of pending reviews (oldest first, tracking whichever session is currently active — no session picker), an interactive Verify/Allow/Deny screen with the match-expression fields on top and a live per-target match preview, and a rules screen for viewing and reordering `scalene_policy.yaml`'s real rule precedence. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags.
 
 **Full walkthrough with screenshots: [docs/MONITOR_GUIDE.md](MONITOR_GUIDE.md).**
 

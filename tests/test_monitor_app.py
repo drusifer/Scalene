@@ -15,8 +15,9 @@ from pathlib import Path
 
 from textual.widgets import DataTable, Input, RadioButton, Static
 
-from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE, _event_tag, _format_relative_time
+from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE, _format_kinds, _format_relative_time
 from scalene.monitor_data import ToolCallEvent
+from scalene.scanner import Resource
 
 
 def _write_state(state_dir: Path, session_id: str, trust: str = "high", sensitivity: str = "public") -> None:
@@ -58,49 +59,44 @@ def _append_allow_event(audit_log: Path, session_id: str, tool_name: str = "Bash
         )
 
 
-class TestEventTag(unittest.TestCase):
-    """docs/ARCHITECTURE.md sec20.3 (STORY-1603): every row's tag must carry
-    its meaning in plain text -- color is a secondary cue, checked
-    separately by TestMonitorApp's real-rendered/color-stripped test below,
-    not the only signal here."""
+async def _open_review(pilot, app, row: int = 0) -> None:
+    """docs/ARCHITECTURE.md sec22.1/22.2 (STORY-1701): supersedes the old
+    'r'-opens-oldest-pending binding -- opening a review is now moving the
+    `#queue` table's cursor to the target row and pressing Enter, same as a
+    real user would. Row 0 is still "oldest" (the queue's own FIFO order),
+    so this is a drop-in replacement everywhere the old shortcut opened the
+    single oldest review."""
+    table = app.query_one("#queue", DataTable)
+    table.move_cursor(row=row)
+    await pilot.press("enter")
+    await pilot.pause()
 
-    def test_allow_event_is_tagged_allow(self):
-        tag = _event_tag(ToolCallEvent(session_id="s1", tool_name="Bash", reason="", event="allow", block_kind=None))
-        self.assertEqual(str(tag), "[ALLOW]")
 
-    def test_confirmed_bad_block_is_tagged_deny(self):
-        tag = _event_tag(
-            ToolCallEvent(session_id="s1", tool_name="Bash", reason="x", event="block", block_kind="confirmed_bad")
-        )
-        self.assertEqual(str(tag), "[DENY]")
+class TestFormatKinds(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue's Kind column.
+    `_event_tag`/`TestEventTag` (E16, STORY-1603) are retired along with the
+    full tagged call-stream panel they rendered -- STORY-1701's AC removes
+    it outright, not a replacement, so there is no successor test for it."""
 
-    def test_uncleared_block_is_tagged_wait(self):
-        tag = _event_tag(
-            ToolCallEvent(session_id="s1", tool_name="Bash", reason="x", event="block", block_kind="uncleared")
-        )
-        self.assertEqual(str(tag), "[WAIT]")
+    def test_single_target_kind(self):
+        self.assertEqual(_format_kinds([Resource(kind="url", identity="https://x.example.com", scanner_name="reputation")]), "url")
 
-    def test_old_format_block_with_no_block_kind_gets_a_generic_tag_not_a_crash(self):
-        tag = _event_tag(ToolCallEvent(session_id="s1", tool_name="Bash", reason="x", event="block", block_kind=None))
-        self.assertEqual(str(tag), "[BLOCK]")
+    def test_multiple_targets_same_kind_not_repeated(self):
+        targets = [
+            Resource(kind="file", identity="/a", scanner_name="secrets"),
+            Resource(kind="file", identity="/b", scanner_name="secrets"),
+        ]
+        self.assertEqual(_format_kinds(targets), "file")
 
-    def test_allow_and_deny_and_wait_tags_are_all_textually_distinct(self):
-        # The whole point of a text/symbol tag: distinguishable without
-        # relying on the (separately-applied) color at all.
-        tags = {
-            str(_event_tag(ToolCallEvent(session_id="s1", tool_name="Bash", reason="", event="allow", block_kind=None))),
-            str(
-                _event_tag(
-                    ToolCallEvent(session_id="s1", tool_name="Bash", reason="x", event="block", block_kind="confirmed_bad")
-                )
-            ),
-            str(
-                _event_tag(
-                    ToolCallEvent(session_id="s1", tool_name="Bash", reason="x", event="block", block_kind="uncleared")
-                )
-            ),
-        }
-        self.assertEqual(len(tags), 3)
+    def test_mixed_kinds_joined_and_sorted(self):
+        targets = [
+            Resource(kind="url", identity="https://x.example.com", scanner_name="reputation"),
+            Resource(kind="file", identity="/a", scanner_name="secrets"),
+        ]
+        self.assertEqual(_format_kinds(targets), "file, url")
+
+    def test_no_targets_is_empty_string_not_an_error(self):
+        self.assertEqual(_format_kinds([]), "")
 
 
 class TestFormatRelativeTime(unittest.TestCase):
@@ -142,6 +138,13 @@ class TestFormatRelativeTime(unittest.TestCase):
 
 
 class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec22.2 (STORY-1701/1702): the queue-first home
+    screen. The Sessions table, per-session Events log, and 'a' toggle-all-
+    sessions binding (E16/STORY-1603's tagged full-call-stream panel) are
+    retired outright by this epic, not replaced -- their old tests (session
+    selection/filtering, event tag legibility) are removed along with the
+    surface they tested, not adapted."""
+
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.state_dir = Path(self._tmp.name) / "state"
@@ -159,101 +162,48 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             self.assertIn("visible", widget.classes)
             self.assertEqual(widget.content, _NO_SESSIONS_MESSAGE)
 
-    async def test_discovers_sessions_and_hides_empty_message(self):
-        _write_state(self.state_dir, "s1", trust="low")
+    async def test_session_line_shows_the_latest_sessions_id_trust_and_sensitivity(self):
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1702): one line, not a table --
+        # `discover_sessions()` already sorts recent-first, so the most
+        # recently-touched session's own state file (written last) is what
+        # shows.
+        _write_state(self.state_dir, "s1", trust="low", sensitivity="restricted")
         app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test():
             widget = app.query_one("#no-sessions")
             self.assertNotIn("visible", widget.classes)
-            table = app.query_one("#sessions", DataTable)
-            self.assertEqual(table.row_count, 1)
+            content = str(app.query_one("#session-line", Static).content)
+            self.assertIn("s1", content)
+            self.assertIn("low", content)
+            self.assertIn("restricted", content)
 
-    async def test_session_row_shows_trust_and_sensitivity(self):
-        _write_state(self.state_dir, "s1", trust="low", sensitivity="restricted")
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#sessions", DataTable)
-            row = table.get_row_at(0)
-            self.assertEqual(row, ["s1", "low", "restricted"])
+    async def test_session_line_tracks_the_latest_session_live_not_sticky(self):
+        # STORY-1702's core AC: a prior sticky `is None`-guarded selection
+        # never re-pointed at a newer session once set. This must. Forces a
+        # distinct, ordered mtime (same technique as test_monitor_data.py's
+        # test_multiple_sessions_sorted_most_recent_first) rather than
+        # relying on real-clock timing granularity between two writes.
+        import os
+        import time as _time
 
-    async def test_default_selection_is_first_session_and_filters_events(self):
-        _write_state(self.state_dir, "s1", trust="low")
-        _append_block_event(self.audit_log, "s1", tool_name="Bash")
-        _append_block_event(self.audit_log, "other-session", tool_name="Write")
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test() as pilot:
-            app.poll_data()
-            await pilot.pause()
-
-            self.assertEqual(app.selected_session_id, "s1")
-            events_table = app.query_one("#events", DataTable)
-            # Only s1's event should be visible by default (not other-session's).
-            self.assertEqual(events_table.row_count, 1)
-
-    async def test_events_are_shown_newest_first(self):
-        # STORY-701 AC: "newest first, as they're appended."
-        _write_state(self.state_dir, "s1", trust="low")
-        _append_block_event(self.audit_log, "s1", tool_name="Bash")
-        _append_block_event(self.audit_log, "s1", tool_name="Write")
-        _append_block_event(self.audit_log, "s1", tool_name="Edit")
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test() as pilot:
-            app.poll_data()
-            await pilot.pause()
-
-            events_table = app.query_one("#events", DataTable)
-            tool_column = [events_table.get_row_at(i)[1] for i in range(events_table.row_count)]
-            self.assertEqual(tool_column, ["Edit", "Write", "Bash"])
-
-    async def test_toggle_all_sessions_shows_every_session_event(self):
-        _write_state(self.state_dir, "s1", trust="low")
-        _append_block_event(self.audit_log, "s1")
-        _append_block_event(self.audit_log, "other-session")
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test() as pilot:
-            app.poll_data()
-            await pilot.pause()
-
-            events_table = app.query_one("#events", DataTable)
-            self.assertEqual(events_table.row_count, 1)
-
-            await pilot.press("a")
-            self.assertEqual(events_table.row_count, 2)
-
-    async def test_cursor_stays_on_selected_session_across_a_poll_refresh(self):
-        # Regression for a real bug (Smith's *user test, 2026-07-10): selecting
-        # a non-default session, then any poll tick (e.g. a new block event for
-        # a *different* session) must not visually reset the highlighted row
-        # to the top while the actual filter silently stays on the real
-        # selection — the highlighted row and the filtered session must never
-        # diverge (Nielsen #1: visibility of system status).
         _write_state(self.state_dir, "s1")
-        _write_state(self.state_dir, "s2")
-        _write_state(self.state_dir, "s3")
+        older_time = _time.time() - 100
+        os.utime(self.state_dir / "s1.json", (older_time, older_time))
 
         app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test() as pilot:
-            table = app.query_one("#sessions", DataTable)
-            table.move_cursor(row=2)
-            await pilot.press("enter")
             await pilot.pause()
-            selected_after_click = app.selected_session_id
-            row_after_click = table.cursor_row
+            self.assertIn("s1", str(app.query_one("#session-line", Static).content))
 
-            _append_block_event(self.audit_log, "some-other-session")
+            _write_state(self.state_dir, "s2")  # real current mtime, newer than s1's forced one
             app.poll_data()
             await pilot.pause()
+            self.assertIn("s2", str(app.query_one("#session-line", Static).content))
 
-            self.assertEqual(app.selected_session_id, selected_after_click)
-            self.assertEqual(table.cursor_row, row_after_click)
-
-    async def test_never_shows_an_event_for_a_non_block_audit_entry(self):
+    async def test_never_queues_a_review_for_a_non_block_audit_entry(self):
         # Regression guard for STORY-701's core AC: onboard.py writes
-        # {"event": "onboard", ...} to the same audit.log — must never render
-        # as a block event.
+        # {"event": "onboard", ...} to the same audit.log — must never
+        # surface as a queued review.
         _write_state(self.state_dir, "s1")
         with self.audit_log.open("a") as f:
             f.write(json.dumps({"event": "onboard", "rule": {}}) + "\n")
@@ -262,12 +212,15 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
+            self.assertEqual(app.query_one("#queue", DataTable).row_count, 0)
 
-            await pilot.press("a")  # show all sessions too, still should be empty
-            events_table = app.query_one("#events", DataTable)
-            self.assertEqual(events_table.row_count, 0)
+    async def test_queue_shows_no_pending_reviews_message_when_empty(self):
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            widget = app.query_one("#no-queue")
+            self.assertIn("visible", widget.classes)
 
-    async def test_event_row_shows_the_block_reason(self):
+    async def test_queue_row_shows_tool_resource_count_kind_reason_and_hides_empty_message(self):
         _write_state(self.state_dir, "s1", trust="low")
         _append_block_event(self.audit_log, "s1", tool_name="Bash")
 
@@ -276,28 +229,52 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             app.poll_data()
             await pilot.pause()
 
-            events_table = app.query_one("#events", DataTable)
-            row = events_table.get_row_at(0)
-            self.assertEqual(row[0], "s1")
-            self.assertEqual(row[1], "Bash")
+            no_queue_widget = app.query_one("#no-queue")
+            self.assertNotIn("visible", no_queue_widget.classes)
+
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 1)
+            row = table.get_row_at(0)
+            self.assertEqual(row[0], "Bash")
             self.assertEqual(row[3], "no validated, explicitly-allowed rule")
 
-    async def test_event_tags_are_legible_in_a_real_render_with_color_stripped(self):
-        # docs/ARCHITECTURE.md sec20.3 (STORY-1603), mandatory Smith gate
-        # per task.md Phase 2: a real rendered screenshot, not a stored-
-        # cell-value check -- Oracle's 2026-07-15 lesson ("a row-content
-        # check is not a rendering check") applies here exactly as it did
-        # to the Last-Scanned truncation bug. `<text>` node innerText in the
-        # exported SVG carries no color/fill information at all, so
-        # confirming the tag strings appear in that extracted text *is* the
-        # color-stripped check -- if a tag depended on color alone to convey
-        # meaning, its distinguishing content wouldn't show up here.
+    async def test_poll_data_after_teardown_does_not_raise(self):
+        # Regression for a real, if rare, flake observed in this suite: the
+        # 500ms poll timer can fire after `run_test()`'s screen has already
+        # torn down (`query_one("#queue")` -> NoMatches), crashing the whole
+        # test run. Reproduce deterministically (no real-time race needed)
+        # by calling poll_data() after the app context has exited.
+        _write_state(self.state_dir, "s1")
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test():
+            pass
+        app.poll_data()  # must not raise NoMatches after teardown
+
+    async def test_session_line_and_reason_column_are_not_truncated_at_a_common_terminal_width(self):
+        # Smith's E17 Gate 1 carried non-blocking note (agents/smith.docs/
+        # e17_gate1_review.md): both are single lines built by string
+        # concatenation, the exact shape that has already caused a real
+        # truncation bug once (Sprint 4 Phase 5, the old "Last Scanned"
+        # panel) once a real terminal width came into play -- Oracle's
+        # 2026-07-15 lesson ("a row-content check is not a rendering
+        # check") applies here too. Checks the actual rendered SVG text at
+        # a common 120-column width, not the DataTable's stored data.
         import re
 
-        _write_state(self.state_dir, "s1", trust="low")
-        _append_allow_event(self.audit_log, "s1", tool_name="Read")
-        _append_block_event(self.audit_log, "s1", tool_name="WebFetch", block_kind="confirmed_bad")
-        _append_block_event(self.audit_log, "s1", tool_name="Bash", block_kind="uncleared")
+        _write_state(self.state_dir, "a1b2c3d4e5f6g7h8", trust="low", sensitivity="internal")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "a1b2c3d4e5f6g7h8",
+                        "tool_name": "Read",
+                        "reason": "no validated, explicitly-allowed rule -- wait for review, then retry.",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
 
         app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
         async with app.run_test(size=(120, 30)) as pilot:
@@ -307,21 +284,47 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             rendered_text = " ".join(re.findall(r"<text[^>]*>([^<]*)</text>", svg))
             rendered_text = rendered_text.replace("&#160;", " ")
 
-            self.assertIn("[ALLOW]", rendered_text)
-            self.assertIn("[DENY]", rendered_text)
-            self.assertIn("[WAIT]", rendered_text)
+            self.assertIn("a1b2c3d4e5f6g7h8", rendered_text)
+            self.assertIn("no validated, explicitly-allowed rule -- wait for review, then retry.", rendered_text)
 
-    async def test_poll_data_after_teardown_does_not_raise(self):
-        # Regression for a real, if rare, flake observed in this suite: the
-        # 500ms poll timer can fire after `run_test()`'s screen has already
-        # torn down (`query_one("#sessions")` -> NoMatches), crashing the
-        # whole test run. Reproduce deterministically (no real-time race
-        # needed) by calling poll_data() after the app context has exited.
-        _write_state(self.state_dir, "s1")
+    async def test_status_strip_shows_scanner_activity_and_renders_above_the_footer(self):
+        # docs/ARCHITECTURE.md sec22.3 (STORY-1703): the strip's own CSS
+        # comment flags the dock-order stacking as a claim to verify against
+        # the real installed Textual, not assumed -- checks the real
+        # rendered geometry (region.y), the same technique this project's
+        # own standing rule prescribes for "does this widget render within
+        # bounds" claims, not a stored-value check.
         app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            pass
-        app.poll_data()  # must not raise NoMatches after teardown
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            strip = app.query_one("#status-strip", Static)
+            footer = app.query_one("Footer")
+            self.assertIn("Scanners:", str(strip.content))
+            self.assertIn("secrets", str(strip.content))
+            self.assertIn("reputation", str(strip.content))
+            # Strip must be strictly above (not overlapping) the footer.
+            self.assertLessEqual(strip.region.y + strip.region.height, footer.region.y)
+
+    async def test_status_strip_updates_live_on_a_poll_tick_not_just_at_mount(self):
+        # Trin's UAT (E17 Phase 2): same class of gap Morpheus's Phase 1
+        # review caught for #queue -- a refresh wired only into on_mount
+        # would show correct data once, then go stale forever. A real
+        # ScanCache reservation appearing between polls must flip the
+        # strip from idle to busy on the next poll_data(), not just at
+        # startup.
+        from scalene.scan_cache import ScanCache
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            self.assertIn("reputation idle", str(app.query_one("#status-strip", Static).content))
+
+            ScanCache(self.cache_path).try_reserve(
+                Resource(kind="url", identity="never-finished.example.com", scanner_name="reputation")
+            )
+            app.poll_data()
+            await pilot.pause()
+            self.assertIn("reputation busy", str(app.query_one("#status-strip", Static).content))
 
 
 class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
@@ -397,13 +400,35 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertIn("1 pending review", app.title)
 
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             await pilot.click(app.screen.query_one("#deny-btn"))
             await pilot.pause()
             await pilot.pause()
 
             self.assertEqual(app.title, "scg monitor")
+
+    async def test_denying_a_review_removes_it_from_the_queue_table_immediately(self):
+        # Morpheus's Phase 1 code review finding: `#queue` didn't exist when
+        # `_on_review_resolved` was written (E16) -- without a
+        # `refresh_queue()` call there, a resolved entry would sit stale on
+        # screen until the next 0.5s poll tick happened to redraw it.
+        # Checks the real table, not just `_pending_reviews`/title (both of
+        # which already updated correctly before this fix).
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(app.query_one("#queue", DataTable).row_count, 1)
+
+            await _open_review(pilot, app)
+            await pilot.click(app.screen.query_one("#deny-btn"))
+            await pilot.pause()
+
+            self.assertEqual(app.query_one("#queue", DataTable).row_count, 0)
+            self.assertIn("visible", app.query_one("#no-queue").classes)
 
     async def test_an_allow_event_is_not_queued_for_review(self):
         _write_state(self.state_dir, "s1")
@@ -436,8 +461,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             self.assertEqual(app.screen.query_one("#review-position", Static).content, "Review 1 of 2")
             self.assertTrue(app.screen.query_one("#prev-btn").disabled)
@@ -472,8 +496,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             await pilot.click(app.screen.query_one("#next-btn"))
             await pilot.pause()
 
@@ -491,8 +514,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             table = app.screen.query_one("#targets", DataTable)
             row = table.get_row_at(0)
@@ -525,8 +547,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             verify_button = app.screen.query_one("#verify-btn")
             await pilot.click(verify_button)
@@ -578,8 +599,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with first_run.run_test() as pilot:
             first_run.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, first_run)
             await pilot.click(first_run.screen.query_one("#verify-btn"))
             await pilot.pause()
             self.assertFalse(first_run.screen.query_one("#allow-btn").disabled)
@@ -590,8 +610,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with second_run.run_test() as pilot:
             second_run.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, second_run)
             table = second_run.screen.query_one("#targets", DataTable)
             self.assertEqual(table.get_row_at(0)[3], "yes")
             self.assertFalse(second_run.screen.query_one("#allow-btn").disabled)
@@ -614,8 +633,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             first_run.poll_data()
             await pilot.pause()
             self.assertEqual(len(first_run._pending_reviews), 1)
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, first_run)
             await pilot.click(first_run.screen.query_one("#deny-btn"))
             await pilot.pause()
             self.assertEqual(first_run._pending_reviews, [])
@@ -653,13 +671,10 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with first_run.run_test() as pilot:
             first_run.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, first_run)
             await pilot.click(first_run.screen.query_one("#verify-btn"))
             await pilot.pause()
             await pilot.click(first_run.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.click(first_run.screen.query_one("#submit-btn"))
             await pilot.pause()
             self.assertEqual(first_run._pending_reviews, [])
 
@@ -699,8 +714,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             allow_button = app.screen.query_one("#allow-btn")
             self.assertTrue(allow_button.disabled)
@@ -739,8 +753,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(len(app._pending_reviews), 1)
 
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             deny_button = app.screen.query_one("#deny-btn")
             await pilot.click(deny_button)
             await pilot.pause()
@@ -756,8 +769,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             await pilot.press("escape")
             await pilot.pause()
 
@@ -797,23 +809,15 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(100, 50)) as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             await pilot.click(app.screen.query_one("#verify-btn"))
             await pilot.pause()
             await pilot.click(app.screen.query_one("#allow-btn"))
-            # Revealing #allow-form (display = True) needs a layout/
-            # compositor refresh before the newly-visible #submit-btn is at
-            # a real, clickable screen region -- one pause settles the
-            # reveal itself, a second is needed before clicking into it.
-            await pilot.pause()
-            await pilot.pause()
-            await pilot.click(app.screen.query_one("#submit-btn"))
             # Screen.dismiss()'s result callback is scheduled via
             # requester.call_next(), not invoked synchronously (Textual's
-            # own screen.py: ResultCallback.__call__) -- one more pause is
-            # needed for it to actually run, not just for the click's own
+            # own screen.py: ResultCallback.__call__) -- pauses are needed
+            # for it to actually run, not just for the click's own
             # immediate effects.
             await pilot.pause()
             await pilot.pause()
@@ -844,8 +848,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(100, 50)) as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             # Verify will run the real URLScanner/reputation check against a
             # made-up hostname -- not guaranteed bad, so seed a real bad
@@ -861,10 +864,8 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             # (2026-07-30) -- no separate flag to seed.
             app.screen.refresh_targets()
 
-            await pilot.click(app.screen.query_one("#allow-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))  # mode defaults to "allow"
             await pilot.pause()
-            await pilot.pause()
-            await pilot.click(app.screen.query_one("#submit-btn"))  # mode defaults to "allow"
             await pilot.pause()
 
             self.assertFalse(policy_path.exists())
@@ -885,8 +886,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(100, 50)) as pilot:
             app.poll_data()
             await pilot.pause()
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
 
             from scalene.scan_cache import ScanCache
             from scalene.scanner import Resource, ScanResult
@@ -899,11 +899,10 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             # (2026-07-30) -- no separate flag to seed.
             app.screen.refresh_targets()
 
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
+            # Mode must be selected before the single Allow click now (it
+            # submits directly, not a two-step reveal-then-submit).
             await pilot.click(app.screen.query_one("#mode-block"))
-            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             await pilot.pause()
 
@@ -941,14 +940,10 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(len(app._pending_reviews[0].targets), 2)
 
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             await pilot.click(app.screen.query_one("#verify-btn"))
             await pilot.pause()
             await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
-            await pilot.click(app.screen.query_one("#submit-btn"))
             await pilot.pause()
             await pilot.pause()
 
@@ -960,6 +955,63 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             self.assertIn(r"first\.example\.com", written)
             self.assertIn(r"second\.example\.com", written)
             self.assertEqual(written.count("mode: allow"), 2)
+
+    async def test_selecting_a_non_first_queue_row_opens_that_review_not_the_oldest(self):
+        # Trin's UAT (E17 Phase 1): STORY-1701's actual point -- the old
+        # 'r' binding could only ever reach index 0. Confirms clicking/
+        # selecting row 1 directly opens the *second* queued review, not
+        # always the oldest, driven through the real queue table (not by
+        # calling push_screen with an explicit index directly).
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://first.example.com/x")
+        self._append_block_with_url("WebFetch", "https://second.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app, row=1)
+            table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(table.get_row_at(0)[0], "https://second.example.com/x")
+            self.assertEqual(app.screen.query_one("#review-position", Static).content, "Review 2 of 2")
+
+    async def test_queue_spans_every_session_not_just_the_latest_one(self):
+        # Trin's UAT (E17 Phase 1): the queue was already session-agnostic
+        # before this epic (Smith's consult grounding) -- confirms that
+        # didn't regress now that the Sessions table/selection UI (the
+        # thing that used to filter a *different* panel) is gone. A block
+        # from an old session still shows up even though the session line
+        # now only ever names the latest one.
+        import os
+        import time
+
+        _write_state(self.state_dir, "old-session", trust="low")
+        older_time = time.time() - 100
+        os.utime(self.state_dir / "old-session.json", (older_time, older_time))
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://from-old-session.example.com/x")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "old-session",
+                        "tool_name": "Read",
+                        "tool_input": {},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 2)
+            self.assertIn("s1", str(app.query_one("#session-line", Static).content))
 
 
 class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
@@ -997,13 +1049,14 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             )
 
     async def _open_allow_form(self, pilot, app):
+        # docs/ARCHITECTURE.md sec22.4 (STORY-1704): the match-expr fields
+        # are always visible now -- no reveal click needed, this just gets
+        # to a verified review so #allow-btn is enabled for whichever test
+        # wants to actually submit.
         app.poll_data()
         await pilot.pause()
-        await pilot.press("r")
-        await pilot.pause()
+        await _open_review(pilot, app)
         await pilot.click(app.screen.query_one("#verify-btn"))
-        await pilot.pause()
-        await pilot.click(app.screen.query_one("#allow-btn"))
         await pilot.pause()
 
     async def test_tool_field_defaults_to_the_exact_tool_name(self):
@@ -1031,7 +1084,7 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             # Widen it (the actual point of making this editable) and
             # confirm the widened value, not the default, is what's written.
             pattern_input.value = r"https://evil\.example\.com/*"
-            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             written = self.policy_path.read_text()
             self.assertIn(r"https://evil\.example\.com/*", written)
@@ -1101,7 +1154,7 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             await self._open_allow_form(pilot, app)
             pattern_input = app.screen.query_one("#rule-pattern-input", Input)
             pattern_input.value = f"{project_dir}\n{project_dir}/**"
-            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
 
             self.assertEqual(app._pending_reviews, [])
@@ -1159,16 +1212,15 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(len(app._pending_reviews), 2)
 
-            await pilot.press("r")
-            await pilot.pause()
+            await _open_review(pilot, app)
             # Both targets already have fresh cache entries -- Allow is
             # already unlocked without needing an explicit Verify click.
             self.assertFalse(app.screen.query_one("#allow-btn").disabled)
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
+            # Fields are always visible now (sec22.4) -- type the widened
+            # pattern directly, no reveal click needed first.
             pattern_input = app.screen.query_one("#rule-pattern-input", Input)
             pattern_input.value = f"{project_dir}\n{project_dir}/**"
-            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
 
             # Not just the review actually Allowed -- the *other* file's
@@ -1207,7 +1259,7 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             await self._open_allow_form(pilot, app)
             await pilot.click(app.screen.query_one("#sensitivity-restricted"))
             await pilot.click(app.screen.query_one("#mode-block"))
-            await pilot.click(app.screen.query_one("#submit-btn"))
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             written = self.policy_path.read_text()
             self.assertIn("sensitivity: restricted", written)
@@ -1245,14 +1297,20 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.policy_path.exists())
             self.assertEqual(app._pending_reviews, [])
 
-    async def test_allow_button_focuses_the_pattern_input_for_a_single_target(self):
+    async def test_opening_a_review_focuses_the_pattern_input(self):
+        # docs/ARCHITECTURE.md sec22.4 (STORY-1704): with the match-expr
+        # fields always visible now, there's no separate "reveal" click to
+        # focus on -- the cursor lands on the field the operator is most
+        # likely to edit as soon as the review screen opens instead.
         _write_state(self.state_dir, "s1", trust="low")
         self._append_block_with_url("WebFetch", "https://evil.example.com/x")
         app = MonitorApp(
             state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
         )
         async with app.run_test() as pilot:
-            await self._open_allow_form(pilot, app)
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
             self.assertEqual(app.focused, app.screen.query_one("#rule-pattern-input"))
 
     async def test_allow_form_fields_all_stay_within_a_standard_80x24_screen(self):
@@ -1275,7 +1333,7 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
                 "prev-btn", "review-position", "next-btn",
                 "rule-tool-input", "rule-pattern-input",
                 "sensitivity-radio", "mode-radio",
-                "submit-btn", "allow-error",
+                "allow-btn", "allow-error",
             ):
                 region = screen.query_one(f"#{widget_id}").region
                 self.assertLessEqual(
@@ -1285,19 +1343,18 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
                     region.y + region.height, app.size.height, f"#{widget_id} extends past the bottom edge"
                 )
 
-    async def test_submit_button_does_not_overlap_allow_error_with_multiple_targets(self):
-        # Regression test for a real bug found while building this feature:
-        # #allow-form (a Vertical) had no explicit `height` and silently
-        # defaulted to 1fr (a *share* of remaining screen space), same class
-        # of bug as the width-1fr issue above. With only 1 target the share
-        # happened to be enough; with 2 targets, #targets grew by 1 row,
-        # shrinking allow-form's 1fr share by that same row and silently
-        # compressing its rendered content -- #allow-error (the next
-        # sibling) then started 1 row too early, exactly overlapping
-        # #submit-btn's row and silently swallowing every click on it (no
-        # exception, no OutOfBounds -- the click just hit the wrong
-        # widget). The bounds-only test above didn't catch this because
-        # overlap isn't the same as "out of bounds".
+    async def test_allow_button_does_not_overlap_allow_error_with_multiple_targets(self):
+        # Regression test for a real bug found while building this feature
+        # (E16): #allow-form (a Vertical) had no explicit `height` and
+        # silently defaulted to 1fr (a *share* of remaining screen space),
+        # same class of bug as the width-1fr issue above -- a growing
+        # #targets table shrank that share, silently compressing #allow-
+        # form's content until #allow-error (the next sibling at the time)
+        # overlapped the action button, swallowing clicks with no error.
+        # sec22.4 (E17) moved #allow-form *before* #targets in compose(), so
+        # the original trigger no longer applies the same way -- kept as a
+        # defense-in-depth layout-health check, not because this exact
+        # scenario is still reachable.
         _write_state(self.state_dir, "s1", trust="low")
         with self.audit_log.open("a") as f:
             f.write(
@@ -1318,16 +1375,16 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
         )
         async with app.run_test() as pilot:  # default size: 80x24
             await self._open_allow_form(pilot, app)
-            submit_region = app.screen.query_one("#submit-btn").region
+            allow_region = app.screen.query_one("#allow-btn").region
             error_region = app.screen.query_one("#allow-error").region
             overlaps = (
-                submit_region.x < error_region.x + error_region.width
-                and error_region.x < submit_region.x + submit_region.width
-                and submit_region.y < error_region.y + error_region.height
-                and error_region.y < submit_region.y + submit_region.height
+                allow_region.x < error_region.x + error_region.width
+                and error_region.x < allow_region.x + allow_region.width
+                and allow_region.y < error_region.y + error_region.height
+                and error_region.y < allow_region.y + allow_region.height
             )
             self.assertFalse(
-                overlaps, f"#submit-btn {submit_region} overlaps #allow-error {error_region} -- clicks would be swallowed"
+                overlaps, f"#allow-btn {allow_region} overlaps #allow-error {error_region} -- clicks would be swallowed"
             )
 
     async def test_sub_title_shows_the_resolved_policy_and_state_paths(self):
@@ -1342,186 +1399,11 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(self.state_dir.resolve()), app.sub_title)
 
 
-class TestMonitorAppScannerActivityPanel(unittest.IsolatedAsyncioTestCase):
-    """docs/ARCHITECTURE.md sec20.2 (STORY-1602): one row per configured
-    scanner, real ScanCache.pending_since reservations drive busy/idle."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.state_dir = Path(self._tmp.name) / "state"
-        self.state_dir.mkdir()
-        self.audit_log = Path(self._tmp.name) / "audit.log"
-        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    async def test_default_config_shows_the_two_builtin_scanners_idle(self):
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#scanners", DataTable)
-            names = {table.get_row_at(i)[0] for i in range(table.row_count)}
-            statuses = {table.get_row_at(i)[0]: table.get_row_at(i)[1] for i in range(table.row_count)}
-            self.assertEqual(names, {"secrets", "reputation"})
-            self.assertEqual(set(statuses.values()), {"idle"})
-
-    async def test_a_config_declared_scanner_appears_with_no_monitor_code_change(self):
-        # Same fixture as test_policy_config.py's config-driven-registry
-        # coverage (E15/STORY-1501) -- proves the panel reflects whatever
-        # PolicyConfig.scanners really is, not a hardcoded pair.
-        import sys
-
-        sys.path.insert(0, str(Path(__file__).parent))
-        policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
-        policy_path.write_text(
-            "scanners:\n  extra:\n    - name: dummy\n      import: \"fixtures_custom_scanner:DummyScanner\"\n"
-        )
-        app = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=policy_path
-        )
-        async with app.run_test():
-            table = app.query_one("#scanners", DataTable)
-            names = {table.get_row_at(i)[0] for i in range(table.row_count)}
-            self.assertIn("dummy", names)
-
-    async def test_a_real_pending_reservation_shows_the_scanner_as_busy(self):
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource
-
-        ScanCache(self.cache_path).try_reserve(
-            Resource(kind="url", identity="never-finished.example.com", scanner_name="reputation")
-        )
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test() as pilot:
-            app.poll_data()
-            await pilot.pause()
-            table = app.query_one("#scanners", DataTable)
-            statuses = {table.get_row_at(i)[0]: table.get_row_at(i)[1] for i in range(table.row_count)}
-            self.assertEqual(statuses["reputation"], "busy")
-            self.assertEqual(statuses["secrets"], "idle")
-
-
-class TestMonitorAppScanResultsPanel(unittest.IsolatedAsyncioTestCase):
-    """STORY-1005: the resource cache panel reads .scalene/scan_cache.json
-    directly, no separate/duplicated bookkeeping."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.state_dir = Path(self._tmp.name) / "state"
-        self.state_dir.mkdir()
-        self.audit_log = Path(self._tmp.name) / "audit.log"
-        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    async def test_empty_cache_shows_no_rows(self):
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#scan-results", DataTable)
-            self.assertEqual(table.row_count, 0)
-
-    async def test_shows_real_cache_entries(self):
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource, ScanResult
-
-        cache = ScanCache(self.cache_path)
-        cache.put(Resource(kind="file", identity="/abs/readme.md", scanner_name="secrets"), ScanResult(label="public"))
-        cache.put(
-            Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
-            ScanResult(label="trusted"),
-        )
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#scan-results", DataTable)
-            self.assertEqual(table.row_count, 2)
-
-    async def test_new_scan_appears_after_a_poll(self):
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource, ScanResult
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test() as pilot:
-            table = app.query_one("#scan-results", DataTable)
-            self.assertEqual(table.row_count, 0)
-
-            ScanCache(self.cache_path).put(
-                Resource(kind="file", identity="/abs/new.md", scanner_name="secrets"), ScanResult(label="public")
-            )
-            app.poll_data()
-            await pilot.pause()
-
-            self.assertEqual(table.row_count, 1)
-
-    async def test_row_content_shows_the_real_resource_and_label_not_just_a_count(self):
-        # Trin's UAT addition: Neo's own tests only assert row *counts* for
-        # this panel (same class of gap Trin found+closed for the mask-event
-        # feed back in Sprint 2) -- verifying actual cell content here.
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource, ScanResult
-
-        ScanCache(self.cache_path).put(
-            Resource(kind="url", identity="internal.example.com", scanner_name="reputation"),
-            ScanResult(label="trusted"),
-        )
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#scan-results", DataTable)
-            row = table.get_row_at(0)
-            self.assertEqual(row[0], "internal.example.com")
-            self.assertEqual(row[1], "trusted")
-            self.assertIn("ago", str(row[2]))  # relative format, not the old truncation-prone absolute timestamp
-
-    async def test_in_flight_reservation_does_not_appear_as_a_result(self):
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource
-
-        ScanCache(self.cache_path).try_reserve(Resource(kind="url", identity="pending.example.com", scanner_name="reputation"))
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test():
-            table = app.query_one("#scan-results", DataTable)
-            self.assertEqual(table.row_count, 0)
-
-    async def test_last_scanned_column_is_not_truncated_at_a_common_terminal_width(self):
-        # Regression test for Smith's Phase 5 gate finding: a real rendered
-        # screenshot at a common 120-column width showed the "Last Scanned"
-        # header truncated to " La" and values truncated to " 0s" when this
-        # panel was a 3rd side-by-side column -- neither a row-count check
-        # nor a stored-cell-value check would catch this, since the
-        # underlying data was correct; only the *rendered* text was cut off.
-        # Fixed by giving the panel its own full-width row. Checks the
-        # actual rendered SVG text, not the DataTable's stored data.
-        import re
-
-        from scalene.scan_cache import ScanCache
-        from scalene.scanner import Resource, ScanResult
-
-        ScanCache(self.cache_path).put(
-            Resource(kind="file", identity="/workspace/some/deeply/nested/path/README.md", scanner_name="secrets"),
-            ScanResult(label="public"),
-        )
-
-        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
-        async with app.run_test(size=(120, 30)) as pilot:
-            await pilot.pause()
-            svg = app.export_screenshot()
-            rendered_text = " ".join(re.findall(r"<text[^>]*>([^<]*)</text>", svg))
-            rendered_text = rendered_text.replace("&#160;", " ")
-
-            self.assertIn("Last Scanned", rendered_text)
-            self.assertIn("0s ago", rendered_text)
-            self.assertIn("/workspace/some/deeply/nested/path/README.md", rendered_text)
-
-
-class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
-    """Smith's sprint-close end-to-end test (`*user test E16`) — the full
-    epic exercised as one continuous real scenario through the actual
-    scg monitor TUI + the real pre_tool_use hook, not per-phase in
-    isolation. Same standard as TestE14/E15EndToEndUserJourney: real
-    binaries/functions throughout, nothing mocked."""
+class TestLiveMatchPreview(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec22.4 (STORY-1704): the "Matches?" column,
+    recomputed live as the Pattern field is edited -- before any Allow
+    submit, using the same `Scanner.match()` dispatch the real write path
+    relies on."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -1534,9 +1416,361 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    async def test_full_journey_block_to_dashboard_to_allow_to_retry_succeeds(self):
+    async def test_matches_column_recomputes_live_as_the_pattern_field_is_edited(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "curl https://covered.example.com/x https://other.example.net/y"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            table = app.screen.query_one("#targets", DataTable)
+            # Blank pattern (auto per-target derivation): each target's own
+            # exact-match default always matches itself.
+            self.assertEqual(table.get_row_at(0)[4], "yes")
+            self.assertEqual(table.get_row_at(1)[4], "yes")
+
+            # A shared pattern covering only the .example.com host --
+            # matches the first target, not the second (real payoff of
+            # this feature: see coverage *before* submitting, not after).
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.value = r"https://.*\.example\.com/.*"
+            await pilot.pause()
+            self.assertEqual(table.get_row_at(0)[4], "yes")
+            self.assertEqual(table.get_row_at(1)[4], "no")
+
+    async def test_invalid_tool_regex_mid_edit_shows_indeterminate_not_no(self):
+        # An in-progress edit that isn't a valid rule yet is a different
+        # claim than "this valid rule doesn't match" -- collapsing them
+        # would misinform the operator (sec22.4).
+        _write_state(self.state_dir, "s1", trust="low")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": "/tmp/x.md"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            self.assertEqual(app.screen.query_one("#targets", DataTable).get_row_at(0)[4], "yes")
+
+            # Trigger via the Pattern field's on_input_changed, same as a
+            # real edit would -- an unbalanced "(" is not a valid regex.
+            tool_input = app.screen.query_one("#rule-tool-input", Input)
+            tool_input.value = "("
+            app.screen.query_one("#rule-pattern-input", Input).value += " "  # force refresh_targets to re-run
+            await pilot.pause()
+            self.assertEqual(app.screen.query_one("#targets", DataTable).get_row_at(0)[4], "—")
+
+    async def test_pattern_field_does_not_bypass_verify_gate_via_enter(self):
+        # Smith's Gate 2 finding (docs/ARCHITECTURE.md sec22.4 correction):
+        # promoting the Pattern field to always-visible/focusable removed
+        # the thing that used to enforce "Allow requires Verify first" (the
+        # old hidden-until-Allow-clicked form). Confirms the fix holds
+        # against the real bypass path -- Enter in the field, never
+        # clicking Verify at all.
+        import re
+
+        _write_state(self.state_dir, "s1", trust="low")
+        target_path = Path(self._tmp.name) / "never_verified.md"
+        target_path.write_text("could be anything")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": str(target_path)},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            # Never click #verify-btn. Type a pattern and press Enter --
+            # the real path a habitual user would hit first, not a
+            # contrived direct method call.
+            self.assertTrue(app.screen.query_one("#allow-btn").disabled)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = re.escape(str(target_path))
+            await pilot.press("enter")
+            await pilot.pause()
+
+            self.assertFalse(self.policy_path.exists())
+            self.assertIn("Verify", app.screen.query_one("#allow-error", Static).content)
+            self.assertEqual(len(app._pending_reviews), 1)  # still queued, screen never dismissed
+
+
+class TestRulesScreen(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec22.5 (STORY-1705): the Rules screen -- list
+    + reorder, reachable from the queue via 'r' (freed from the old
+    'r'-opens-oldest-review binding, sec22.1)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_rules(self, rules: list[dict]) -> None:
+        import yaml
+
+        self.policy_path.write_text(yaml.safe_dump({"rules": rules}, sort_keys=False, default_flow_style=False))
+
+    async def test_no_rules_configured_shows_an_explicit_message(self):
+        # Trin's UAT (E17 Phase 4): an empty table with no explanation reads
+        # as "broken" -- same Nielsen #1 standard as #no-queue (Phase 1).
+        # No policy file at all here, the common brand-new-project case.
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            self.assertIn("visible", app.screen.query_one("#no-rules").classes)
+            self.assertEqual(app.screen.query_one("#rules", DataTable).row_count, 0)
+
+            # Adversarial: pressing move keys against an empty table must
+            # not crash (real edge case, not "shouldn't happen so skip it").
+            await pilot.press("k")
+            await pilot.press("j")
+            await pilot.pause()
+
+    async def test_a_single_rule_cannot_move_up_or_down(self):
+        # Adversarial boundary case: with exactly 1 rule, both directions
+        # are simultaneously the top and bottom boundary.
+        self._write_rules([{"tool": ".*", "pattern": "only", "sensitivity": "public", "mode": "allow"}])
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("k")
+            await pilot.press("j")
+            await pilot.pause()
+            self.assertEqual(table.get_row_at(0)[2], "only")
+            self.assertEqual(app.screen.query_one("#rule-confirm", Static).content, "")  # no write attempted
+
+    async def test_r_opens_the_rules_screen_listing_real_rules_in_order(self):
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": "Bash", "pattern": "b", "sensitivity": "restricted", "mode": "block"},
+            ]
+        )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            self.assertEqual(table.row_count, 2)
+            self.assertEqual(table.get_row_at(0), ["1", ".*", "a", "public", "allow", "high"])
+            self.assertEqual(table.get_row_at(1), ["2", "Bash", "b", "restricted", "block", "high"])
+
+    async def test_escape_returns_to_the_queue_screen(self):
+        self._write_rules([{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertEqual(len(app.screen.query("#rules")), 0)
+            self.assertEqual(len(app.screen.query("#queue")), 1)
+
+    async def test_j_moves_the_selected_rule_down_and_confirms_synchronously(self):
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+            ]
+        )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("j")
+            await pilot.pause()
+
+            self.assertEqual(table.get_row_at(0)[2], "b")
+            self.assertEqual(table.get_row_at(1)[2], "a")
+            self.assertIn("Moved rule #1", str(app.screen.query_one("#rule-confirm", Static).content))
+            # Real file, not just the in-memory table.
+            import yaml
+
+            written = yaml.safe_load(self.policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in written["rules"]], ["b", "a"])
+
+    async def test_k_moves_the_selected_rule_up(self):
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+            ]
+        )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=1)
+            await pilot.press("k")
+            await pilot.pause()
+            self.assertEqual(table.get_row_at(0)[2], "b")
+            self.assertEqual(table.get_row_at(1)[2], "a")
+
+    async def test_cannot_move_the_first_rule_up_or_the_last_rule_down(self):
+        # Boundary no-op -- same disposition as ReviewScreen's disabled
+        # Prev/Next at the ends of the queue, just via a bound key instead
+        # of a disabled button (this screen has no buttons).
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+            ]
+        )
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+
+            table.move_cursor(row=0)
+            await pilot.press("k")
+            await pilot.pause()
+            self.assertEqual(table.get_row_at(0)[2], "a")  # unchanged
+
+            table.move_cursor(row=1)
+            await pilot.press("j")
+            await pilot.pause()
+            self.assertEqual(table.get_row_at(1)[2], "b")  # unchanged
+
+    async def test_reordering_via_the_real_screen_changes_which_rule_a_real_hook_call_resolves_with(self):
+        # STORY-1705's hard end-to-end AC: reorder via this screen, then
+        # confirm a real pre_tool_use call now resolves per the new order.
         from scalene.hook_adapter import pre_tool_use
-        from scalene.policy_config import PolicyConfig
+        from scalene.policy_config import PolicyConfig as PC
+
+        target = str(Path(self._tmp.name) / "secret.env")
+        Path(target).write_text("nothing")
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": target, "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": target, "sensitivity": "restricted", "mode": "block"},
+            ]
+        )
+        hook_input = {"session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": target}}
+
+        before = pre_tool_use(
+            hook_input, PC.from_yaml(self.policy_path), state_dir=self.state_dir, cache_path=self.cache_path, audit_log_path=self.audit_log
+        )
+        self.assertEqual(before["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("j")
+            await pilot.pause()
+
+        after = pre_tool_use(
+            hook_input, PC.from_yaml(self.policy_path), state_dir=self.state_dir, cache_path=self.cache_path, audit_log_path=self.audit_log
+        )
+        self.assertEqual(after["hookSpecificOutput"]["permissionDecision"], "deny")
+
+
+class TestE17EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
+    """Smith's sprint-close end-to-end test (`*user test E17`) — the full
+    queue-first redesign exercised as one continuous real scenario through
+    the actual scg monitor TUI + the real pre_tool_use hook, not per-phase
+    in isolation. Supersedes `TestE16EndToEndUserJourney` (STORY-1602's
+    standalone Scanners panel and STORY-1603's tagged event log are both
+    permanently retired by this epic, not gapped -- there is no successor
+    journey through them). Same standard as TestE14/E15/E16
+    EndToEndUserJourney: real binaries/functions throughout, nothing
+    mocked, touches every screen this epic shipped (queue, review, rules)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    async def test_full_journey_block_to_queue_to_review_to_allow_to_retry_to_rules(self):
+        from scalene.hook_adapter import pre_tool_use
+        from scalene.policy_config import PolicyConfig, VALID_RULE_MODES, VALID_SENSITIVITIES
 
         # A clean session's first unrecognized resource is allowed
         # (fail-safe, taints trust to low) -- a real block needs an
@@ -1568,22 +1802,21 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             app.poll_data()
             await pilot.pause()
 
-            # STORY-1602: the real 2 builtin scanners show up, idle (no
-            # scan in flight yet).
-            scanners_table = app.query_one("#scanners", DataTable)
-            scanner_names = {scanners_table.get_row_at(i)[0] for i in range(scanners_table.row_count)}
-            self.assertEqual(scanner_names, {"secrets", "reputation"})
-
-            # STORY-1603: the block is in the tagged event log, [WAIT] not
-            # color alone.
-            events_table = app.query_one("#events", DataTable)
-            self.assertEqual(str(events_table.get_row_at(0)[2]), "[WAIT]")
-
-            # Attention signal fired for the new review (title updated).
+            # STORY-1702: session line tracks the real session, live.
+            self.assertIn("s1", str(app.query_one("#session-line", Static).content))
+            # STORY-1703: status strip shows real scanner state (the
+            # background first-sighting scan E10 spawns for this
+            # never-before-seen resource may already be idle again by now).
+            self.assertIn("Scanners:", str(app.query_one("#status-strip", Static).content))
+            # STORY-1701: the queue itself, and the attention signal.
             self.assertIn("1 pending review", app.title)
+            queue = app.query_one("#queue", DataTable)
+            self.assertEqual(queue.row_count, 1)
+            self.assertEqual(queue.get_row_at(0)[0], "Read")
 
-            # STORY-1604: dashboard shows the real blocked call.
-            await pilot.press("r")
+            # STORY-1701: Enter on the queue row opens the real blocked call.
+            queue.move_cursor(row=0)
+            await pilot.press("enter")
             await pilot.pause()
             self.assertEqual(app.screen.query_one("#tool-input", Static).content, json.dumps({"file_path": str(target_path)}, indent=2))
             targets_table = app.screen.query_one("#targets", DataTable)
@@ -1592,27 +1825,33 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             # background refresh worker E10's fail-safe path spawned for
             # this never-before-seen resource (during the pre_tool_use()
             # call above) won its own real race against this assertion --
-            # both are correct, real cache-derived states; asserting one
-            # specific side of a legitimate race was the actual flake here,
-            # not a bug in the dashboard.
+            # both are correct, real cache-derived states.
             self.assertIn(targets_table.get_row_at(0)[2], ("not yet scanned", "public (fresh)"))
+
+            # STORY-1704: match-expr fields (and their live Matches?
+            # preview) are visible immediately, before Verify -- the
+            # default per-target pattern already matches. (Allow's
+            # disabled-until-Verify state isn't asserted here: E10's
+            # background first-sighting scan for this never-before-seen
+            # resource may have already completed by now, same legitimate
+            # race as the target-status assertion above -- STORY-1604's own
+            # dedicated tests already cover the controlled disabled/enabled
+            # transition without that race.)
+            self.assertEqual(targets_table.get_row_at(0)[4], "yes")
 
             # Verify -> real scan -> Allow unlocked.
             await pilot.click(app.screen.query_one("#verify-btn"))
             await pilot.pause()
             self.assertFalse(app.screen.query_one("#allow-btn").disabled)
 
-            # STORY-1605: Allow form pre-filled, submits a real rule.
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
-            from scalene.policy_config import VALID_RULE_MODES, VALID_SENSITIVITIES
-
             self.assertEqual(
                 app.screen._selected_radio_value("sensitivity-radio", VALID_SENSITIVITIES, "public"), "public"
             )
             self.assertEqual(app.screen._selected_radio_value("mode-radio", VALID_RULE_MODES, "allow"), "allow")
-            await pilot.click(app.screen.query_one("#submit-btn"))
+
+            # STORY-1704: Allow writes directly now -- one click, not
+            # reveal-then-submit.
+            await pilot.click(app.screen.query_one("#allow-btn"))
             await pilot.pause()
             await pilot.pause()
 
@@ -1635,16 +1874,45 @@ class TestE16EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "allow")
 
-        # And that allow is now itself visible in the monitor's tagged log
-        # (STORY-1603's full-stream requirement) on the next poll.
+        # STORY-1705: the Rules screen shows the rule that just-allowed
+        # call wrote, through the real UI (a fresh monitor instance, same
+        # as actually restarting `scg monitor`).
+        app2 = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app2.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            rules_table = app2.screen.query_one("#rules", DataTable)
+            self.assertEqual(rules_table.row_count, 1)
+            self.assertEqual(rules_table.get_row_at(0)[2], str(target_path))
+            self.assertEqual(rules_table.get_row_at(0)[4], "allow")
+
+        self.assertTrue(self.policy_path.exists())
+        written = self.policy_path.read_text()
+        self.assertIn("mode: allow", written)
+
+        # The retry: identical original call, real fresh config reload
+        # from the just-written policy file, now genuinely allowed.
+        second = pre_tool_use(
+            hook_input,
+            PolicyConfig.from_yaml(self.policy_path),
+            state_dir=self.state_dir,
+            cache_path=self.cache_path,
+            audit_log_path=self.audit_log,
+        )
+        self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        # STORY-1603's tagged event log (asserted here previously) is
+        # retired by E17 -- nothing in this app shows the allow event
+        # directly anymore, only the (now-empty) review queue.
         app2 = MonitorApp(
             state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
         )
         async with app2.run_test() as pilot:
             app2.poll_data()
             await pilot.pause()
-            events_table = app2.query_one("#events", DataTable)
-            self.assertEqual(str(events_table.get_row_at(0)[2]), "[ALLOW]")
+            self.assertEqual(app2.query_one("#queue", DataTable).row_count, 0)
 
 
 if __name__ == "__main__":

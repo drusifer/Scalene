@@ -79,4 +79,70 @@ Also flagged: color-only tag highlighting fails my own SKILL.md accessibility st
 **Follow-up same session**: user proposed a non-blocking fix for my hook-timeout concern — don't pause the hook, return a deny+"wait/retry" message via the existing `reason`/`systemMessage` channel, user types "retry" after reviewing in the TUI. This fully resolves the concern (no IPC, nothing to time out, sec15's model stays intact) — added a nuance that retry wording must differ between `confirmed_bad` and `uncleared` block paths (`resource_verifier.py:190-223`) or the agent will spin-retry a hard deny. Also: "dirty flag" = validation expired, which turns out to already exist as `ScanCache.is_fresh()` (TTL + file-mtime-changed) — corrected my earlier "undefined vocabulary" flag. Real remaining gap: the monitor's resource-cache panel never calls `is_fresh()`, so there's no visible fresh/expired signal today (Nielsen #1) — flagged as a real, scoped gap with an implementation nuance (`discover_scan_results` reads raw keyed entries, not `Resource` objects, so it can't call `is_fresh()` without a small reconstruction step). Both of my original hard concerns are now resolved in-discussion; nothing blocks Cypher scoping this as an epic. Full: `agents/smith.docs/e16_onboarding_tui_consult.md`.
 
 ---
-*Last updated: 2026-07-22*
+
+## `*user consult` — Queue-First Monitor Redesign (2026-07-30)
+
+Full writeup: `agents/smith.docs/e17_monitor_queue_first_consult.md`. Direct
+user request: redesign `scg monitor` around the approval queue — drop
+session selection (always track latest), a queue-summary home screen
+(tool/#resources/arrow-nav → approval screen), promote the match-expression
+field to the top of the approval screen with a live per-target "matches
+new pattern?" indicator, and a new rules screen with reordering controls.
+
+Grounded every piece against real code before proposing a design: the
+queue (`_pending_reviews`) is already session-agnostic (never filtered by
+`selected_session_id`), so removing session selection loses zero reviews —
+only the events-log panel's session filter goes away. "Latest session" is
+a one-line fix (`discover_sessions()[0]`, currently sticky via an `is None`
+guard). Live pattern-matching reuses `Scanner.match()` exactly as
+`action_submit_allow` already builds a transient `PolicyRule` at submit
+time — no second matcher to drift, same failure class this project has hit
+before. Rule order is genuine access-control precedence
+(`_find_matching_rule()` = first match wins, per `write_default_project_
+policy`'s and `onboard.write_rule`'s own docstrings), so "reordering
+controls" must be a real YAML-rewrite path, not a display sort.
+
+Produced concrete screen mockups for all 3 surfaces (queue, approval,
+rules). One flag, not a blocker: the request only names 2 screens, so I
+proposed dropping the Scanners/Resource-cache panels entirely rather than
+guessing — real tradeoff against my own E16 Gate 1 attention-signal
+requirement, cheap to restore as a status strip if wanted. One real
+concern on the rules screen: reordering has live, silent access-control
+consequences the instant it's written (a rule moved below a broader one
+can become permanently unreachable) — wants a visible
+confirmation/toast on write, not a silent same-tick rewrite.
+
+**Status**: design discussion only, no code/stories yet. Sprint-scale
+(same shape as the E16 consult that became a 6-story epic) — recommended
+routing through Cypher for real stories, or direct fast-track
+implementation with gates run after (this project's established pattern
+for direct-user design sessions), user's call which.
+
+---
+
+## E17 (Queue-First Monitor Redesign) — full sprint, shipped 2026-08-03/04
+
+Ran the whole formal cycle myself: Gate 1 approved (all 3 consult concerns
+landed as real ACs). **Gate 2 rejected once** — the architecture promoted
+the Pattern field to always-visible/focusable but the actual enforcement
+of "Allow requires Verify" lived entirely in the button's `disabled` state
+and the old hidden-form gate, neither of which the Enter-key submit path
+was ever gated by; traced `action_submit_allow()` myself and confirmed it
+had no `all_verified()` check of its own. Fixed same session (guard moved
+into the method itself), re-approved. 3 mandatory phase gates (queue home
+screen, approval-screen safety surface, rules screen) all passed, each
+with independent re-verification of the specific thing I was gating on,
+not a rubber-stamp of Trin's/Morpheus's work. Sprint-close E2E: PASS, full
+report `agents/smith.docs/e17_sprint_close_e2e.md`.
+
+**Real findings this sprint, each from actually running/tracing the code**:
+(1) my own Gate 2 catch (above); (2) Morpheus's Phase 1 review caught
+`_on_review_resolved` never refreshing the now-visible `#queue`, verified
+via a test that was confirmed to actually go red without the fix; (3) the
+status-strip's `dock: bottom`-on-both CSS assumption was wrong, caught by
+a `widget.region` geometry test, not a screenshot eyeball. Worth carrying
+into retro as validation that this project's real-verification standard
+catches genuinely different bug shapes, not just the same one repeatedly.
+
+---
+*Last updated: 2026-08-04*

@@ -63,6 +63,12 @@ class ToolCallEvent:
     block_kind: str | None = None
     tool_input: dict = field(default_factory=dict)
     log_offset: int = -1
+    # docs/ARCHITECTURE.md sec22.2 (STORY-1701): when the call actually
+    # happened, for the queue screen's "Age" column. Defaults to 0.0 for an
+    # audit-log line written before this field existed (`hook_adapter.py`'s
+    # `pre_tool_use`) -- same graceful-degrade convention as `block_kind`/
+    # `tool_input` above, not a crash on old data.
+    timestamp: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -201,6 +207,19 @@ class ScannerActivity:
     busy: bool
 
 
+def format_scanner_status(activities: list[ScannerActivity]) -> str:
+    """docs/ARCHITECTURE.md sec22.3 (STORY-1703): the queue screen's status
+    strip. Reuses the exact "busy"/"idle" words STORY-1602's Scanners panel
+    already printed -- no new vocabulary for the same real state. Each
+    scanner is its own independent clause joined by " · ", so a future
+    second indicator can be appended the same way without restructuring
+    this one (STORY-1703's own extensibility AC)."""
+    if not activities:
+        return "Scanners: none configured"
+    clauses = [f"{a.name} {'busy' if a.busy else 'idle'}" for a in activities]
+    return "Scanners: " + " · ".join(clauses)
+
+
 def discover_scanner_activity(cache_path: Path, scanners: dict) -> list[ScannerActivity]:
     """docs/ARCHITECTURE.md sec20.2 (STORY-1602): one row per *configured*
     scanner (from `PolicyConfig.scanners`, so a config-declared scanner
@@ -288,6 +307,7 @@ class AuditTail:
                         block_kind=entry.get("block_kind"),
                         tool_input=entry.get("tool_input") or {},
                         log_offset=line_start,
+                        timestamp=entry.get("ts", 0.0),
                     )
                 )
             self._offset = f.tell()

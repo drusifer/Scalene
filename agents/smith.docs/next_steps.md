@@ -1,10 +1,14 @@
 # Next Steps
 
 ## Immediate Next Action
-E16 Gate 1 approved with notes (2026-07-22), handed to Morpheus (`*lead arch E16`). Full review: `agents/smith.docs/e16_gate1_review.md`. On re-invocation: do Gate 2 (`*user feedback`) on Morpheus's architecture — verify my 2 carried notes landed (dashboard attention signal, STORY-1606's concrete read-only mechanism), same weight as prior hard-requirement carries (e.g. STORY-1504's discoverability precedent).
+E17 fully shipped and closed 2026-08-03/04 — full formal cycle (Cypher→Smith Gate1→Morpheus→Smith Gate2[1 fix round]→Mouse→Morpheus, 4 phases each with Neo→Trin→Morpheus[→Smith on 3 of 4], sprint-close E2E PASS). On re-invocation: `*sprint retro` is next (my input already drafted in `e17_sprint_close_e2e.md`'s Retro section — post it verbatim when the retro round happens), then Cypher's `*pm launch`. Nothing else outstanding for E17.
 
 ## Waiting On
-Morpheus's E16 architecture, then my own Gate 2.
+`*sprint retro` (all personas), then Cypher's launch.
+
+## Carried, not re-litigated
+- Session-history/scrollback browser for a non-latest session — real capability E17's Sessions-table removal costs, flagged in the epic's Origin note and `docs/ARCHITECTURE.md` §22.6 as a possible future story, not committed. Revisit only if it becomes a real complaint.
+- E16's 2 carried Gate 1 notes (dashboard attention signal, STORY-1606's read-only mechanism) — both already resolved by construction per E16's own sprint close; nothing outstanding.
 
 ## Retro input for this sprint (when `*sprint retro` happens)
 Two real findings this sprint, both from actually running things rather than trusting a design doc or a transcript: (1) my own Phase 4 gate caught the `trust=trusted` wording naming a value that doesn't exist in this project's vocabulary; (2) I was corrected twice more this same session for reaching for ad-hoc bash (`echo | python -m scalene.cli ...`) instead of writing a real test immediately — even after already having this exact standing feedback memory from two prior sessions. Worth naming plainly in retro: knowing the rule isn't the same as applying it under time pressure mid-gate-cycle: the trigger should be "I want to verify X" → write the test, not "let me just quickly check."

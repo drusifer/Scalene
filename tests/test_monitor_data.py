@@ -23,6 +23,7 @@ from scalene.monitor_data import (
     discover_scan_results,
     discover_scanner_activity,
     discover_sessions,
+    format_scanner_status,
     target_status,
 )
 from scalene.scan_cache import ScanCache
@@ -184,6 +185,35 @@ class TestDiscoverScannerActivity(unittest.TestCase):
         self.cache_path.write_text("{not valid json")
         activity = discover_scanner_activity(self.cache_path, {"secrets": object()})
         self.assertEqual(activity, [ScannerActivity(name="secrets", busy=False)])
+
+
+class TestFormatScannerStatus(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec22.3 (STORY-1703): the queue screen's status
+    strip -- a pure function, no terminal needed to verify it."""
+
+    def test_no_scanners_configured(self):
+        self.assertEqual(format_scanner_status([]), "Scanners: none configured")
+
+    def test_single_idle_scanner(self):
+        self.assertEqual(
+            format_scanner_status([ScannerActivity(name="secrets", busy=False)]), "Scanners: secrets idle"
+        )
+
+    def test_single_busy_scanner(self):
+        self.assertEqual(
+            format_scanner_status([ScannerActivity(name="reputation", busy=True)]), "Scanners: reputation busy"
+        )
+
+    def test_mixed_idle_and_busy_scanners_joined(self):
+        activities = [ScannerActivity(name="secrets", busy=False), ScannerActivity(name="reputation", busy=True)]
+        self.assertEqual(format_scanner_status(activities), "Scanners: secrets idle · reputation busy")
+
+    def test_uses_the_same_words_the_old_scanners_panel_used(self):
+        # Not new vocabulary for the same real state -- "busy"/"idle" are
+        # the exact strings STORY-1602's panel already printed.
+        text = format_scanner_status([ScannerActivity(name="secrets", busy=True)])
+        self.assertIn("busy", text)
+        self.assertNotIn("Busy", text)
 
 
 class TestBuildReviewEntry(unittest.TestCase):
@@ -353,6 +383,21 @@ class TestAuditTail(unittest.TestCase):
         self.assertEqual(events[0].event, "block")
         self.assertIsNone(events[0].block_kind)
         self.assertEqual(events[0].tool_input, {})
+
+    def test_reads_the_real_occurrence_timestamp(self):
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue screen's Age
+        # column needs this -- confirms AuditTail actually reads "ts" off a
+        # real audit-log line, not just that ToolCallEvent has the field.
+        self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "x", "ts": 12345.5})
+        tail = AuditTail(self.audit_log)
+        events = tail.poll()
+        self.assertEqual(events[0].timestamp, 12345.5)
+
+    def test_old_format_entry_without_ts_defaults_to_zero_not_a_crash(self):
+        self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "old-format reason"})
+        tail = AuditTail(self.audit_log)
+        events = tail.poll()
+        self.assertEqual(events[0].timestamp, 0.0)
 
     def test_second_poll_only_returns_newly_appended_events(self):
         self._append({"event": "block", "session_id": "s1", "tool_name": "Bash", "reason": "x"})

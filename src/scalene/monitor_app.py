@@ -11,13 +11,11 @@ import re
 import time
 from pathlib import Path
 
-from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Header, Input, RadioButton, RadioSet, Static
-from textual.widgets.data_table import RowDoesNotExist
 
 from .hook_adapter import DEFAULT_AUDIT_LOG, append_audit_log
 from .monitor_data import (
@@ -26,13 +24,20 @@ from .monitor_data import (
     ReviewResolution,
     ToolCallEvent,
     build_review_entry,
-    discover_scan_results,
     discover_scanner_activity,
     discover_sessions,
+    format_scanner_status,
     target_status,
 )
 from .onboard import BLOCKED_LABELS, write_rule
-from .policy_config import VALID_RULE_MODES, VALID_SENSITIVITIES, PolicyConfig, PolicyConfigError, PolicyRule
+from .policy_config import (
+    VALID_RULE_MODES,
+    VALID_SENSITIVITIES,
+    PolicyConfig,
+    PolicyConfigError,
+    PolicyRule,
+    swap_rule_order,
+)
 from .resource_verifier import is_validated_allow
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache
 from .scanner import Resource, ScannerMachineryError, escape_gitignore_literal
@@ -46,36 +51,22 @@ POLL_INTERVAL_SECONDS = 0.5
 # precedent rather than introducing a new cross-module dependency for it.
 DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
 
-# docs/ARCHITECTURE.md sec20.3 (STORY-1603): text/symbol tags, color layered
-# on top as a secondary cue only (Smith's Gate 1 accessibility note) -- the
-# tag string alone must carry every bit of information color would.
-_TAG_TEXT = {
-    "allow": "[ALLOW]",
-    "confirmed_bad": "[DENY]",
-    "uncleared": "[WAIT]",
-}
-_TAG_STYLE = {
-    "allow": "green",
-    "confirmed_bad": "bold red",
-    "uncleared": "yellow",
-}
-_UNKNOWN_BLOCK_TAG = "[BLOCK]"  # a pre-sec20 audit-log line: block, no block_kind
-
-
-def _event_tag(event: ToolCallEvent) -> Text:
-    """docs/ARCHITECTURE.md sec20.3: one text tag per row, identifying
-    outcome/block_kind without relying on color. `event.event` is "allow" or
-    "block"; for a block, `block_kind` ("confirmed_bad"/"uncleared") picks
-    the specific tag -- an old-format block entry with no `block_kind` at
-    all falls back to a generic tag rather than crashing or misreporting."""
-    if event.event == "allow":
-        return Text(_TAG_TEXT["allow"], style=_TAG_STYLE["allow"])
-    if event.block_kind in _TAG_TEXT:
-        return Text(_TAG_TEXT[event.block_kind], style=_TAG_STYLE[event.block_kind])
-    return Text(_UNKNOWN_BLOCK_TAG, style="red")
-
-
 _NO_SESSIONS_MESSAGE = "No sessions found yet. Run an agent session with scalene-guard installed, then reopen the monitor."
+
+# docs/ARCHITECTURE.md sec22.6: STORY-1701 retires the full allow/block
+# tagged call-stream panel (STORY-1603, E16) entirely -- the queue only ever
+# holds blocks, and only until resolved, so there is no more "every call,
+# tagged" surface anywhere in this app. `_event_tag`/`_TAG_TEXT`/`_TAG_STYLE`
+# (the machinery that rendered that panel's per-row tag) are removed as
+# dead code along with it, not left behind unused.
+
+
+def _format_kinds(targets: list[Resource]) -> str:
+    """docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue's Kind column --
+    a call can identify more than one resource kind at once (e.g. a Bash
+    command touching both a file path and a URL), so this joins the
+    distinct kinds actually present rather than assuming one."""
+    return ", ".join(sorted({t.kind for t in targets}))
 
 
 def _format_relative_time(scanned_at: float, now: float | None = None) -> str:
@@ -150,15 +141,12 @@ class ReviewScreen(Screen):
         /* Same 1fr-default bug as #review-position/#sensitivity-input
         above, but for height instead of width: an unconstrained Vertical
         defaults to a *share* of remaining screen space (1fr), not "fit my
-        children". With a 2-row #targets table (vs. 1 for a single target)
-        taking 1 more row, allow-form's 1fr share shrank by that same row,
-        silently compressing its rendered content -- #allow-error (the next
-        sibling) then started 1 row too early and overlapped #submit-btn's
-        row entirely, silently swallowing every click on it (no error, no
-        exception -- the click just landed on the wrong widget). Real bug,
-        caught by test_typed_pattern_writes_one_shared_rule_for_a_multi_target_call,
-        not the single-target tests, which happened not to hit the
-        off-by-one. */
+        children" -- still true regardless of where it sits in the layout,
+        which is why this stays even after sec22.4 (E17) moved #allow-form
+        *before* #targets. Original trigger (E16): a 2-row #targets table
+        shrank allow-form's 1fr share, silently compressing its content
+        until #allow-error overlapped the (now-removed) #submit-btn's row,
+        swallowing clicks with no error. */
         height: auto;
     }
     ReviewScreen .field-row {
@@ -213,27 +201,19 @@ class ReviewScreen(Screen):
             yield Static("", id="review-position")
             yield Button("Next >", id="next-btn", compact=True)
         yield Static("", id="review-header")
-        yield Static("", id="tool-input")
-        yield DataTable(id="targets")
-        with Horizontal():
-            yield Button("Verify", id="verify-btn", compact=True)
-            yield Button("Deny", id="deny-btn", compact=True)
-            # docs/ARCHITECTURE.md sec20.4: Allow is disabled/unreachable
-            # until every target's Verify has completed -- Textual's own
-            # `disabled` state, not just a visual hint the user could
-            # click past.
-            yield Button("Allow", id="allow-btn", disabled=True, compact=True)
+        # docs/ARCHITECTURE.md sec22.4 (STORY-1704, direct user request): the
+        # match-expression fields sit at the top, always visible/editable --
+        # not revealed only after clicking Allow (the old 2-step reveal-
+        # then-submit). Allow itself is now the direct write action; there
+        # is no longer a separate "Submit rule" button.
         with Vertical(id="allow-form"):
-            # Direct user request: editable tool/pattern, defaulting to the
-            # exact tool name and an exact-match pattern -- widen either
-            # before submitting instead of only being able to accept the
-            # narrow auto-derived rule. `tool` is call-level (one value for
-            # the whole entry, every target in one call shares the same
-            # tool_name) so it's always editable; `pattern` is inherently
-            # per-target, so it's only meaningfully editable when there's
-            # exactly one target (see _refresh_allow_form_defaults) --
-            # multi-target calls keep today's automatic per-target
-            # derivation, shown disabled rather than silently ignored.
+            # `tool` is call-level (one value for the whole entry, every
+            # target in one call shares the same tool_name) so it's always
+            # editable; `pattern` is inherently per-target, so it's only
+            # meaningfully editable when there's exactly one target (see
+            # _refresh_allow_form_defaults) -- multi-target calls keep
+            # today's automatic per-target derivation, shown disabled
+            # rather than silently ignored.
             with Horizontal(classes="field-row"):
                 yield Static("Tool:", classes="field-label")
                 yield Input(value="", id="rule-tool-input", compact=True)
@@ -255,16 +235,34 @@ class ReviewScreen(Screen):
                 with RadioSet(id="mode-radio"):
                     for value in VALID_RULE_MODES:
                         yield RadioButton(value, value=(value == "allow"), compact=True, id=f"mode-{value}")
-            yield Button("Submit rule", id="submit-btn", compact=True)
+        yield Static("", id="tool-input")
+        yield DataTable(id="targets")
+        with Horizontal():
+            yield Button("Verify", id="verify-btn", compact=True)
+            yield Button("Deny", id="deny-btn", compact=True)
+            # docs/ARCHITECTURE.md sec20.4: Allow is disabled/unreachable
+            # until every target's Verify has completed -- Textual's own
+            # `disabled` state, not just a visual hint the user could
+            # click past. sec22.4 (Smith's Gate 2 finding): this button
+            # state is the *visible* first line of defense, not the only
+            # one -- action_submit_allow() below re-checks all_verified()
+            # itself, since the Enter-key path reaches it independent of
+            # this button's state.
+            yield Button("Allow", id="allow-btn", disabled=True, compact=True)
         yield Static("", id="allow-error")
         yield Footer()
 
     def on_mount(self) -> None:
         table = self.query_one("#targets", DataTable)
-        table.add_columns("Target", "Kind", "Status", "Verified")
-        self.query_one("#allow-form", Vertical).display = False
+        table.add_columns("Target", "Kind", "Status", "Verified", "Matches?")
         self.refresh_header()
         self.refresh_targets()
+        # Fewer clicks/steps (direct user request, carried from the old
+        # reveal-on-Allow-click behavior sec22.4 retires): land the cursor
+        # on the field the operator is most likely to edit as soon as the
+        # screen opens, since there's no longer a separate reveal step to
+        # do it at.
+        self.query_one("#rule-pattern-input", Input).focus()
 
     def _default_pattern_for(self, target: Resource) -> str:
         return escape_gitignore_literal(target.identity) if target.scanner_name == "secrets" else re.escape(target.identity)
@@ -296,6 +294,40 @@ class ReviewScreen(Screen):
         self._select_radio_default("sensitivity-radio", VALID_SENSITIVITIES, "public")
         self._select_radio_default("mode-radio", VALID_RULE_MODES, "allow")
 
+    def _build_rule(self, pattern: str) -> PolicyRule:
+        """docs/ARCHITECTURE.md sec22.4 (STORY-1704): the one place a
+        `PolicyRule` is constructed from the live form values -- both the
+        real write path (`action_submit_allow`) and the read-only live
+        preview (`_preview_matches`) call this, so there is no second,
+        divergent construction to drift out of sync with the one that
+        actually gets written. May raise `PolicyConfigError` (e.g. an
+        in-progress edit to the Tool field that isn't valid regex yet) --
+        callers decide how to handle that themselves."""
+        tool = self.query_one("#rule-tool-input", Input).value.strip() or self._entry.event.tool_name
+        sensitivity = self._selected_radio_value("sensitivity-radio", VALID_SENSITIVITIES, "public")
+        mode = self._selected_radio_value("mode-radio", VALID_RULE_MODES, "allow")
+        return PolicyRule(tool=tool, pattern=pattern, sensitivity=sensitivity, mode=mode)
+
+    def _preview_matches(self, target: Resource) -> str:
+        """docs/ARCHITECTURE.md sec22.4 (STORY-1704): does the *current*
+        (possibly unsaved) pattern field value match this target? Reuses
+        the exact same scanner dispatch (`Scanner.match()` -- FileScanner's
+        gitignore override vs. the base regex default) the real write path
+        already relies on, not a second matcher. `"—"` (indeterminate, not
+        "no") for an in-progress edit that isn't a valid rule yet -- that's
+        a different claim than "this valid rule doesn't match," and
+        collapsing the two would misinform the operator."""
+        edited_pattern = self.query_one("#rule-pattern-input", Input).value.strip()
+        pattern = edited_pattern or self._default_pattern_for(target)
+        try:
+            rule = self._build_rule(pattern)
+        except PolicyConfigError:
+            return "—"
+        scanner = self._scanners.get(target.scanner_name)
+        if scanner is None:
+            return "—"
+        return "yes" if scanner.match(rule, target) else "no"
+
     def _select_radio_default(self, radio_set_id: str, values: tuple[str, ...], default: str) -> None:
         radio_set = self.query_one(f"#{radio_set_id}", RadioSet)
         buttons = list(radio_set.children)
@@ -317,9 +349,7 @@ class ReviewScreen(Screen):
         )
         self.query_one("#tool-input", Static).update(json.dumps(self._entry.event.tool_input, indent=2))
         # A different entry has its own independent allow-form state --
-        # don't carry over a previous entry's open form, defaults, or error
-        # text.
-        self.query_one("#allow-form", Vertical).display = False
+        # don't carry over a previous entry's defaults or error text.
         self.query_one("#allow-error", Static).update("")
         self._refresh_allow_form_defaults()
         self.query_one("#prev-btn", Button).disabled = self._index == 0
@@ -332,7 +362,7 @@ class ReviewScreen(Screen):
         for t in self._entry.targets:
             status = target_status(t, cache)
             verified = "yes" if self._entry.is_verified(t, cache) else "no"
-            table.add_row(t.identity, t.kind, status, verified)
+            table.add_row(t.identity, t.kind, status, verified, self._preview_matches(t))
         self.query_one("#allow-btn", Button).disabled = not self._entry.all_verified(cache)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -346,21 +376,29 @@ class ReviewScreen(Screen):
             # original open-time entry.
             self.dismiss(self._entry)
         elif event.button.id == "allow-btn":
-            self.query_one("#allow-form", Vertical).display = True
-            # Fewer clicks/steps (direct user request): land the cursor on
-            # the field the operator is most likely to edit, rather than
-            # requiring an extra click just to start typing.
-            self.query_one("#rule-pattern-input", Input).focus()
-        elif event.button.id == "submit-btn":
+            # docs/ARCHITECTURE.md sec22.4 (STORY-1704): Allow is the direct
+            # write action now -- the match-expr fields are already visible
+            # and editable above, there's no form left to reveal.
             self.action_submit_allow()
         elif event.button.id == "prev-btn":
             self.action_prev_review()
         elif event.button.id == "next-btn":
             self.action_next_review()
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        # docs/ARCHITECTURE.md sec22.4 (STORY-1704): live "Matches?" preview
+        # -- recomputed on every keystroke in the Pattern field. Not wired
+        # on the Tool field: `Scanner.match()` only ever reads `rule.
+        # pattern`, never `rule.tool` (confirmed: `Scanner.match`/
+        # `FileScanner.match`), so a tool-field edit can't change any row's
+        # match result -- wiring it would be a no-op call, not a
+        # correctness gap.
+        if event.input.id == "rule-pattern-input":
+            self.refresh_targets()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         # Fewer clicks/steps: Enter in either text field submits the rule
-        # directly, same as clicking "Submit rule" -- no mouse required.
+        # directly, same as clicking Allow -- no mouse required.
         # Sensitivity/Mode are RadioSets now (their own Enter toggles the
         # highlighted option, not this), not Inputs.
         if event.input.id in ("rule-tool-input", "rule-pattern-input"):
@@ -410,6 +448,19 @@ class ReviewScreen(Screen):
         self.refresh_targets()
 
     def action_submit_allow(self) -> None:
+        # docs/ARCHITECTURE.md sec22.4 (Smith's Gate 2 finding): the match-
+        # expr fields are always visible/focusable now, before Verify has
+        # necessarily run -- Enter in either text input (on_input_submitted)
+        # reaches this method directly, independent of the Allow button's
+        # own disabled=all_verified() state. That button state is the
+        # visible first line of defense (Nielsen #5); this check is the one
+        # that actually can't be bypassed, since it's enforced at the write
+        # action itself, not at a widget that isn't the only path here.
+        cache = ScanCache(self._cache_path)
+        if not self._entry.all_verified(cache):
+            self.query_one("#allow-error", Static).update("Verify every target before allowing.")
+            return
+
         # docs/ARCHITECTURE.md sec20.5 (STORY-1605): default pattern escapes
         # the identity as a literal, exact match -- onboard.py's own
         # existing default, reused verbatim, not a new derivation. Same
@@ -418,17 +469,8 @@ class ReviewScreen(Screen):
         # 2026-07-30 (Scanner.match()): escaping syntax must match whichever
         # scanner will interpret the pattern -- FileScanner ("secrets")
         # reads gitignore syntax, everything else still reads plain regex.
-        #
-        # `tool` is now editable (direct user request), defaulting to the
-        # exact tool name rather than the old hardcoded ".*" -- kept plain
-        # regex (unlike `pattern`, tool names aren't path-shaped, so glob's
-        # directory-recursion semantics wouldn't add anything; regex
-        # alternation already covers "any of these tools").
-        tool = self.query_one("#rule-tool-input", Input).value.strip() or self._entry.event.tool_name
         edited_pattern = self.query_one("#rule-pattern-input", Input).value.strip()
-        sensitivity = self._selected_radio_value("sensitivity-radio", VALID_SENSITIVITIES, "public")
         mode = self._selected_radio_value("mode-radio", VALID_RULE_MODES, "allow")
-        cache = ScanCache(self._cache_path)
 
         if edited_pattern:
             # 2026-07-30 (direct user follow-up): a typed pattern writes
@@ -448,7 +490,7 @@ class ReviewScreen(Screen):
                 self.query_one("#allow-error", Static).update("; ".join(errors))
                 return
             try:
-                rule = PolicyRule(tool=tool, pattern=edited_pattern, sensitivity=sensitivity, mode=mode)
+                rule = self._build_rule(edited_pattern)
             except PolicyConfigError as exc:
                 self.query_one("#allow-error", Static).update(str(exc))
                 return
@@ -467,7 +509,7 @@ class ReviewScreen(Screen):
                 continue
             pattern = self._default_pattern_for(t)
             try:
-                rule = PolicyRule(tool=tool, pattern=pattern, sensitivity=sensitivity, mode=mode)
+                rule = self._build_rule(pattern)
             except PolicyConfigError as exc:
                 errors.append(f"{t.identity}: {exc}")
                 continue
@@ -483,24 +525,127 @@ class ReviewScreen(Screen):
         self.dismiss(None)
 
 
+class RulesScreen(Screen):
+    """docs/ARCHITECTURE.md sec22.5 (STORY-1705): lists every `PolicyRule`
+    in real file order (rule order is genuine access-control precedence --
+    `resource_verifier._find_matching_rule()` returns the first match, not
+    the best one) with move-up/move-down controls that actually rewrite
+    `scalene_policy.yaml` via `policy_config.swap_rule_order`, not a
+    display-only sort.
+
+    `k`/`j` (not the arrow keys, which `DataTable`'s own cursor already
+    owns) move the rule under the cursor. Re-reads the real file after
+    every write and shows a synchronous confirmation before accepting the
+    next key -- reordering has immediate, real access-control consequences
+    (a broad rule moved ahead of a specific one can make the specific one
+    permanently unreachable, the exact failure `write_default_project_
+    policy`'s own docstring warns about for appends), so the write must
+    never be silent."""
+
+    BINDINGS = [
+        ("escape", "back_to_queue", "Back to queue"),
+        ("k", "move_up", "Move rule up"),
+        ("j", "move_down", "Move rule down"),
+    ]
+
+    CSS = """
+    RulesScreen #no-rules { padding: 1 2; color: $text-muted; display: none; }
+    RulesScreen #no-rules.visible { display: block; }
+    """
+
+    def __init__(self, policy_path: Path) -> None:
+        super().__init__()
+        self._policy_path = policy_path
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static("No rules configured.", id="no-rules")
+        yield DataTable(id="rules")
+        yield Static("", id="rule-confirm")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#rules", DataTable)
+        table.add_columns("#", "Tool", "Pattern", "Sensitivity", "Mode", "Trust")
+        table.cursor_type = "row"
+        self.refresh_rules()
+
+    def _load_rules(self) -> tuple[PolicyRule, ...]:
+        try:
+            return PolicyConfig.from_yaml(self._policy_path).rules if self._policy_path.exists() else ()
+        except PolicyConfigError:
+            # Fail-safe, not fail-crash: this is a live TUI (same standard
+            # as ReviewScreen.action_verify) -- an invalid policy file
+            # shows an empty rules list rather than taking the screen down.
+            return ()
+
+    def refresh_rules(self) -> None:
+        table = self.query_one("#rules", DataTable)
+        table.clear()
+        rules = self._load_rules()
+        # Nielsen #1: an empty table with no explanation reads as "broken,"
+        # same disposition as #no-queue (sec22.2) -- explicit, not silent.
+        self.query_one("#no-rules", Static).set_class(not rules, "visible")
+        for i, rule in enumerate(rules):
+            table.add_row(str(i + 1), rule.tool, rule.pattern, rule.sensitivity, rule.mode, rule.trust)
+
+    def _move(self, direction: int) -> None:
+        table = self.query_one("#rules", DataTable)
+        index = table.cursor_row
+        total = table.row_count
+        other = index + direction
+        if index < 0 or other < 0 or other >= total:
+            return  # at the boundary -- no-op, same as ReviewScreen's disabled-button precedent
+        try:
+            swap_rule_order(self._policy_path, index, direction)
+        except PolicyConfigError as exc:
+            self.query_one("#rule-confirm", Static).update(str(exc))
+            return
+        self.refresh_rules()
+        table.move_cursor(row=other)
+        # Synchronous confirmation, same handler that performed the write --
+        # no frame where the operator could act again before seeing what
+        # happened (STORY-1705's hard AC).
+        self.query_one("#rule-confirm", Static).update(f"Moved rule #{index + 1} → #{other + 1} — saved.")
+
+    def action_move_up(self) -> None:
+        self._move(-1)
+
+    def action_move_down(self) -> None:
+        self._move(1)
+
+    def action_back_to_queue(self) -> None:
+        self.dismiss()
+
+
 class MonitorApp(App):
-    """Live view of session trust/sensitivity tags and block events
-    (STORY-701). docs/ARCHITECTURE.md sec15 (2026-07-17): STORY-702's
-    editable-and-applyable onboard-command workflow is retired -- clearing
-    a destination now always takes two explicit steps (a real scan, then a
-    hand-authored rule), not one runnable command."""
+    """docs/ARCHITECTURE.md sec22 (E17, STORY-1701/1702): queue-first home
+    screen -- a table of pending reviews (oldest first) plus a single line
+    naming whichever session is currently most active, not a multi-session
+    dashboard with a picker. sec15 (2026-07-17): STORY-702's editable-and-
+    applyable onboard-command workflow is retired -- clearing a destination
+    always takes two explicit steps (a real scan, then a hand-authored
+    rule), not one runnable command."""
 
     CSS = """
     #no-sessions { padding: 1 2; color: $text-muted; display: none; }
     #no-sessions.visible { display: block; }
-    #top-row { height: 60%; }
-    #scan-results-panel { height: 40%; }
-    #scanners-panel { width: 24; }
+    #session-line { padding: 0 1; color: $text-muted; }
+    #no-queue { padding: 1 2; color: $text-muted; display: none; }
+    #no-queue.visible { display: block; }
+    /* docs/ARCHITECTURE.md sec22.3 (STORY-1703): real-rendered-geometry
+    check (Phase 2 Trin/Morpheus finding) caught this differently than the
+    architecture doc assumed -- two `dock: bottom` widgets don't stack
+    outward from the edge, they fully overlap at the same region. Fix:
+    #queue expands to fill remaining vertical space (1fr) and #status-strip
+    is left in normal flow (not docked) -- it's simply the next line after
+    the now-flexible queue table, landing exactly above Footer's own
+    self-docked bar with no overlap, no explicit dock needed on the strip.
+    */
+    #queue { height: 1fr; }
+    #status-strip { height: 1; padding: 0 1; color: $text-muted; }
     """
-    BINDINGS = [
-        ("a", "toggle_all_sessions", "Toggle all-sessions feed"),
-        ("r", "open_review", "Review oldest pending block"),
-    ]
+    BINDINGS = [("r", "open_rules", "Rules")]
 
     def __init__(
         self,
@@ -532,10 +677,6 @@ class MonitorApp(App):
         self._cache_path = cache_path
         self._policy_path = policy_path
         self.sub_title = f"policy: {policy_path}  |  state: {state_dir}"
-        self._events: list[ToolCallEvent] = []
-        self._visible_events: list[ToolCallEvent] = []
-        self.selected_session_id: str | None = None
-        self.show_all_sessions = False
         # docs/ARCHITECTURE.md sec20.2 (STORY-1602): same load pattern as
         # cli.py/onboard.py's main() -- a missing or invalid policy file
         # falls back to the 2 builtin scanners, never crashes the monitor.
@@ -551,76 +692,53 @@ class MonitorApp(App):
         self._pending_reviews: list[ReviewEntry] = []
 
     def compose(self) -> ComposeResult:
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701/1702): the queue is the
+        # whole home screen now -- no Sessions/Events/Scanners/Resource-
+        # cache panels (STORY-1701's own AC removes them; the scanner-
+        # activity signal returns in sec22.3's status strip, everything
+        # else is dropped outright, not replaced).
         yield Header()
         yield Static(_NO_SESSIONS_MESSAGE, id="no-sessions")
-        with Horizontal(id="top-row"):
-            with Vertical():
-                yield Static("Sessions")
-                yield DataTable(id="sessions")
-            with Vertical():
-                yield Static("Block events (press 'a' to toggle all-sessions)")
-                yield DataTable(id="events")
-            with Vertical(id="scanners-panel"):
-                yield Static("Scanners")
-                yield DataTable(id="scanners")
-        # STORY-1005 / Smith's Phase 5 gate finding: a resource identity can be
-        # a long file path or hostname -- squeezed into a 3rd side-by-side
-        # column (alongside Sessions/Block-events) it doesn't have enough
-        # combined width to stay readable at a common terminal size (real
-        # screenshot confirmed truncation even after shortening the
-        # timestamp format). Full-width row below instead, so it gets the
-        # entire terminal width rather than a third of it.
-        with Vertical(id="scan-results-panel"):
-            yield Static("Resource cache (recently scanned files/hosts)")
-            yield DataTable(id="scan-results")
+        yield Static("", id="session-line")
+        yield Static("No pending reviews.", id="no-queue")
+        yield DataTable(id="queue")
+        yield Static("", id="status-strip")
         yield Footer()
 
     def on_mount(self) -> None:
-        sessions_table = self.query_one("#sessions", DataTable)
-        sessions_table.add_columns("Session", "Trust", "Sensitivity")
-        sessions_table.cursor_type = "row"
+        queue_table = self.query_one("#queue", DataTable)
+        queue_table.add_columns("Tool", "Resources", "Kind", "Reason", "Age")
+        queue_table.cursor_type = "row"
 
-        events_table = self.query_one("#events", DataTable)
-        events_table.add_columns("Session", "Tool", "Tag", "Reason")
-        events_table.cursor_type = "row"
-
-        scan_results_table = self.query_one("#scan-results", DataTable)
-        scan_results_table.add_columns("Resource", "Label", "Last Scanned")
-        scan_results_table.cursor_type = "row"
-
-        scanners_table = self.query_one("#scanners", DataTable)
-        scanners_table.add_columns("Scanner", "Status")
-
-        self.refresh_sessions()
-        self.refresh_scan_results()
-        self.refresh_scanner_activity()
+        self.refresh_session_line()
+        self.refresh_queue()
+        self.refresh_status_strip()
         self._refresh_review_title()
         self.set_interval(POLL_INTERVAL_SECONDS, self.poll_data)
 
-    def refresh_sessions(self) -> None:
-        sessions = discover_sessions(self._state_dir)
-        table = self.query_one("#sessions", DataTable)
-        table.clear()
+    def refresh_status_strip(self) -> None:
+        # docs/ARCHITECTURE.md sec22.3 (STORY-1703): reuses discover_
+        # scanner_activity() verbatim (STORY-1602's own data source) --
+        # only the rendering (a strip line, not a table) is new.
+        activity = discover_scanner_activity(self._cache_path, self._scanners)
+        self.query_one("#status-strip", Static).update(format_scanner_status(activity))
 
+    def refresh_session_line(self) -> None:
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1702): recomputed fresh from
+        # `discover_sessions()[0]` on every call -- no stickiness. A prior
+        # `selected_session_id` field used to be set once (`is None` guard)
+        # and never re-point at a newer session; there is no equivalent
+        # state here to go stale, by construction.
+        sessions = discover_sessions(self._state_dir)
         no_sessions_widget = self.query_one("#no-sessions", Static)
         no_sessions_widget.set_class(not sessions, "visible")
 
-        for s in sessions:
-            table.add_row(s.session_id, s.trust, s.sensitivity, key=s.session_id)
-
-        if self.selected_session_id is None and sessions:
-            self.selected_session_id = sessions[0].session_id
-
-        # DataTable.clear() unconditionally resets the cursor to row 0 — restore
-        # it to whichever row the actually-selected session landed on, so the
-        # highlighted row never silently diverges from the real selection.
-        if self.selected_session_id is not None:
-            try:
-                row_index = table.get_row_index(self.selected_session_id)
-            except RowDoesNotExist:
-                pass
-            else:
-                table.move_cursor(row=row_index)
+        line = self.query_one("#session-line", Static)
+        if sessions:
+            latest = sessions[0]
+            line.update(f"Session: {latest.session_id}  (trust={latest.trust}, sensitivity={latest.sensitivity})")
+        else:
+            line.update("")
 
     def poll_data(self) -> None:
         # The periodic poll timer can fire after the app has already started
@@ -629,9 +747,6 @@ class MonitorApp(App):
         try:
             new_items = self._tail.poll()
             if new_items:
-                new_events = [i for i in new_items if isinstance(i, ToolCallEvent)]
-                self._events.extend(new_events)
-                self.refresh_events()
                 new_reviews = False
                 # 2026-07-30 (direct user report: "review status is not
                 # persisted -- always resets to N pending reviews on
@@ -661,60 +776,28 @@ class MonitorApp(App):
                     # assumed from the architecture doc).
                     self.bell()
                 self._refresh_review_title()
-            self.refresh_sessions()
-            self.refresh_scan_results()
-            self.refresh_scanner_activity()
+                self.refresh_queue()
+            self.refresh_session_line()
+            self.refresh_status_strip()
         except NoMatches:
             pass
 
-    def refresh_scan_results(self) -> None:
-        # STORY-1005: reads .scalene/scan_cache.json directly (via
-        # discover_scan_results -> ScanCache.all_entries()) on every poll --
-        # no separate bookkeeping of its own to drift from the real store.
-        results = discover_scan_results(self._cache_path)
-        table = self.query_one("#scan-results", DataTable)
+    def refresh_queue(self) -> None:
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): oldest-first, same FIFO
+        # order `_pending_reviews.append()` already produces -- displayed
+        # now instead of only ever consumed by the old 'r'-opens-oldest
+        # binding.
+        table = self.query_one("#queue", DataTable)
         table.clear()
-        for r in results:
-            table.add_row(r.identity, r.label, _format_relative_time(r.scanned_at))
-
-    def refresh_scanner_activity(self) -> None:
-        # docs/ARCHITECTURE.md sec20.2: one row per *configured* scanner
-        # (self._scanners, loaded once at startup from the real policy
-        # file) -- a config-declared scanner (E15/STORY-1501) shows up here
-        # with no monitor code change needed.
-        activity = discover_scanner_activity(self._cache_path, self._scanners)
-        table = self.query_one("#scanners", DataTable)
-        table.clear()
-        for a in activity:
-            table.add_row(a.name, "busy" if a.busy else "idle")
-
-    def refresh_events(self) -> None:
-        table = self.query_one("#events", DataTable)
-        table.clear()
-        visible = (
-            self._events
-            if self.show_all_sessions
-            else [e for e in self._events if e.session_id == self.selected_session_id]
-        )
-        self._visible_events = list(reversed(visible))  # newest first — same order as the rows below
-        for e in self._visible_events:
-            table.add_row(e.session_id, e.tool_name, _event_tag(e), e.reason)
-
-    def action_toggle_all_sessions(self) -> None:
-        self.show_all_sessions = not self.show_all_sessions
-        self.refresh_events()
-
-    def action_open_review(self) -> None:
-        # docs/ARCHITECTURE.md sec20.4: oldest unresolved entry first, FIFO
-        # -- resolves Smith's Gate 1 note on multiple simultaneous block
-        # events without needing timeout/expiry logic (see ReviewScreen's
-        # docstring). Next/Prev inside the screen then lets the operator
-        # browse the rest of the queue (and see "Review X of Y") without
-        # closing and reopening.
-        if self._pending_reviews:
-            self.push_screen(
-                ReviewScreen(self._pending_reviews, 0, self._cache_path, self._scanners, self._policy_path),
-                callback=self._on_review_resolved,
+        no_queue_widget = self.query_one("#no-queue", Static)
+        no_queue_widget.set_class(not self._pending_reviews, "visible")
+        for entry in self._pending_reviews:
+            table.add_row(
+                entry.event.tool_name,
+                str(len(entry.targets)),
+                _format_kinds(entry.targets),
+                entry.event.reason,
+                _format_relative_time(entry.event.timestamp),
             )
 
     def _on_review_resolved(self, resolved_entry: ReviewEntry | None) -> None:
@@ -736,6 +819,12 @@ class MonitorApp(App):
             # pattern match resolves it" shortcut.
             self._auto_resolve_now_covered_reviews()
         self._refresh_review_title()
+        # docs/ARCHITECTURE.md sec22.2 (Morpheus's Phase 1 review): `#queue`
+        # is a visible widget now (it wasn't when this method was written,
+        # E16) -- without this, a Deny/Allow (or an auto-resolved second
+        # entry) would sit stale on screen until the next 0.5s poll tick
+        # happened to call refresh_queue() on its own.
+        self.refresh_queue()
 
     def _append_review_resolved(self, entry: ReviewEntry) -> None:
         # 2026-07-30 (direct user report: "review status is not
@@ -768,6 +857,18 @@ class MonitorApp(App):
         self.title = f"scg monitor — {count} pending review{'s' if count != 1 else ''}" if count else "scg monitor"
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if event.data_table.id == "sessions":
-            self.selected_session_id = str(event.row_key.value)
-            self.refresh_events()
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): opens the review at
+        # whichever row is under the cursor -- supersedes the old 'r'-opens-
+        # oldest binding (index 0 was the only reachable one before, and
+        # 'r' is freed for the Rules screen, sec22.1).
+        if event.data_table.id == "queue" and event.cursor_row < len(self._pending_reviews):
+            self.push_screen(
+                ReviewScreen(self._pending_reviews, event.cursor_row, self._cache_path, self._scanners, self._policy_path),
+                callback=self._on_review_resolved,
+            )
+
+    def action_open_rules(self) -> None:
+        # docs/ARCHITECTURE.md sec22.5 (STORY-1705): sibling screen to
+        # ReviewScreen, pushed from the queue directly (never pushed from
+        # inside a review).
+        self.push_screen(RulesScreen(self._policy_path))

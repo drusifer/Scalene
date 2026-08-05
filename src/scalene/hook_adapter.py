@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,15 @@ def pre_tool_use(
             "tool_input": tool_input,
             "reason": decision.reason,
             "block_kind": decision.block_kind,
+            # docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue screen's
+            # "Age" column needs a real occurrence time -- nothing before
+            # this recorded one at all (ScanCache.scanned_at is a different
+            # timestamp, when a *scan* completed, not when the call itself
+            # happened). Defaults to 0.0 on read for any pre-existing
+            # audit-log line written before this field existed (monitor_
+            # data.ToolCallEvent), same "don't crash on an old-format line"
+            # convention as block_kind/tool_input already use.
+            "ts": time.time(),
         },
         audit_log_path,
     )
