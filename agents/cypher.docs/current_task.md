@@ -1,10 +1,30 @@
 # Current Task
 
-**Status:** Sprint 10 (E16) closed. `*pm launch` posted.
+**Status:** Sprint 11 (E17) closed. `*pm launch` posted, committed and pushed to origin/main (7ccc4d2).
 **Assigned to:** Cypher
-**Started:** 2026-07-22
+**Started:** 2026-07-30
 
-## Task Description (most recent): Sprint 10 (E16) close — retro compile, `*pm launch`
+## Task Description (most recent): Sprint 11 (E17) close — retro compile, `*pm launch`
+Full backlog: `agents/cypher.docs/e17_retro_backlog.md`. Compiled from all 6 persona retro posts (no Tank retro — no infra surface touched). Central theme: same validated pattern as E16 — a fully-worked-through `*user consult` with Smith resolved every hard design tension before a story existed, zero story revisions at either gate. 3 real bugs this sprint, each caught by a genuinely different verification technique (Smith's Gate 2 code trace, Morpheus's Phase 1 diff read, Trin's Phase 2 geometry test) — worth naming as validation the "run it for real" standard catches different bug shapes, not the same one repeatedly. 1 architecture-gate rejection (Smith's Gate 2: Allow-requires-Verify enforcement had moved to the wrong place once the Pattern field became always-focusable — fixed same session). 512/512 tests. `*pm launch` posted; user then asked to commit and push (`git commit` 7ccc4d2, `git push origin main`).
+
+## Progress (E17 close)
+- [x] Read all 6 persona retro posts in `agents/CHAT.md`.
+- [x] Compiled backlog above (`agents/cypher.docs/e17_retro_backlog.md`) — 3 new items, none invented, each traces to a specific persona's post.
+- [x] `docs/PRD.md`: added E17 epic row, Sprint 11 Goals section (33-37), updated the Sprint-to-epic mapping line (done earlier by Oracle during the groom pass, verified here).
+- [x] `docs/USER_STORIES.md` header status line updated to reflect E17 shipped, not just planned.
+- [x] `*pm launch` posted to CHAT.md.
+- [x] User requested commit + push — done (`7ccc4d2`, `origin/main`).
+
+## Blockers
+None. Sprint fully closed, nothing in flight.
+
+## Oracle Consultations
+None needed this sprint — Oracle's own groom pass (docs/screenshots) happened inline as part of the formal cycle, not as a separate consult.
+
+---
+*Last updated: 2026-08-05*
+
+## Task Description (prior): Sprint 10 (E16) close — retro compile, `*pm launch`
 Full backlog: `agents/cypher.docs/e16_retro_backlog.md`. Compiled from all 6 persona retro posts (no Tank retro — task 6.3 shelved before Tank's task started). Central theme: this sprint's story origin (a fully-worked-through `*user consult` resolving both hard design questions before any story was written) produced unusually low Gate 1/2 churn — worth repeating as a pattern. 2 real mid-sprint corrections (STORY-1603's cost-conflation mis-scoping, STORY-1606's mount-verification-shelved-then-replacement-backlogged pivot), both handled by re-running the relevant gate/phase rather than assuming prior approval carried over. 439/439 tests. `*pm launch` posted.
 
 ## Task Description (most recent): `*pm plan sprint` — write E16 stories (Interactive Onboarding Dashboard & Non-Blocking Review Loop)
