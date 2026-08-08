@@ -1,7 +1,14 @@
 # Current Task
 
-**Status:** E17 (Queue-First Monitor Redesign) fully shipped and closed 2026-08-03 — full formal cycle, 4 phases, 3 mandatory gates all passed, sprint-close end-to-end PASS. Awaiting `*sprint retro` + Cypher launch.
+**Status:** `*user test decide_access-correction` — APPROVED, 1 non-blocking finding. Bloop `*impl` chain done (2026-08-08).
 **Assigned to:** Smith
+**Started:** 2026-08-08
+**Completed:** 2026-08-08
+
+## Task Description (most recent): UX gate for `RulesScreen`'s Mode-responsive fields
+Full detail: `context.md`. Real screenshot check (`app.export_screenshot()`), not just Pilot assertions. APPROVED — clean rendering, no layout defects. 1 non-blocking finding: backlogged sensitivity/trust values (`internal`/`med`) show no visible selection when editing such a rule (display gap, not a data-loss gap — Trin/Neo already fixed the data side). This closes the `*impl` chain for this correction (Neo→Trin→Morpheus→Smith, all passed).
+
+## Task Description (prior): E17 (Queue-First Monitor Redesign) fully shipped and closed 2026-08-03 — full formal cycle, 4 phases, 3 mandatory gates all passed, sprint-close end-to-end PASS. Awaiting `*sprint retro` + Cypher launch.
 **Started:** 2026-07-30
 **Completed:** 2026-08-04
 

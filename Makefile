@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test test-q screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test test-q test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -72,6 +72,12 @@ test: ## Run unit tests
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests -b; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+
+test-uat: ## Run the full suite PLUS the full end-to-end sprint-close journey tests (tests/uat_test_*.py, named so 'test'/'test-q' never collect them for routine dev iteration) -- use for *qa uat / sprint-close sign-off only
+	@if [ -x .venv/bin/python ]; then \
+		.venv/bin/python -m unittest discover -s tests && \
+		.venv/bin/python -m unittest discover -s tests -p 'uat_test*.py'; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_GUIDE.md (docs/generate_monitor_screenshots.py)
@@ -216,7 +222,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat demo test test-q screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: help chat demo test test-q test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -273,6 +279,9 @@ test: ## Run unit tests
 	@./agents/tools/mkf.py $(V) $@
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
+	@./agents/tools/mkf.py $(V) $@
+
+test-uat: ## Run the full suite PLUS the full end-to-end sprint-close journey tests (tests/uat_test_*.py) -- use for *qa uat / sprint-close sign-off only
 	@./agents/tools/mkf.py $(V) $@
 
 screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_GUIDE.md (docs/generate_monitor_screenshots.py)

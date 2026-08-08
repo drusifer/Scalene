@@ -116,7 +116,11 @@ class TestPreToolUseContaminatedContext(unittest.TestCase):
             self.assertEqual(_decision(result), "deny")
             self.assertIsNotNone(_reason(result))
 
-    def test_validated_allow_rule_still_proceeds_from_contaminated_context(self):
+    def test_validated_allow_rule_no_longer_bypasses_an_already_restricted_untainted_session(self):
+        # Correction (2026-08-07, direct user bug report), mirrors
+        # test_resource_verifier.py::TestDecideAccess's equivalent unit
+        # test -- verified here too since this is the real hook entry
+        # point, not decide_access() called in isolation.
         with TemporaryDirectory() as tmp:
             state_dir = Path(tmp)
             cache_path = state_dir / "cache.json"
@@ -139,7 +143,7 @@ class TestPreToolUseContaminatedContext(unittest.TestCase):
                 state_dir=state_dir,
                 cache_path=cache_path,
             )
-            self.assertEqual(_decision(result), "allow")
+            self.assertEqual(_decision(result), "deny")
 
 
 class TestPreToolUseConfirmedBad(unittest.TestCase):

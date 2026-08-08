@@ -783,3 +783,70 @@ OK
 1 onboarded, 0 blocked
 No targets identified in this tool call.
 make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-08-07 23:12:47</small>] [**User**]->[**all**] *request*:
+ re-init let's pick up the decide_access issue
+
+---
+[<small>2026-08-07 23:12:52</small>] [**Neo**]->[**User**] *resume*:
+ Resuming decide_access() truth-table question from last session (post e6d3bbe). Re-confirming with user before touching this security-critical function a 3rd time.
+
+---
+[<small>2026-08-07 23:39:19</small>] [**Neo**]->[**Trin**] *swe impl*:
+ Design settled after test-suite audit: labeled resources (validated_allow/trust_but_verify) tag then gate on trust=low+sensitivity=restricted (binary in effect, med/internal stay inert/backlogged); unruled resources unchanged. Only 1 existing test needs rewriting. Implementing now.
+
+---
+[<small>2026-08-08 00:31:33</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-08-08 00:32:54</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ decide_access() correction (sec15.2b) + RulesScreen UX implemented, 602/602, uncommitted. State saved. @Trin *qa uat decide_access-correction
+
+---
+[<small>2026-08-08 00:35:39</small>] [**Trin**]->[**Neo**] *qa blocked*:
+ qa uat decide_access-correction: decide_access() logic PASS (verified against diff+doc directly). RulesScreen UX FAIL: editing an existing internal/med rule and saving silently downgrades it to public/high, even via unrelated-field edits - real bug, hits STORY-1504's own project rule. Repro test committed, red. @Neo *swe fix
+
+---
+[<small>2026-08-08 00:36:00</small>] [**Neo**]->[**Trin**] *swe resume*:
+ Received. Fixing: preserve original sensitivity/trust when the RadioSet has no valid selection (backlogged value), instead of falling back to the hardcoded default.
+
+---
+[<small>2026-08-08 12:50:10</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 602 tests in 625.045s
+
+OK
+
+---
+[<small>2026-08-08 12:51:08</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ qa uat decide_access-correction: PASS after Neo's fix (preserves original sensitivity/trust when RadioSet has no valid selection). Full make test 602/602, repro test verified green by name. @Morpheus *lead review decide_access-correction
+
+---
+[<small>2026-08-08 12:52:04</small>] [**Morpheus**]->[**Smith**] *lead review*:
+ lead review decide_access-correction: APPROVED. Verified the new gate doesn't break sec18.4/STORY-1504's project-folder rule (checked against real tests, not assumed). No downstream reason-string coupling. Small, well-scoped fix for a security-critical function. @Smith *user test decide_access-correction
+
+---
+[<small>2026-08-08 12:53:46</small>] [**Smith**]->[**all**] *user approve*:
+ user test decide_access-correction: APPROVED. Real screenshot check (export_screenshot, not just Pilot assertions) - clean rendering, no layout defects in either mode state. 1 non-blocking finding: a rule with a backlogged sensitivity/trust value (internal/med) shows no visible RadioSet selection when edited - display gap, not data-loss (Neo already fixed that). *impl chain closed: Neo->Trin->Morpheus->Smith all pass.
+
+---
+[<small>2026-08-08 13:21:45</small>] [**Neo**]->[**all**] *swe fix*:
+ direct user request: added --failfast to make test/test-q (stdlib unittest flag, stops at first failure instead of running all 602 tests). Also flagged/confirmed via measurement: test_monitor_app.py's Pilot/E2E tests are the entire suite's slow-test population (asyncio debug-mode 2.4x tax + real full-journey mega-tests) - test-pyramid memory updated with the data.
+
+---
+[<small>2026-08-08 14:41:06</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 602 tests in 74.109s
+
+OK

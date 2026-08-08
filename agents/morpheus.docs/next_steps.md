@@ -1,10 +1,13 @@
 # Next Steps
 
-## Immediate Next Action
-E16 architecture written (`docs/ARCHITECTURE.md` §20, 2026-07-22), handed to Smith for Gate 2. On re-invocation: nothing further from me until Smith's Gate 2 verdict; if approved, hand to Mouse for phase breakdown, then review Mouse's plan (`*lead review sprint plan`) before Neo starts Phase 1.
+## Immediate Next Action — READ THIS FIRST ON COLD START
+§15.2b `decide_access()` correction reviewed and APPROVED (2026-08-08) — see `context.md`. Handed to Smith for the UX gate (`RulesScreen`'s Mode-responsive Sensitivity/Trust fields are directly user-observable behavior, matches this project's own standing bloop rule for when Smith re-engages). On re-invocation: nothing further from me unless Smith kicks something back — if Smith approves, this is ready to commit (ask the user before pushing, per this repo's convention).
 
 ## Waiting On
-Smith's Gate 2 verdict on E16 architecture (§20). My own watch-items for Gate 2 to confirm landed: the STORY-1603 scope correction (block-events-only, not a full call log — flagged back to Cypher/Smith explicitly, §20.3), and the bell()/title attention-signal design (§20.4) answering Smith's Gate 1 note.
+Smith's UX gate verdict on the `RulesScreen` change.
+
+## Carried (older, still real)
+E16 architecture (`docs/ARCHITECTURE.md` §20, 2026-07-22) — status of its own Gate 2/Mouse phase breakdown not re-checked this session, was mid-flight as of 2026-07-22's save; reconcile against `agents/mouse.docs/` on next full sprint-planning entry rather than assuming still-current.
 
 ## Carried from E16 architecture (real, not sprint-specific)
 - §20.3: STORY-1603 was storied as "the tool-call log" but only block events are actually logged today — logging every allowed call too would add unconditional hot-path I/O, an NFR question this project has been burned by assuming before (§13.3/13.5). Deferred, not built, flagged back to Cypher.

@@ -1,7 +1,14 @@
 # Current Task
 
-**Status:** `*lead arch E16` — `docs/ARCHITECTURE.md` §20 written. Handed to Smith for Gate 2.
-**Assigned to:** Smith (Gate 2) next
+**Status:** `*lead review decide_access-correction` — APPROVED, handed to Smith for UX gate.
+**Assigned to:** Smith next
+**Started:** 2026-08-08
+**Completed:** 2026-08-08
+
+## Task Description (most recent): review of §15.2b `decide_access()` correction
+Full detail: `context.md`. Checked specifically whether the new gate breaks my own §18.4/STORY-1504 design (project-folder default rule) — it doesn't, verified via the real test suite, not assumed. No downstream `reason`-string coupling found. Approved, no changes requested.
+
+## Task Description (prior): `*lead arch E16` — `docs/ARCHITECTURE.md` §20 written. Handed to Smith for Gate 2.
 **Started:** 2026-07-22
 **Completed:** 2026-07-22
 

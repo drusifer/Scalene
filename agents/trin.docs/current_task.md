@@ -1,9 +1,30 @@
 # Current Task
 
-**Status:** `*qa automate phase-4 e2e` — added a real subprocess-level test. Handed to Smith to review it as gate evidence.
+**Status:** `*qa uat decide_access-correction` — PASS after Neo's fix, handed to Morpheus (2026-08-08).
 **Assigned to:** Trin
 
-## Task Description (most recent): `*qa automate phase-4 e2e` — real subprocess test, not ad-hoc bash
+## Task Description (most recent): `*qa uat decide_access-correction` — sec15.2b + RulesScreen UX
+`decide_access()` logic itself: verified directly against the diff, PASS (matches `docs/ARCHITECTURE.md` §15.2b exactly, message content accurate, `write_default_project_policy`'s `"internal"` claim independently re-checked via grep not trust). `RulesScreen` UX change: FAIL — real bug, not a nitpick. Editing *any* rule whose `sensitivity`/`trust` is a now-hidden value (`internal`/`med` — includes STORY-1504's own project-default rule) and saving silently downgrades it to `public`/`high`, even when the user never touches those fields. Repro test added (`tests/test_monitor_app.py::TestRulesScreenEditAndDelete::test_editing_an_internal_sensitivity_rule_does_not_silently_downgrade_it_to_public`), confirmed red before reporting.
+
+## Progress
+- [x] Read the real diff (`git diff`), not just Neo's handoff summary.
+- [x] Independently re-verified the "STORY-1504 still uses internal" claim (grep, not trust).
+- [x] `decide_access()` core logic: PASS.
+- [x] Probed an edge case Neo's own tests didn't cover (editing an existing internal/med rule through the real screen) — found a real silent-downgrade bug.
+- [x] Repro test written and confirmed failing pre-fix.
+- [x] Neo fixed it (preserves the original rule's sensitivity/trust when the RadioSet has no valid selection, instead of a hardcoded default). Repro test now green, verified by name.
+- [x] Full `make test`: 602/602, 0 failures.
+
+## Blockers
+None. PASS — handed to Morpheus for architecture/quality review.
+
+## Oracle Consultations
+None — first attempt at a fix, not yet a repeated failure needing escalation.
+
+---
+*Last updated: 2026-08-08*
+
+## Task Description (prior): `*qa automate phase-4 e2e` — real subprocess test, not ad-hoc bash
 User direction mid-session: the manual `echo ... | python -m scalene.cli ...` verification runs used during this phase's reviews needed to become a real, repeatable automated test, not stay as one-off shell checks — and specifically Trin's job to build, not folded into Neo's or done ad-hoc again. Added `test_cli.py::TestGuardCreatesDefaultProjectPolicy::test_real_subprocess_end_to_end_creates_and_reuses_the_default` — spawns the actual `python -m scalene.cli` binary via `subprocess.run()` (not the in-process `guard_main()` helper the other tests in that class use), same "real binary" precedent as `test_demo.py`. Covers: first real subprocess call creates the file with the correct rule; a second real subprocess call reuses it without duplicating the rule or rewriting the file (`st_mtime_ns` unchanged). `make test`: 389/389. Handed to Smith to review/run this as her gate evidence instead of fresh manual checks.
 
 ## Task Description (prior): `*qa uat phase-4` re-run (mechanism corrected per user request) — PASSED. Handed to Smith to re-gate.

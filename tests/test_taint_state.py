@@ -145,6 +145,26 @@ class TestTaintStatePersistence(unittest.TestCase):
             self.assertEqual(reloaded.trust, "low")
             self.assertEqual(reloaded.sensitivity, "internal")
 
+    def test_a_held_lock_fails_fast_instead_of_hanging_forever(self):
+        # Direct user request (2026-08-08): `FileLock`'s own default
+        # (timeout=-1) blocks forever on contention -- a stuck/stale lock
+        # on this session's state file would hang the hook indefinitely.
+        # Proves the real bound against the exact lock path `save()` uses.
+        import time
+
+        from filelock import FileLock
+
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            state = TaintState(session_id="s1", state_dir=state_dir)
+            lock_path = str(state._path()) + ".lock"
+            with FileLock(lock_path):  # held by this test process
+                t0 = time.monotonic()
+                with self.assertRaises(TimeoutError):
+                    state.save()
+                elapsed = time.monotonic() - t0
+            self.assertLess(elapsed, 10, "lock contention should fail fast, not hang")
+
     def test_queryable_without_replaying_prior_calls(self):
         # Loading state must not require replaying/re-scanning any tool-call
         # history — it's a flat O(1) file read of the persisted tags.

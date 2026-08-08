@@ -1,4 +1,32 @@
-**Status:** E16 follow-up session closed (2026-07-30). Pushed to `origin/main`. Nothing in-flight for Neo.
+**Status:** §15.2b `decide_access()` correction implemented, 602/602, uncommitted — handed to Trin for UAT (2026-08-08).
+**Assigned to:** Neo
+**Started:** 2026-08-08
+**Finished:** 2026-08-08 (implementation; sprint-style review chain still open)
+
+## Task Description (most recent): `decide_access()` correction — validated_allow/trust_but_verify no longer bypass the contamination gate
+Full detail: `docs/ARCHITECTURE.md` §15.2b, `context.md` above. Resumed from last session's flagged-but-unconfirmed correction (`next_steps.md` had the truth table). Re-confirmed the exact semantics with the user (2 follow-up rounds — scope of the fix, then the sensitivity/trust granularity) before touching the function, per this session's own "no 3rd guess without confirmation" rule. Traced the proposed design by hand against the full existing `TestDecideAccess`/`TestTrustButVerify`/`TestProjectFolderDefault` suite before implementing — found and reported a real conflict (STORY-1504's project-folder convenience feature would have broken under a naive "any non-public sensitivity blocks" reading) rather than implementing first and discovering it via test failures.
+
+## Progress
+- [x] `resource_verifier.decide_access()`: `validated_allow`/`trust_but_verify` tag then gate (`trust=="low" and sensitivity=="restricted"`), unruled resources unchanged.
+- [x] `tests/test_resource_verifier.py`: rewrote 1 test that encoded the old bypass (`test_validated_allow_no_longer_bypasses_an_already_restricted_untainted_session`), added 2 new (trust_but_verify equivalent, med/internal-stay-inert regression).
+- [x] `tests/test_hook_adapter.py`: same rewrite for the equivalent real-hook-path test (`TestPreToolUseContaminatedContext`).
+- [x] `monitor_app.RulesScreen`: Sensitivity/Trust fields hide for Mode=block/mask, show for allow (`RadioSet.Changed` handler — new pattern for this file, no prior `reactive`/`watch_*` precedent existed); reduced to 2 pickable values each (`_LABELING_SENSITIVITIES`/`_LABELING_TRUST_LEVELS`).
+- [x] `tests/test_monitor_app.py`: new Pilot test for the show/hide behavior (real `pilot.click()`, not arrow-key nav — tried arrow keys first, they don't drive `RadioSet.pressed_index` the way this file's `j`/`k` custom bindings do elsewhere, a real repro not an assumption).
+- [x] `docs/ARCHITECTURE.md` §15.2b written.
+- [x] `make test`: 602/602.
+- [ ] Trin UAT, Morpheus review, Smith UX gate (RulesScreen behavior is directly user-observable) — not yet run.
+- [ ] Commit (ask user before pushing, per this repo's own convention).
+
+## Blockers
+None — chain in progress via Bloop `*impl`.
+
+## Oracle Consultations
+None this session.
+
+---
+*Last updated: 2026-08-08*
+
+**Status (prior):** E16 follow-up session closed (2026-07-30). Pushed to `origin/main`. Nothing in-flight for Neo.
 **Assigned to:** Neo
 **Started:** 2026-07-30
 **Finished:** 2026-07-30

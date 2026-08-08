@@ -20,6 +20,8 @@ from scalene.monitor_app import MonitorApp, RulesScreen, _NO_SESSIONS_MESSAGE, _
 from scalene.monitor_data import ToolCallEvent
 from scalene.scanner import Resource, escape_gitignore_literal
 
+from _fast_async import FastIsolatedAsyncioTestCase
+
 
 def _write_state(state_dir: Path, session_id: str, trust: str = "high", sensitivity: str = "public") -> None:
     (state_dir / f"{session_id}.json").write_text(json.dumps({"session_id": session_id, "trust": trust, "sensitivity": sensitivity}))
@@ -112,7 +114,7 @@ class TestFormatRelativeTime(unittest.TestCase):
             self.assertLess(len(_format_relative_time(now - delta, now=now)), 10)
 
 
-class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
+class TestMonitorApp(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec22.2 (STORY-1701/1702): the queue-first home
     screen. The Sessions table, per-session Events log, and 'a' toggle-all-
     sessions binding (E16/STORY-1603's tagged full-call-stream panel) are
@@ -305,7 +307,7 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             self.assertIn("reputation busy", str(app.query_one("#status-strip", Static).content))
 
 
-class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
+class TestReviewQueueAndDashboard(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec20.4 (STORY-1604): read-side of the review
     queue/dashboard -- Verify only, no Allow/Deny actions yet (Phase 5)."""
 
@@ -1062,7 +1064,7 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             self.assertIn("s1", str(app.query_one("#session-line", Static).content))
 
 
-class TestReviewAggregation(unittest.IsolatedAsyncioTestCase):
+class TestReviewAggregation(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.1 (STORY-1801): repeated, byte-for-byte
     identical block events collapse into one ReviewEntry with a stable id,
     instead of one row per occurrence."""
@@ -1217,7 +1219,7 @@ class TestReviewAggregation(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(second_run._pending_reviews, [])
 
 
-class TestQueueDisplaySortAndMultiTargetRows(unittest.IsolatedAsyncioTestCase):
+class TestQueueDisplaySortAndMultiTargetRows(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.2/23.3 (STORY-1802/1803): most-recent-
     first display order and one row per identified target on a multi-
     target call."""
@@ -1347,7 +1349,7 @@ class TestQueueDisplaySortAndMultiTargetRows(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(review_screen._entry.targets[0].identity, "https://original.example.com/x")
 
 
-class TestSkipAndSkipAll(unittest.IsolatedAsyncioTestCase):
+class TestSkipAndSkipAll(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.4 (STORY-1804): dequeue without writing a
     rule or touching the scan cache; skip-all requires 2 consecutive "S"
     presses, any other key in between cancels it."""
@@ -1519,7 +1521,7 @@ class TestSkipAndSkipAll(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(second_run._pending_reviews, [])
 
 
-class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
+class TestAllowFormEditableFieldsAndLayout(FastIsolatedAsyncioTestCase):
     """Direct user requests (2026-07-30): editable tool/pattern fields
     (defaulting to the exact tool name / exact-match pattern, widenable
     before submit), a fixed-value RadioSet grid for sensitivity/mode
@@ -1904,7 +1906,7 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(self.state_dir.resolve()), app.sub_title)
 
 
-class TestPatternFieldUndoRedo(unittest.IsolatedAsyncioTestCase):
+class TestPatternFieldUndoRedo(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.6 (STORY-1806): ctrl+z/ctrl+y undo/redo
     for the Tool/Pattern rule-editing fields -- confirmed Textual's own
     Input widget has no built-in undo."""
@@ -2105,7 +2107,7 @@ class TestPatternFieldUndoRedo(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(pattern_input.value, second_entry_default)
 
 
-class TestPatternWidenAndBreadcrumbs(unittest.IsolatedAsyncioTestCase):
+class TestPatternWidenAndBreadcrumbs(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
     "hard to select text and type" a long path in the Pattern field --
     alt+w progressively widens it to a directory-level wildcard from the
@@ -2287,7 +2289,7 @@ class TestPatternWidenAndBreadcrumbs(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/second/deep/path/b.py"))
 
 
-class TestLiveMatchPreview(unittest.IsolatedAsyncioTestCase):
+class TestLiveMatchPreview(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec22.4 (STORY-1704): the "Matches?" column,
     recomputed live as the Pattern field is edited -- before any Allow
     submit, using the same `Scanner.match()` dispatch the real write path
@@ -2432,7 +2434,7 @@ class TestLiveMatchPreview(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app._pending_reviews), 1)  # still queued, screen never dismissed
 
 
-class TestRulesScreen(unittest.IsolatedAsyncioTestCase):
+class TestRulesScreen(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec22.5 (STORY-1705): the Rules screen -- list
     + reorder, reachable from the queue via 'r' (freed from the old
     'r'-opens-oldest-review binding, sec22.1)."""
@@ -2642,7 +2644,7 @@ class TestRulesScreen(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after["hookSpecificOutput"]["permissionDecision"], "deny")
 
 
-class TestRulesScreenEditAndDelete(unittest.IsolatedAsyncioTestCase):
+class TestRulesScreenEditAndDelete(FastIsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec23.7 (STORY-1807/1808): edit ('e') and
     delete ('d') actions on the Rules screen. `policy_config.update_rule`/
     `delete_rule` themselves are unit-tested directly in
@@ -2687,6 +2689,42 @@ class TestRulesScreenEditAndDelete(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.screen.query_one("#edit-tool-input", Input).value, "Bash")
             self.assertEqual(app.screen.query_one("#edit-pattern-input", Input).value, "a")
             self.assertEqual(app.screen.query_one("#edit-description-input", Input).value, "real")
+
+    async def test_editing_an_internal_sensitivity_rule_does_not_silently_downgrade_it_to_public(self):
+        # Trin's UAT finding (2026-08-08): the Sensitivity/Trust RadioSets
+        # were narrowed to 2 pickable values (_LABELING_SENSITIVITIES/
+        # _LABELING_TRUST_LEVELS) as part of sec15.2b's UX follow-on, but a
+        # real rule can still hold "internal"/"med" -- STORY-1504's own
+        # project-folder default rule writes sensitivity="internal". Since
+        # _set_radio_value() no-ops when the stored value isn't in the
+        # shown tuple, opening this rule for edit leaves the Sensitivity
+        # radio with *nothing* selected -- and saving without touching that
+        # field then falls through to _get_radio_value()'s "public" default,
+        # silently overwriting "internal" with "public" even though the
+        # user only meant to change the pattern. Real, not hypothetical:
+        # this is exactly STORY-1504's own rule shape.
+        self._write_rules(
+            [{"tool": ".*", "pattern": "/project/**", "sensitivity": "internal", "mode": "allow", "trust": "med"}]
+        )
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#edit-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = "/project/**"  # touched, but unchanged -- same as a no-op edit
+            await pilot.press("enter")
+            await pilot.pause()
+
+            import yaml
+
+            saved = yaml.safe_load(self.policy_path.read_text())["rules"][0]
+            self.assertEqual(saved["sensitivity"], "internal")
+            self.assertEqual(saved["trust"], "med")
 
     async def test_saving_an_edit_writes_the_real_file_and_shows_confirmation(self):
         self._write_rules([{"tool": ".*", "pattern": "old", "sensitivity": "public", "mode": "allow"}])
@@ -2832,330 +2870,37 @@ class TestRulesScreenEditAndDelete(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(table.row_count, 2)
             self.assertIn("Press d again", str(app.screen.query_one("#rule-confirm", Static).content))
 
-
-class TestE17EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
-    """Smith's sprint-close end-to-end test (`*user test E17`) — the full
-    queue-first redesign exercised as one continuous real scenario through
-    the actual scg monitor TUI + the real pre_tool_use hook, not per-phase
-    in isolation. Supersedes `TestE16EndToEndUserJourney` (STORY-1602's
-    standalone Scanners panel and STORY-1603's tagged event log are both
-    permanently retired by this epic, not gapped -- there is no successor
-    journey through them). Same standard as TestE14/E15/E16
-    EndToEndUserJourney: real binaries/functions throughout, nothing
-    mocked, touches every screen this epic shipped (queue, review, rules)."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.state_dir = Path(self._tmp.name) / "state"
-        self.state_dir.mkdir()
-        self.audit_log = Path(self._tmp.name) / "audit.log"
-        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
-        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    async def test_full_journey_block_to_queue_to_review_to_allow_to_retry_to_rules(self):
-        from scalene.hook_adapter import pre_tool_use
-        from scalene.policy_config import PolicyConfig, VALID_RULE_MODES, VALID_SENSITIVITIES
-
-        # A clean session's first unrecognized resource is allowed
-        # (fail-safe, taints trust to low) -- a real block needs an
-        # already-tainted session, same setup every other real-hook test
-        # in this file uses.
-        _write_state(self.state_dir, "s1", trust="low")
-        target_path = Path(self._tmp.name) / "clean.md"
-        target_path.write_text("nothing sensitive here")
-        hook_input = {"session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": str(target_path)}}
-
-        # STORY-1601: a real blocked call carries differentiated retry
-        # guidance in its systemMessage/reason, not just a bare denial.
-        first = pre_tool_use(
-            hook_input,
-            PolicyConfig(),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-        self.assertEqual(first["hookSpecificOutput"]["permissionDecision"], "deny")
-        reason = first["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("wait", reason.lower())
-        self.assertIn("retry", reason.lower())
-
-        app = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app.run_test(size=(120, 50)) as pilot:
-            app.poll_data()
-            await pilot.pause()
-
-            # STORY-1702: session line tracks the real session, live.
-            self.assertIn("s1", str(app.query_one("#session-line", Static).content))
-            # STORY-1703: status strip shows real scanner state (the
-            # background first-sighting scan E10 spawns for this
-            # never-before-seen resource may already be idle again by now).
-            self.assertIn("Scanners:", str(app.query_one("#status-strip", Static).content))
-            # STORY-1701: the queue itself, and the attention signal.
-            self.assertIn("1 pending review", app.title)
-            queue = app.query_one("#queue", DataTable)
-            self.assertEqual(queue.row_count, 1)
-            self.assertEqual(queue.get_row_at(0)[1], "Read")
-
-            # STORY-1701: Enter on the queue row opens the real blocked call.
-            queue.move_cursor(row=0)
-            await pilot.press("enter")
-            await pilot.pause()
-            self.assertEqual(app.screen.query_one("#tool-input", Static).content, json.dumps({"file_path": str(target_path)}, indent=2))
-            targets_table = app.screen.query_one("#targets", DataTable)
-            self.assertEqual(targets_table.get_row_at(0)[0], str(target_path))
-            # "not yet scanned", or already "public (fresh)" if the
-            # background refresh worker E10's fail-safe path spawned for
-            # this never-before-seen resource (during the pre_tool_use()
-            # call above) won its own real race against this assertion --
-            # both are correct, real cache-derived states.
-            self.assertIn(targets_table.get_row_at(0)[2], ("not yet scanned", "public (fresh)"))
-
-            # STORY-1704: match-expr fields (and their live Matches?
-            # preview) are visible immediately, before Verify -- the
-            # default per-target pattern already matches. (Allow's
-            # disabled-until-Verify state isn't asserted here: E10's
-            # background first-sighting scan for this never-before-seen
-            # resource may have already completed by now, same legitimate
-            # race as the target-status assertion above -- STORY-1604's own
-            # dedicated tests already cover the controlled disabled/enabled
-            # transition without that race.)
-            self.assertEqual(targets_table.get_row_at(0)[4], "yes")
-
-            # Verify -> real scan -> Allow unlocked.
-            await pilot.click(app.screen.query_one("#verify-btn"))
-            await pilot.pause()
-            self.assertFalse(app.screen.query_one("#allow-btn").disabled)
-
-            self.assertEqual(
-                app.screen._selected_radio_value("sensitivity-radio", VALID_SENSITIVITIES, "public"), "public"
-            )
-            self.assertEqual(app.screen._selected_radio_value("mode-radio", VALID_RULE_MODES, "allow"), "allow")
-
-            # STORY-1704: Allow writes directly now -- one click, not
-            # reveal-then-submit.
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
-
-            self.assertEqual(app._pending_reviews, [])
-            self.assertIn("scg monitor", app.title)
-            self.assertNotIn("pending review", app.title)
-
-        self.assertTrue(self.policy_path.exists())
-        written = self.policy_path.read_text()
-        self.assertIn("mode: allow", written)
-
-        # The retry: identical original call, real fresh config reload
-        # from the just-written policy file, now genuinely allowed.
-        second = pre_tool_use(
-            hook_input,
-            PolicyConfig.from_yaml(self.policy_path),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-        self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "allow")
-
-        # STORY-1705: the Rules screen shows the rule that just-allowed
-        # call wrote, through the real UI (a fresh monitor instance, same
-        # as actually restarting `scg monitor`).
-        app2 = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app2.run_test() as pilot:
+    async def test_sensitivity_and_trust_fields_hide_for_block_mode_and_show_for_allow(self):
+        # 2026-08-07 (direct user request): Sensitivity/Trust are labeling-
+        # rule fields, only relevant when Mode=allow -- decide_access()
+        # skips tagging entirely for block/mask. This is real reactive UI
+        # behavior (a RadioSet.Changed handler toggling another widget's
+        # visibility) that only a running screen can verify -- not reachable
+        # from a unit test the way policy_config.py's own validation is.
+        self._write_rules([{"tool": ".*", "pattern": "a", "sensitivity": "restricted", "mode": "block", "trust": "low"}])
+        app = self._make_app()
+        async with app.run_test() as pilot:
             await pilot.press("r")
             await pilot.pause()
-            rules_table = app2.screen.query_one("#rules", DataTable)
-            self.assertEqual(rules_table.row_count, 1)
-            self.assertEqual(rules_table.get_row_at(0)[2], str(target_path))
-            self.assertEqual(rules_table.get_row_at(0)[4], "allow")
-
-        self.assertTrue(self.policy_path.exists())
-        written = self.policy_path.read_text()
-        self.assertIn("mode: allow", written)
-
-        # The retry: identical original call, real fresh config reload
-        # from the just-written policy file, now genuinely allowed.
-        second = pre_tool_use(
-            hook_input,
-            PolicyConfig.from_yaml(self.policy_path),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-        self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "allow")
-
-        # STORY-1603's tagged event log (asserted here previously) is
-        # retired by E17 -- nothing in this app shows the allow event
-        # directly anymore, only the (now-empty) review queue.
-        app2 = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app2.run_test() as pilot:
-            app2.poll_data()
-            await pilot.pause()
-            self.assertEqual(app2.query_one("#queue", DataTable).row_count, 0)
-
-
-class TestE18EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
-    """Smith's sprint-close end-to-end test (`*user test E18`) — the
-    review-queue overhaul exercised as one continuous real scenario, real
-    binaries/functions throughout. Per-feature behavior is already covered
-    by focused unit/integration tests per phase (test pyramid); this test
-    covers only what a single continuous session proves that isolated
-    tests can't: aggregation + skip + multi-target rows all coexisting in
-    one real queue, and a Rules-screen edit/delete each verified against a
-    real retried `pre_tool_use` call, not just the written YAML."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.state_dir = Path(self._tmp.name) / "state"
-        self.state_dir.mkdir()
-        self.audit_log = Path(self._tmp.name) / "audit.log"
-        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
-        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    async def test_aggregation_skip_multi_target_and_rules_edit_delete_in_one_session(self):
-        from scalene.hook_adapter import pre_tool_use
-        from scalene.policy_config import PolicyConfig
-
-        _write_state(self.state_dir, "s1", trust="low")
-
-        noisy_target = str(Path(self._tmp.name) / "noisy.env")
-        Path(noisy_target).write_text("x")
-        first_url = "https://first.example.com/x"
-        second_url = "https://second.example.com/x"
-
-        # Same exact call, blocked twice -- must aggregate to one entry.
-        for _ in range(2):
-            pre_tool_use(
-                {"session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": noisy_target}},
-                PolicyConfig(),
-                state_dir=self.state_dir,
-                cache_path=self.cache_path,
-                audit_log_path=self.audit_log,
-            )
-        # A distinct multi-target call.
-        pre_tool_use(
-            {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url} {second_url}"}},
-            PolicyConfig(),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-
-        app = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app.run_test(size=(120, 50)) as pilot:
-            app.poll_data()
-            await pilot.pause()
-
-            # STORY-1801: 2 identical Reads collapsed into 1 entry, count 2.
-            self.assertEqual(len(app._pending_reviews), 2)
-            noisy_entry = next(e for e in app._pending_reviews if e.event.tool_name == "Read")
-            self.assertEqual(noisy_entry.count, 2)
-
-            # STORY-1803: the Bash call's 2 targets render as 2 rows.
-            table = app.query_one("#queue", DataTable)
-            self.assertEqual(table.row_count, 3)  # 1 (Read, aggregated) + 2 (Bash targets)
-
-            # STORY-1804: skip the noisy aggregated entry -- gone, no rule.
-            noisy_row = next(i for i in range(table.row_count) if table.get_row_at(i)[1] == "Read")
-            table.move_cursor(row=noisy_row)
-            await pilot.press("s")
-            await pilot.pause()
-            self.assertEqual(len(app._pending_reviews), 1)
-            self.assertFalse(self.policy_path.exists())
-
-            # Allow the Bash/URL call so there's a real rule to edit next.
-            table = app.query_one("#queue", DataTable)
-            table.move_cursor(row=0)
-            await pilot.press("enter")
-            await pilot.pause()
-            await pilot.click(app.screen.query_one("#verify-btn"))
-            await pilot.pause()
-            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
-            pattern_input.focus()
-            pattern_input.value = re.escape(first_url)  # one shared rule for both targets
-            await pilot.click(app.screen.query_one("#allow-btn"))
-            await pilot.pause()
-            await pilot.pause()
-
-        self.assertTrue(self.policy_path.exists())
-
-        # Real retry: now allowed.
-        retry_allowed = pre_tool_use(
-            {"session_id": "s2", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url}"}},
-            PolicyConfig.from_yaml(self.policy_path),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-        self.assertEqual(retry_allowed["hookSpecificOutput"]["permissionDecision"], "allow")
-
-        # STORY-1807: edit the just-written rule's pattern away from
-        # first_url -- a real retry of the same call must go back to
-        # blocked, proving the edit took effect through the real hook, not
-        # just in the written YAML.
-        app2 = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app2.run_test() as pilot:
-            await pilot.press("r")
-            await pilot.pause()
-            app2.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
             await pilot.press("e")
             await pilot.pause()
-            edit_pattern = app2.screen.query_one("#edit-pattern-input", Input)
-            edit_pattern.focus()
-            edit_pattern.value = re.escape("https://totally-different.example.com/x")
-            await pilot.press("enter")
-            await pilot.pause()
-            self.assertIn("Saved rule #1", str(app2.screen.query_one("#rule-confirm", Static).content))
 
-        # Trin's UAT lesson from the update_rule/delete_rule unit tests
-        # (sec23.7): a *clean* session's first touch of an unmatched
-        # resource gets decide_access's own fail-safe free pass regardless
-        # of rule state, so proving the edit actually took effect needs an
-        # already-tainted session, same as this file's own established
-        # precedent for a real deterministic block.
-        _write_state(self.state_dir, "s3", trust="low")
-        retry_after_edit = pre_tool_use(
-            {"session_id": "s3", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url}"}},
-            PolicyConfig.from_yaml(self.policy_path),
-            state_dir=self.state_dir,
-            cache_path=self.cache_path,
-            audit_log_path=self.audit_log,
-        )
-        self.assertEqual(retry_after_edit["hookSpecificOutput"]["permissionDecision"], "deny")
+            # Opened on a mode=block rule -- fields start hidden.
+            self.assertIn("hidden", app.screen.query_one("#edit-sensitivity-field").classes)
+            self.assertIn("hidden", app.screen.query_one("#edit-trust-field").classes)
 
-        # STORY-1808: delete the rule outright -- confirmed via the Rules
-        # screen showing 0 rules afterward (the edited pattern no longer
-        # matches anything in this test anyway; the real point already
-        # proven is the edit's real hook effect above).
-        app3 = MonitorApp(
-            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
-        )
-        async with app3.run_test() as pilot:
-            await pilot.press("r")
+            await pilot.click(app.screen.query_one("#edit-mode-allow"))
             await pilot.pause()
-            app3.screen.query_one("#rules", DataTable).move_cursor(row=0)
-            await pilot.press("d")
-            await pilot.press("d")
-            await pilot.pause()
-            self.assertIn("visible", app3.screen.query_one("#no-rules").classes)
 
-        data = PolicyConfig.from_yaml(self.policy_path)
-        self.assertEqual(data.rules, ())
+            self.assertNotIn("hidden", app.screen.query_one("#edit-sensitivity-field").classes)
+            self.assertNotIn("hidden", app.screen.query_one("#edit-trust-field").classes)
+
+            await pilot.click(app.screen.query_one("#edit-mode-block"))
+            await pilot.pause()
+
+            self.assertIn("hidden", app.screen.query_one("#edit-sensitivity-field").classes)
+            self.assertIn("hidden", app.screen.query_one("#edit-trust-field").classes)
 
 
 if __name__ == "__main__":

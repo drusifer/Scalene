@@ -1,10 +1,10 @@
 # Next Steps
 
-## Immediate Next Action
-Sprint 9 (E15) Phase 4 (last phase) UAT passed, handed to Smith for the mandatory gate (2026-07-21). On re-invocation: once Smith + Morpheus both clear Phase 4, the sprint moves to close — Oracle groom is next, then my own end-to-end sprint-close verification (same pattern as Sprint 8's `TestE14EndToEndUserJourney`), then retro.
+## Immediate Next Action — READ THIS FIRST ON COLD START
+`*qa uat decide_access-correction` is DONE — PASS (2026-08-08). Both `decide_access()`'s corrected gate logic and the `RulesScreen` UX change (including the silent-downgrade bug I found and Neo fixed) verified, 602/602 at `make test`. Handed to Morpheus for review — nothing further for Trin here unless Morpheus/Smith kick something back.
 
 ## Waiting On
-Smith's mandatory gate, then Morpheus's Phase 4 review.
+Nothing. Morpheus's review, then Smith's UX gate (RulesScreen behavior is directly user-observable).
 
 ## Minor finding, not blocking (E15 Phase 1)
 `make test-q ARGS="-k pattern"` doesn't actually filter — the `test-q` Makefile target runs `unittest discover`, which ignores `-k`. Neo's own `SKILL.md` documents `ARGS="-k pattern"` as valid usage for `test-q`; it isn't, for this target. Not an E15 bug, pre-existing infra/doc mismatch — flagging for Bob to correct the doc, not fixing the Makefile myself mid-sprint.

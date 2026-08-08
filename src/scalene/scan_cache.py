@@ -71,8 +71,13 @@ class ScanCache:
 
     @contextmanager
     def _locked(self):
+        # `FileLock`'s own default (timeout=-1) blocks forever on contention
+        # -- a stuck/stale lock would hang the caller indefinitely with no
+        # signal. `filelock.Timeout` is a `TimeoutError`/`OSError` subclass,
+        # so it's already covered by the except clause below -- fails fast
+        # into a clear `ScanCacheError` instead.
         try:
-            with FileLock(str(self._lock_path())):
+            with FileLock(str(self._lock_path()), timeout=5):
                 yield
         except OSError as exc:
             raise ScanCacheError(f"Scan cache store {self.cache_path} lock is unusable: {exc}") from exc

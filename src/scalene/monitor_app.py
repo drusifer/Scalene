@@ -58,6 +58,16 @@ DEFAULT_POLICY_PATH = Path("scalene_policy.yaml")
 
 _NO_SESSIONS_MESSAGE = "No sessions found yet. Run an agent session with scalene-guard installed, then reopen the monitor."
 
+# 2026-08-07 (direct user request, resource_verifier.decide_access()'s same-
+# day correction): Sensitivity/Trust are labeling-rule fields -- they only
+# matter when Mode is "allow" (mask/block skip tagging entirely, see
+# decide_access()). Simplified to the 2 values that are gate-relevant today
+# ("med" trust / "internal" sensitivity stay valid, still-accepted values --
+# STORY-1504's project rule keeps using "internal" -- just not offered as
+# pickable options here while that extra granularity is backlogged).
+_LABELING_SENSITIVITIES = ("public", "restricted")
+_LABELING_TRUST_LEVELS = ("high", "low")
+
 # docs/ARCHITECTURE.md sec22.6: STORY-1701 retires the full allow/block
 # tagged call-stream panel (STORY-1603, E16) entirely -- the queue only ever
 # holds blocks, and only until resolved, so there is no more "every call,
@@ -772,11 +782,16 @@ class RulesScreen(Screen):
     RulesScreen #edit-form.visible { display: block; }
     RulesScreen .field-row { height: auto; }
     RulesScreen .field-label { width: 12; content-align: right middle; padding-right: 1; }
-    RulesScreen #edit-tool-input, RulesScreen #edit-pattern-input,
-    RulesScreen #edit-sensitivity-radio, RulesScreen #edit-mode-radio, RulesScreen #edit-trust-radio {
+    RulesScreen #edit-tool-input, RulesScreen #edit-pattern-input, RulesScreen #edit-mode-radio {
         width: 1fr;
         height: auto;
     }
+    RulesScreen #edit-sensitivity-field, RulesScreen #edit-trust-field {
+        width: 1fr;
+        height: auto;
+    }
+    RulesScreen #edit-sensitivity-radio, RulesScreen #edit-trust-radio { width: 1fr; height: auto; }
+    RulesScreen #edit-sensitivity-field.hidden, RulesScreen #edit-trust-field.hidden { display: none; }
     """
 
     def __init__(self, policy_path: Path) -> None:
@@ -786,6 +801,16 @@ class RulesScreen(Screen):
         # the edit form is closed -- the one flag that gates both "is the
         # form visible" and "which rule does Save write to."
         self._editing_index: int | None = None
+        # 2026-08-08 (Trin's UAT finding, sec15.2b's UX follow-on): a real
+        # rule can hold a backlogged sensitivity/trust value (e.g.
+        # "internal"/"med" -- STORY-1504's own project rule) that isn't one
+        # of the 2 now-shown RadioSet options. `_set_radio_value()` then
+        # leaves that RadioSet unselected, and saving must fall back to
+        # *this* rule's real original value, not `_get_radio_value()`'s
+        # generic "public"/"high" default -- otherwise an edit that never
+        # touches Sensitivity/Trust at all silently downgrades them.
+        self._editing_original_sensitivity: str = "public"
+        self._editing_original_trust: str = "high"
         # sec23.4's armed/confirm idiom, reused verbatim for delete.
         self._delete_armed = False
         self._delete_index: int | None = None
@@ -801,19 +826,21 @@ class RulesScreen(Screen):
                 yield Static("Pattern:", classes="field-label")
                 yield Input(value="", id="edit-pattern-input", compact=True)
             with Horizontal(classes="field-row"):
-                yield Static("Sensitivity:", classes="field-label")
-                with RadioSet(id="edit-sensitivity-radio"):
-                    for value in VALID_SENSITIVITIES:
-                        yield RadioButton(value, compact=True, id=f"edit-sensitivity-{value}")
+                with Horizontal(id="edit-sensitivity-field"):
+                    yield Static("Sensitivity:", classes="field-label")
+                    with RadioSet(id="edit-sensitivity-radio"):
+                        for value in _LABELING_SENSITIVITIES:
+                            yield RadioButton(value, compact=True, id=f"edit-sensitivity-{value}")
                 yield Static("Mode:", classes="field-label")
                 with RadioSet(id="edit-mode-radio"):
                     for value in VALID_RULE_MODES:
                         yield RadioButton(value, compact=True, id=f"edit-mode-{value}")
             with Horizontal(classes="field-row"):
-                yield Static("Trust:", classes="field-label")
-                with RadioSet(id="edit-trust-radio"):
-                    for value in VALID_TRUST_LEVELS:
-                        yield RadioButton(value, compact=True, id=f"edit-trust-{value}")
+                with Horizontal(id="edit-trust-field"):
+                    yield Static("Trust:", classes="field-label")
+                    with RadioSet(id="edit-trust-radio"):
+                        for value in _LABELING_TRUST_LEVELS:
+                            yield RadioButton(value, compact=True, id=f"edit-trust-{value}")
                 yield Static("Description:", classes="field-label")
                 yield Input(value="", id="edit-description-input", compact=True)
             yield Static("", id="edit-error")
@@ -883,6 +910,23 @@ class RulesScreen(Screen):
         self._editing_index = None
         self.query_one("#edit-form", Vertical).set_class(False, "visible")
 
+    def _update_tag_fields_visibility(self, mode: str) -> None:
+        # 2026-08-07 (direct user request): Sensitivity/Trust only matter
+        # for mode="allow" -- decide_access() skips tagging entirely for
+        # "block"/"mask" (both land in its confirmed_bad bucket, unrelated
+        # to any tag), so showing them for those modes would just be unread
+        # input. Hidden, not disabled, so a hidden field can't accidentally
+        # hold focus.
+        show = mode == "allow"
+        self.query_one("#edit-sensitivity-field", Horizontal).set_class(not show, "hidden")
+        self.query_one("#edit-trust-field", Horizontal).set_class(not show, "hidden")
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        if event.radio_set.id == "edit-mode-radio":
+            self._update_tag_fields_visibility(
+                _get_radio_value(event.radio_set, VALID_RULE_MODES, "allow")
+            )
+
     def action_edit_rule(self) -> None:
         table = self.query_one("#rules", DataTable)
         index = table.cursor_row
@@ -892,12 +936,15 @@ class RulesScreen(Screen):
         self._disarm_delete()
         rule = rules[index]
         self._editing_index = index
+        self._editing_original_sensitivity = rule.sensitivity
+        self._editing_original_trust = rule.trust
         self.query_one("#edit-tool-input", Input).value = rule.tool
         self.query_one("#edit-pattern-input", Input).value = rule.pattern
         self.query_one("#edit-description-input", Input).value = rule.description
-        _set_radio_value(self.query_one("#edit-sensitivity-radio", RadioSet), VALID_SENSITIVITIES, rule.sensitivity)
+        _set_radio_value(self.query_one("#edit-sensitivity-radio", RadioSet), _LABELING_SENSITIVITIES, rule.sensitivity)
         _set_radio_value(self.query_one("#edit-mode-radio", RadioSet), VALID_RULE_MODES, rule.mode)
-        _set_radio_value(self.query_one("#edit-trust-radio", RadioSet), VALID_TRUST_LEVELS, rule.trust)
+        _set_radio_value(self.query_one("#edit-trust-radio", RadioSet), _LABELING_TRUST_LEVELS, rule.trust)
+        self._update_tag_fields_visibility(rule.mode)
         self.query_one("#edit-error", Static).update("")
         self.query_one("#edit-form", Vertical).set_class(True, "visible")
         self.query_one("#edit-tool-input", Input).focus()
@@ -907,9 +954,17 @@ class RulesScreen(Screen):
             return
         tool = self.query_one("#edit-tool-input", Input).value.strip()
         pattern = self.query_one("#edit-pattern-input", Input).value
-        sensitivity = _get_radio_value(self.query_one("#edit-sensitivity-radio", RadioSet), VALID_SENSITIVITIES, "public")
+        # Fall back to *this rule's own* original value, not a generic
+        # default -- a backlogged value (e.g. "internal"/"med") leaves the
+        # RadioSet unselected (see __init__), and an edit that never
+        # touches these fields must not silently downgrade them.
+        sensitivity = _get_radio_value(
+            self.query_one("#edit-sensitivity-radio", RadioSet), _LABELING_SENSITIVITIES, self._editing_original_sensitivity
+        )
         mode = _get_radio_value(self.query_one("#edit-mode-radio", RadioSet), VALID_RULE_MODES, "allow")
-        trust = _get_radio_value(self.query_one("#edit-trust-radio", RadioSet), VALID_TRUST_LEVELS, "high")
+        trust = _get_radio_value(
+            self.query_one("#edit-trust-radio", RadioSet), _LABELING_TRUST_LEVELS, self._editing_original_trust
+        )
         description = self.query_one("#edit-description-input", Input).value.strip()
         try:
             rule = PolicyRule(tool=tool, pattern=pattern, sensitivity=sensitivity, mode=mode, description=description, trust=trust)

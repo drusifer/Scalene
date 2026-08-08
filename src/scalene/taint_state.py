@@ -99,7 +99,11 @@ class TaintState:
         path = Path(state_dir) / f"{session_id}.json"
         if not path.exists():
             return cls(session_id=session_id, state_dir=Path(state_dir))
-        with FileLock(str(path) + ".lock"):
+        # `FileLock`'s own default (timeout=-1) blocks forever on
+        # contention -- a stuck/stale lock would hang the hook indefinitely.
+        # `filelock.Timeout` (a `TimeoutError`/`OSError` subclass) propagates
+        # to the caller instead, same fail-fast contract as scan_cache.py's.
+        with FileLock(str(path) + ".lock", timeout=5):
             data = json.loads(path.read_text())
         return cls(
             session_id=session_id,
@@ -112,7 +116,7 @@ class TaintState:
     def save(self) -> None:
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(path) + ".lock"):
+        with FileLock(str(path) + ".lock", timeout=5):
             path.write_text(
                 json.dumps(
                     {

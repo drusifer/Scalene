@@ -147,6 +147,29 @@ class TestScanCacheUnwritable(unittest.TestCase):
                 read_only_dir.chmod(0o700)  # restore so TemporaryDirectory cleanup can remove it
 
 
+class TestScanCacheLockContention(unittest.TestCase):
+    def test_a_held_lock_fails_fast_instead_of_hanging_forever(self):
+        # Direct user request (2026-08-08): `FileLock`'s own default
+        # (timeout=-1) blocks forever on contention -- a stuck/stale lock
+        # would hang any caller indefinitely with no signal. Proves the
+        # real bound: holding the exact lock file `ScanCache._locked()`
+        # uses, a `.put()` call must raise (not hang) well within the
+        # process's own timeout budget, not the test-runner's.
+        from filelock import FileLock
+
+        with TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "scan_cache.json"
+            cache = ScanCache(cache_path)
+            lock_path = str(cache_path) + ".lock"
+            resource = Resource(kind="url", identity="internal.example.com", scanner_name="reputation")
+            with FileLock(lock_path):  # held by this test process, never released until the with-block exits
+                t0 = time.monotonic()
+                with self.assertRaises(ScanCacheError):
+                    cache.put(resource, ScanResult(label="trusted"))
+                elapsed = time.monotonic() - t0
+            self.assertLess(elapsed, 10, "lock contention should fail fast, not hang")
+
+
 class TestScanCacheFreshness(unittest.TestCase):
     def test_recent_entry_with_unchanged_mtime_is_fresh(self):
         with TemporaryDirectory() as tmp:

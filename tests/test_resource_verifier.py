@@ -574,10 +574,19 @@ class TestDecideAccess(unittest.TestCase):
             self.assertTrue(decision.allowed)
             self.assertEqual(taint.trust, "low")
 
-    def test_validated_allow_proceeds_even_from_contaminated_context(self):
-        # An explicitly validated+allowed resource bypasses the
-        # block-when-contaminated gate -- that's the whole point of
-        # declaring trust for it.
+    def test_validated_allow_no_longer_bypasses_an_already_restricted_untainted_session(self):
+        # Correction (2026-08-07, direct user bug report): a tainted session
+        # touching sensitive data should block, full stop -- "apply the tag,
+        # then check decide_access()." A validated_allow rule still tags the
+        # resource (sensitivity/trust) exactly as before, but that tag no
+        # longer bypasses the block-when-(trust=low AND sensitivity=
+        # restricted) gate -- it's now subject to the *same* check as
+        # everything else, evaluated *after* tagging. This replaces the old
+        # "validated_allow proceeds even from contaminated context" test,
+        # which asserted the exact bypass being corrected here. The rule's
+        # own sensitivity="public" doesn't matter -- the session was already
+        # restricted+untrusted from something earlier, and ratchet-only
+        # escalation can't walk that back.
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             cache.put(
@@ -592,6 +601,55 @@ class TestDecideAccess(unittest.TestCase):
                 )
             )
             taint = TaintState(session_id="s1", trust="low", sensitivity="restricted")
+            decision = decide_access(
+                "WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache, taint
+            )
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "uncleared")
+
+    def test_trust_but_verify_also_blocks_once_the_session_is_restricted_and_untrusted(self):
+        # Same correction as above, for the still-unconfirmed bucket -- a
+        # rule match with no independent scan confirmation gets exactly the
+        # same treatment as a fully validated one, not a weaker one.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1", trust="low", sensitivity="restricted")
+            decision = decide_access(
+                "WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint
+            )
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "uncleared")
+
+    def test_med_trust_and_internal_sensitivity_stay_inert_backlogged_levels(self):
+        # Direct user request (2026-08-07): simplify the gate to binary
+        # (trust=low/not-low, sensitivity=restricted/not-restricted) for
+        # now, backlogging the extra granularity rather than deleting it --
+        # "med" trust and "internal" sensitivity remain valid values
+        # (TaintState/PolicyRule still accept them, STORY-1504's project-
+        # folder rule still uses "internal") but don't yet trip the gate on
+        # their own. Only the literal ("low", "restricted") combination
+        # blocks a validated/trust-but-verify resource.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://internal.example.com/wiki", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://internal\.example\.com/.*", sensitivity="internal", mode="allow"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1", trust="low", sensitivity="internal")
             decision = decide_access(
                 "WebFetch", {"url": "https://internal.example.com/wiki"}, config, cache, taint
             )

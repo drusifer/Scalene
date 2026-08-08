@@ -236,7 +236,22 @@ def decide_access(
     scan comes back bad. A resource the scanner has *already* found bad,
     or whose matching rule explicitly isn't `mode: allow`, is still always
     blocked outright -- this only changes the "not yet independently
-    confirmed" case, not either of those two."""
+    confirmed" case, not either of those two.
+
+    2026-08-07 correction (direct user bug report, same day): "a tainted
+    session should block if the resource has sensitive data -- apply the
+    tag, then check decide_access()." A `validated_allow`/`trust_but_verify`
+    match no longer bypasses the block-when-contaminated gate unconditionally
+    after tagging -- it's tagged exactly as before, then subject to the same
+    check: block iff the session is now `trust == "low"` AND
+    `sensitivity == "restricted"`. Binary in effect (direct user request, to
+    keep this simple for now): `"med"` trust and `"internal"` sensitivity
+    stay valid, still-tagged values (`TaintState`/`PolicyRule` unchanged,
+    STORY-1504's project-folder rule still uses `"internal"`) but don't by
+    themselves trip this gate -- only the literal `("low", "restricted")`
+    combination does. The extra granularity is backlogged, not deleted.
+    Unruled resources are unaffected by this correction -- they keep the
+    pre-existing `was_clean` gate below, unchanged."""
     _reconcile_pending_trust(taint, cache)
 
     resources = [r for scanner in config.scanners.values() for r in scanner.identify(tool_name, args)]
@@ -295,6 +310,23 @@ def decide_access(
         taint.escalate_sensitivity(rule.sensitivity)
         taint.escalate_trust(rule.trust)
         taint.add_pending_trust(cache_key(resource))
+
+    labeled = validated_allow + trust_but_verify
+    if labeled and taint.trust == "low" and taint.sensitivity == "restricted":
+        # 2026-08-07 correction (see docstring above): a rule can declare
+        # intent, but it can't rescue an already-restricted, already-
+        # untrusted session -- tagging happened above regardless of this
+        # outcome (pending_trust tracking included), same as it always did.
+        names = ", ".join(resource.identity for resource, _ in labeled)
+        return AccessDecision(
+            allowed=False,
+            reason=(
+                f"Blocked: {names}. This session is untrusted and has touched "
+                f"restricted data (trust={taint.trust}, sensitivity={taint.sensitivity}). "
+                f"Wait for review, then retry."
+            ),
+            block_kind="uncleared",
+        )
 
     if not unruled:
         return AccessDecision(allowed=True)
