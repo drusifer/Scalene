@@ -1,10 +1,17 @@
 # Next Steps
 
 ## Immediate Next Action
-Sprint 11 (E17, Queue-First Monitor Redesign) closed and launched (2026-08-04), committed and pushed (`7ccc4d2`, `origin/main`). Nothing in-flight for Cypher. Next sprint direction not yet given by the user — cold-start should just confirm this status against real CHAT.md/git state before assuming anything more happened.
+Sprint 12 (E18, Review Queue Overhaul & Rules Editing) closed and launched (2026-08-07). Nothing in-flight for Cypher. Not yet committed/pushed — ask the user before doing so (this session did not commit; a prior session's precedent has the user explicitly requesting commit+push after `*pm launch`, but that instruction doesn't carry forward automatically).
+
+Sprint 11 (E17, Queue-First Monitor Redesign) closed and launched (2026-08-04), committed and pushed (`7ccc4d2`, `origin/main`).
 
 ## Waiting On
-Nothing. Next sprint direction not yet given by the user — when it is, verify each backlog item below against current code first, don't assume staleness.
+Nothing. Next sprint direction not yet given by the user.
+
+## Backlog (from E18 retro, agents/cypher.docs/e18_retro_backlog.md)
+- [ ] Decision-undo/redo (Verify/Allow/Deny) — explicitly deferred by direct user choice this epic. Needs its own design pass on safe unwind semantics (Allow/Verify write to shared files something else may already rely on) before it's storied.
+- [ ] The armed/confirm idiom (skip-all, rule-delete) is now used twice, independently implemented per screen — `docs/ARCHITECTURE.md` §23.8 flags extracting a shared helper if a 3rd destructive action appears. Not urgent yet.
+- [ ] `decide_access`'s clean-session free-pass is a recurring test-design trap (hit twice independently this sprint) — durable lesson recorded (`agents/oracle.docs/lessons.md`, 2026-08-07 entry), worth checking new tests against going forward.
 
 ## Planned Work — still-open backlog, deliberately not folded into E17
 - [ ] **New (E17)**: resource-cache freshness/Last-Scanned display (STORY-1005, the `is_fresh()` display gap Smith originally flagged in the E16 consult) is now fully retired with no successor — real capability loss, worth a real product decision (bring it back in some form vs. genuinely not needed) rather than leaving it silently gone.

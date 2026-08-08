@@ -1,7 +1,44 @@
 # Current Task
 
-**Status:** Sprint 11 (E17) closed. `*pm launch` posted, committed and pushed to origin/main (7ccc4d2).
+**Status:** Sprint 12 (E18) drafted, handed to Smith for Gate 1.
 **Assigned to:** Cypher
+**Started:** 2026-08-07
+
+## Task Description (most recent): `*pm plan sprint` — write E18 stories (Review Queue Overhaul & Rules Editing)
+Origin: direct user request, gathered live across several follow-up messages during an unrelated support investigation (the "11K pending reviews for tetris" report, diagnosed by Neo as a cwd mistake — `scg monitor` was reading Scalene's own dogfooding audit log, not tetris's — see `agents/neo.docs/next_steps.md`). That investigation surfaced a real, separate product gap: E17's queue has no mechanism for handling a large real backlog gracefully.
+
+Read `monitor_data.py`/`monitor_app.py`/`policy_config.py` in full before writing, to ground ACs in the real current `ReviewEntry`/`AuditTail`/`swap_rule_order` shapes rather than inventing a parallel model. Wrote 8 stories as E18 in `docs/USER_STORIES.md`:
+- STORY-1801: aggregation of identical repeated tool calls (exact tool_name+tool_input match) into one entry, stable numeric ID, every occurrence's log_offset marked resolved on dequeue.
+- STORY-1802: last-seen timestamp + most-recent-first display sort, explicitly display-only (doesn't destabilize an open ReviewScreen's Next/Prev index).
+- STORY-1803: multi-target calls render as N separate rows ("i of N"), still one shared review unit.
+- STORY-1804: skip/skip-all — dequeues via the existing review_resolved mechanism, writes no PolicyRule, touches no ScanCache.
+- STORY-1805: bigger/scrollable command view in ReviewScreen.
+- STORY-1806: undo/redo for the Tool/Pattern input fields (confirmed Textual's Input has no built-in undo).
+- STORY-1807/1808: Rules screen edit/delete actions, mirroring `swap_rule_order`'s real read-modify-write convention.
+
+**Explicitly deferred, not silently dropped**: undo/redo for Verify/Allow/Deny decisions — user was asked directly (AskUserQuestion) and chose to skip it this sprint, since Allow/Verify write to shared files (`scalene_policy.yaml`/`scan_cache.json`) and safe unwind semantics need their own design pass. Recorded as an E18 backlog item for a future sprint.
+
+Carried 5 open questions to Morpheus (aggregation identity choice, cache-consistency bookkeeping across every removal path, recency-sort-vs-open-screen-stability, RulesScreen edit widget shape, write-helper convention for edit/delete) — user offered to resolve any of them directly; most are technical judgment calls Morpheus (i.e. this same session, next persona) will resolve during arch.
+
+Updated `docs/PRD.md` (E18 epic row, Sprint 12 Goals 38-45, sprint-mapping line) and `docs/USER_STORIES.md`'s header status line. Handed to Smith for Gate 1 (`*user review E18`).
+
+## Progress
+- [x] Read monitor_data.py/monitor_app.py/policy_config.py to ground stories in current code.
+- [x] Wrote STORY-1801 through 1808 in `docs/USER_STORIES.md`.
+- [x] Explicitly recorded the deferred decision-undo/redo scope decision, not silently dropped.
+- [x] Updated `docs/PRD.md` epic table + Sprint 12 goals + status line.
+- [x] Handed to Smith (`*user review E18`).
+
+## Blockers
+None — awaiting Smith's Gate 1 verdict.
+
+## Oracle Consultations
+None yet.
+
+---
+*Last updated: 2026-08-07*
+
+## Task Description (prior): Sprint 11 (E17) closed. `*pm launch` posted, committed and pushed to origin/main (7ccc4d2).
 **Started:** 2026-07-30
 
 ## Task Description (most recent): Sprint 11 (E17) close — retro compile, `*pm launch`

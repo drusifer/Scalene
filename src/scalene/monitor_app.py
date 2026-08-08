@@ -11,6 +11,7 @@ import re
 import time
 from pathlib import Path
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
@@ -27,16 +28,20 @@ from .monitor_data import (
     discover_scanner_activity,
     discover_sessions,
     format_scanner_status,
+    review_aggregation_key,
     target_status,
 )
 from .onboard import BLOCKED_LABELS, write_rule
 from .policy_config import (
     VALID_RULE_MODES,
     VALID_SENSITIVITIES,
+    VALID_TRUST_LEVELS,
     PolicyConfig,
     PolicyConfigError,
     PolicyRule,
+    delete_rule,
     swap_rule_order,
+    update_rule,
 )
 from .resource_verifier import is_validated_allow
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache
@@ -61,14 +66,6 @@ _NO_SESSIONS_MESSAGE = "No sessions found yet. Run an agent session with scalene
 # dead code along with it, not left behind unused.
 
 
-def _format_kinds(targets: list[Resource]) -> str:
-    """docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue's Kind column --
-    a call can identify more than one resource kind at once (e.g. a Bash
-    command touching both a file path and a URL), so this joins the
-    distinct kinds actually present rather than assuming one."""
-    return ", ".join(sorted({t.kind for t in targets}))
-
-
 def _format_relative_time(scanned_at: float, now: float | None = None) -> str:
     """Short 'X ago' formatting for the resource-cache panel's Last Scanned
     column (Smith's Phase 5 gate finding: an absolute 'YYYY-MM-DD HH:MM:SS'
@@ -85,6 +82,60 @@ def _format_relative_time(scanned_at: float, now: float | None = None) -> str:
     if delta < 86400:
         return f"{int(delta // 3600)}h ago"
     return f"{int(delta // 86400)}d ago"
+
+
+class _InputHistory:
+    """docs/ARCHITECTURE.md sec23.6 (STORY-1806): a small local undo/redo
+    stack for one `Input` field -- Textual's `Input` widget has no built-in
+    undo (confirmed by reading the installed version's own source, not
+    assumed). `_undo_stack` always holds at least one entry (the baseline
+    value at construction, e.g. the field's real default when a review
+    opens) -- `undo()` never pops that last one, so it's a true floor, not
+    an off-by-one trap."""
+
+    def __init__(self, initial: str = "") -> None:
+        self._undo_stack: list[str] = [initial]
+        self._redo_stack: list[str] = []
+
+    def push(self, value: str) -> None:
+        # No-op if unchanged from the current top -- this is what makes
+        # undo()/redo() safe to just set `.value` and let the resulting
+        # Input.Changed message re-enter here without corrupting either
+        # stack: by the time that message is handled, the stack's own top
+        # already equals the value being "pushed" again.
+        if self._undo_stack[-1] == value:
+            return
+        self._undo_stack.append(value)
+        self._redo_stack.clear()
+
+    def undo(self) -> str | None:
+        if len(self._undo_stack) < 2:
+            return None
+        self._redo_stack.append(self._undo_stack.pop())
+        return self._undo_stack[-1]
+
+    def redo(self) -> str | None:
+        if not self._redo_stack:
+            return None
+        value = self._redo_stack.pop()
+        self._undo_stack.append(value)
+        return value
+
+
+def _set_radio_value(radio_set: RadioSet, values: tuple[str, ...], value: str) -> None:
+    """docs/ARCHITECTURE.md sec23.7: shared by RulesScreen's edit form --
+    ReviewScreen's own allow-form has an equivalent (`_select_radio_
+    default`), kept separate since it's already-shipped/gated code this
+    epic doesn't otherwise touch; this is the fresh, reusable version for
+    the 2 screens that now both need it."""
+    buttons = list(radio_set.children)
+    if value in values:
+        buttons[values.index(value)].value = True
+
+
+def _get_radio_value(radio_set: RadioSet, values: tuple[str, ...], default: str) -> str:
+    index = radio_set.pressed_index
+    return values[index] if index >= 0 else default
 
 
 class ReviewScreen(Screen):
@@ -106,6 +157,20 @@ class ReviewScreen(Screen):
         ("escape", "dismiss_review", "Close (stays queued)"),
         ("n", "next_review", "Next review"),
         ("p", "prev_review", "Previous review"),
+        # docs/ARCHITECTURE.md sec23.6 (STORY-1806): Textual's Input has no
+        # built-in undo (confirmed by reading the installed version's own
+        # source) -- both bound to the same actions for cross-platform
+        # familiarity (Windows/Linux ctrl+y, Mac ctrl+shift+z).
+        ("ctrl+z", "undo_field", "Undo"),
+        ("ctrl+y", "redo_field", "Redo"),
+        ("ctrl+shift+z", "redo_field", "Redo"),
+        # docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+        # a bare "w" would just type into #rule-pattern-input while it has
+        # focus (Textual's Input consumes printable characters before any
+        # Screen-level single-letter binding ever sees them) -- needs a
+        # non-printable combo to fire while the field being widened is the
+        # one actually focused, which is the whole point.
+        ("alt+w", "widen_pattern", "Widen pattern"),
     ]
 
     # Compact layout fix: the tool-input JSON and the targets table were
@@ -129,7 +194,11 @@ class ReviewScreen(Screen):
     }
     ReviewScreen #tool-input {
         height: auto;
-        max-height: 4;
+        /* docs/ARCHITECTURE.md sec23.5 (STORY-1805, direct user request):
+        4 lines was too cramped to actually read a real command before
+        deciding Allow/Deny -- raised the cap, not the mechanism
+        (overflow-y: auto below already handles anything still longer). */
+        max-height: 12;
         overflow-y: auto;
         border: round $primary;
     }
@@ -166,6 +235,16 @@ class ReviewScreen(Screen):
         width: 1fr;
         height: auto;
     }
+    ReviewScreen #pattern-breadcrumbs {
+        /* One row of compact buttons, one per path segment -- scrolls
+        horizontally rather than wrapping/overflowing for a long real path,
+        same "stays reachable, scrolls if needed" precedent as #tool-input. */
+        height: auto;
+        overflow-x: auto;
+    }
+    ReviewScreen #pattern-breadcrumbs Button {
+        min-width: 0;
+    }
     """
 
     def __init__(self, pending: list[ReviewEntry], index: int, cache_path: Path, scanners: dict, policy_path: Path) -> None:
@@ -181,6 +260,22 @@ class ReviewScreen(Screen):
         self._cache_path = cache_path
         self._scanners = scanners
         self._policy_path = policy_path
+        # docs/ARCHITECTURE.md sec23.6 (STORY-1806): keyed by Input id, one
+        # history per editable field -- (re)seeded in refresh_header() so
+        # switching entries (Next/Prev) never carries undo history across
+        # them. Empty placeholders here; on_mount()'s refresh_header() call
+        # seeds the real baseline before either field is ever edited.
+        self._input_histories: dict[str, _InputHistory] = {
+            "rule-tool-input": _InputHistory(),
+            "rule-pattern-input": _InputHistory(),
+        }
+        # docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+        # how many trailing path segments the Pattern field currently
+        # collapses into "/**" -- 0 means the exact literal default. Shared
+        # state between the "alt+w" keyboard action and clicking a
+        # breadcrumb button, so either one continues progressively from
+        # wherever the other left off. Reset per entry in refresh_header().
+        self._widen_level = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -219,6 +314,13 @@ class ReviewScreen(Screen):
                 yield Input(value="", id="rule-tool-input", compact=True)
                 yield Static("Pattern:", classes="field-label")
                 yield Input(value="", id="rule-pattern-input", compact=True)
+            # docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+            # "hard to select text and type in the field" -- a click target
+            # per path segment, so widening the pattern to a directory-level
+            # wildcard doesn't require any cursor placement/typing at all.
+            # Rebuilt fresh per entry (_refresh_pattern_breadcrumbs, single-
+            # file-target entries only -- see there), empty otherwise.
+            yield Horizontal(id="pattern-breadcrumbs")
             # Direct user request: a fixed valid-value grid instead of
             # free-text -- can't type an invalid sensitivity/mode. RadioSet
             # (single-select) is the correct widget, not a checkbox group
@@ -252,10 +354,10 @@ class ReviewScreen(Screen):
         yield Static("", id="allow-error")
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         table = self.query_one("#targets", DataTable)
         table.add_columns("Target", "Kind", "Status", "Verified", "Matches?")
-        self.refresh_header()
+        await self.refresh_header()
         self.refresh_targets()
         # Fewer clicks/steps (direct user request, carried from the old
         # reveal-on-Allow-click behavior sec22.4 retires): land the cursor
@@ -267,7 +369,70 @@ class ReviewScreen(Screen):
     def _default_pattern_for(self, target: Resource) -> str:
         return escape_gitignore_literal(target.identity) if target.scanner_name == "secrets" else re.escape(target.identity)
 
-    def _refresh_allow_form_defaults(self) -> None:
+    def _pattern_for_widen_level(self, target: Resource, level: int) -> str:
+        """docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+        `level` trailing path segments collapsed into a `/**` gitignore
+        wildcard -- 0 is the exact literal default (`_default_pattern_for`),
+        higher levels progressively widen toward the root. Shared by both
+        the keyboard ("alt+w") and mouse (breadcrumb click) paths so
+        neither has its own divergent pattern-construction logic."""
+        if level <= 0:
+            return self._default_pattern_for(target)
+        parts = Path(target.identity).parts
+        keep = max(1, len(parts) - level)
+        prefix = str(Path(*parts[:keep]))
+        return escape_gitignore_literal(prefix) + "/**"
+
+    def _apply_pattern(self, pattern: str) -> None:
+        pattern_input = self.query_one("#rule-pattern-input", Input)
+        pattern_input.value = pattern
+        pattern_input.cursor_position = len(pattern)
+        pattern_input.focus()
+
+    async def _refresh_pattern_breadcrumbs(self) -> None:
+        """docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+        "hard to select text and type in the field" -- one clickable button
+        per path segment, so widening the pattern to a directory-level
+        wildcard needs no cursor placement/typing at all. Only meaningful
+        for a single file-kind target (same scoping `_refresh_allow_form_
+        defaults` already applies to the Pattern field's own pre-fill) --
+        rebuilt fresh on every entry switch, never left showing a stale
+        entry's path.
+
+        `remove_children()`/`mount()` are real DOM mutations, not instant
+        Python-level list edits -- awaited in that order (not fire-and-
+        forget) so a new entry's buttons can never collide with the
+        previous entry's still-mounted ones under the same `breadcrumb-N`
+        id (a real `DuplicateIds` crash caught by this feature's own
+        Next/Prev test, not assumed safe)."""
+        container = self.query_one("#pattern-breadcrumbs", Horizontal)
+        await container.remove_children()
+        targets = self._entry.targets
+        if len(targets) != 1 or targets[0].kind != "file":
+            return
+        parts = Path(targets[0].identity).parts
+        await container.mount(*(Button(part, compact=True, id=f"breadcrumb-{i}") for i, part in enumerate(parts)))
+
+    def action_widen_pattern(self) -> None:
+        targets = self._entry.targets
+        if len(targets) != 1 or targets[0].kind != "file":
+            return
+        parts = Path(targets[0].identity).parts
+        max_level = len(parts) - 1
+        if self._widen_level >= max_level:
+            return  # already at the root -- boundary no-op, same as ReviewScreen's Prev/Next-at-the-edge precedent
+        self._widen_level += 1
+        self._apply_pattern(self._pattern_for_widen_level(targets[0], self._widen_level))
+
+    def _on_breadcrumb_clicked(self, index: int) -> None:
+        targets = self._entry.targets
+        if len(targets) != 1:
+            return
+        parts = Path(targets[0].identity).parts
+        self._widen_level = len(parts) - 1 - index
+        self._apply_pattern(self._pattern_for_widen_level(targets[0], self._widen_level))
+
+    async def _refresh_allow_form_defaults(self) -> None:
         # `tool` is call-level (every target in one call shares the same
         # tool_name), so it's always editable, defaulting to the exact
         # name. `pattern` is always editable too (2026-07-30, direct user
@@ -293,6 +458,10 @@ class ReviewScreen(Screen):
         # (de)selects it; RadioSet enforces the single-select exclusivity.
         self._select_radio_default("sensitivity-radio", VALID_SENSITIVITIES, "public")
         self._select_radio_default("mode-radio", VALID_RULE_MODES, "allow")
+        # A different entry's path has different segments entirely -- the
+        # widen level and the breadcrumb row itself must not carry over.
+        self._widen_level = 0
+        await self._refresh_pattern_breadcrumbs()
 
     def _build_rule(self, pattern: str) -> PolicyRule:
         """docs/ARCHITECTURE.md sec22.4 (STORY-1704): the one place a
@@ -338,7 +507,7 @@ class ReviewScreen(Screen):
         index = radio_set.pressed_index
         return values[index] if index >= 0 else default
 
-    def refresh_header(self) -> None:
+    async def refresh_header(self) -> None:
         # "X of Y" (STORY request: know how many rules/reviews remain) plus
         # re-pointing the tool/session/tool-input display and Prev/Next's
         # disabled state at whichever entry Next/Prev has navigated to.
@@ -351,7 +520,16 @@ class ReviewScreen(Screen):
         # A different entry has its own independent allow-form state --
         # don't carry over a previous entry's defaults or error text.
         self.query_one("#allow-error", Static).update("")
-        self._refresh_allow_form_defaults()
+        await self._refresh_allow_form_defaults()
+        # docs/ARCHITECTURE.md sec23.6 (STORY-1806): reseed both fields'
+        # undo history to this entry's real just-set default, *after*
+        # `_refresh_allow_form_defaults()` above -- seeding directly from
+        # the live `.value` rather than relying on the (async) Input.Changed
+        # message this assignment also triggers, so there's no dependency
+        # on message-queue ordering. A different entry must never carry the
+        # previous one's undo history.
+        self._input_histories["rule-tool-input"] = _InputHistory(self.query_one("#rule-tool-input", Input).value)
+        self._input_histories["rule-pattern-input"] = _InputHistory(self.query_one("#rule-pattern-input", Input).value)
         self.query_one("#prev-btn", Button).disabled = self._index == 0
         self.query_one("#next-btn", Button).disabled = self._index >= total - 1
 
@@ -365,7 +543,7 @@ class ReviewScreen(Screen):
             table.add_row(t.identity, t.kind, status, verified, self._preview_matches(t))
         self.query_one("#allow-btn", Button).disabled = not self._entry.all_verified(cache)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "verify-btn":
             self.action_verify()
         elif event.button.id == "deny-btn":
@@ -381,9 +559,11 @@ class ReviewScreen(Screen):
             # and editable above, there's no form left to reveal.
             self.action_submit_allow()
         elif event.button.id == "prev-btn":
-            self.action_prev_review()
+            await self.action_prev_review()
         elif event.button.id == "next-btn":
-            self.action_next_review()
+            await self.action_next_review()
+        elif event.button.id and event.button.id.startswith("breadcrumb-"):
+            self._on_breadcrumb_clicked(int(event.button.id.removeprefix("breadcrumb-")))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         # docs/ARCHITECTURE.md sec22.4 (STORY-1704): live "Matches?" preview
@@ -395,6 +575,12 @@ class ReviewScreen(Screen):
         # correctness gap.
         if event.input.id == "rule-pattern-input":
             self.refresh_targets()
+        # docs/ARCHITECTURE.md sec23.6 (STORY-1806): every edit (typed or
+        # undo/redo-restored -- push() no-ops on the latter, see
+        # _InputHistory's own docstring) is recorded for this field alone.
+        history = self._input_histories.get(event.input.id)
+        if history is not None:
+            history.push(event.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         # Fewer clicks/steps: Enter in either text field submits the rule
@@ -404,18 +590,18 @@ class ReviewScreen(Screen):
         if event.input.id in ("rule-tool-input", "rule-pattern-input"):
             self.action_submit_allow()
 
-    def action_next_review(self) -> None:
+    async def action_next_review(self) -> None:
         if self._index < len(self._pending) - 1:
             self._index += 1
             self._entry = self._pending[self._index]
-            self.refresh_header()
+            await self.refresh_header()
             self.refresh_targets()
 
-    def action_prev_review(self) -> None:
+    async def action_prev_review(self) -> None:
         if self._index > 0:
             self._index -= 1
             self._entry = self._pending[self._index]
-            self.refresh_header()
+            await self.refresh_header()
             self.refresh_targets()
 
     def action_verify(self) -> None:
@@ -524,6 +710,28 @@ class ReviewScreen(Screen):
     def action_dismiss_review(self) -> None:
         self.dismiss(None)
 
+    def _undo_redo_focused_field(self, op) -> None:
+        # docs/ARCHITECTURE.md sec23.6 (STORY-1806): dispatches by whichever
+        # of the 2 editable Inputs currently has focus -- a no-op (not an
+        # error) if focus is elsewhere (a RadioSet, a button) or on a field
+        # with nothing left to undo/redo.
+        focused = self.focused
+        if focused is None or not isinstance(focused, Input):
+            return
+        history = self._input_histories.get(focused.id or "")
+        if history is None:
+            return
+        value = op(history)
+        if value is not None:
+            focused.value = value
+            focused.cursor_position = len(value)
+
+    def action_undo_field(self) -> None:
+        self._undo_redo_focused_field(lambda h: h.undo())
+
+    def action_redo_field(self) -> None:
+        self._undo_redo_focused_field(lambda h: h.redo())
+
 
 class RulesScreen(Screen):
     """docs/ARCHITECTURE.md sec22.5 (STORY-1705): lists every `PolicyRule`
@@ -540,27 +748,75 @@ class RulesScreen(Screen):
     (a broad rule moved ahead of a specific one can make the specific one
     permanently unreachable, the exact failure `write_default_project_
     policy`'s own docstring warns about for appends), so the write must
-    never be silent."""
+    never be silent.
+
+    docs/ARCHITECTURE.md sec23.7 (STORY-1807/1808, 2026-08-07): `e` edits
+    the rule under the cursor in place (an inline form, same field widgets
+    as `ReviewScreen`'s allow-form plus a Trust `RadioSet`), `d` deletes it
+    -- reusing `MonitorApp`'s skip-all armed/confirm idiom (sec23.4) since
+    this is the screen's other genuinely destructive, unrecoverable-in-UI
+    action."""
 
     BINDINGS = [
         ("escape", "back_to_queue", "Back to queue"),
         ("k", "move_up", "Move rule up"),
         ("j", "move_down", "Move rule down"),
+        ("e", "edit_rule", "Edit"),
+        ("d", "delete_rule", "Delete"),
     ]
 
     CSS = """
     RulesScreen #no-rules { padding: 1 2; color: $text-muted; display: none; }
     RulesScreen #no-rules.visible { display: block; }
+    RulesScreen #edit-form { display: none; height: auto; border: round $primary; padding: 1; }
+    RulesScreen #edit-form.visible { display: block; }
+    RulesScreen .field-row { height: auto; }
+    RulesScreen .field-label { width: 12; content-align: right middle; padding-right: 1; }
+    RulesScreen #edit-tool-input, RulesScreen #edit-pattern-input,
+    RulesScreen #edit-sensitivity-radio, RulesScreen #edit-mode-radio, RulesScreen #edit-trust-radio {
+        width: 1fr;
+        height: auto;
+    }
     """
 
     def __init__(self, policy_path: Path) -> None:
         super().__init__()
         self._policy_path = policy_path
+        # sec23.7: index of the rule currently being edited, or None when
+        # the edit form is closed -- the one flag that gates both "is the
+        # form visible" and "which rule does Save write to."
+        self._editing_index: int | None = None
+        # sec23.4's armed/confirm idiom, reused verbatim for delete.
+        self._delete_armed = False
+        self._delete_index: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("No rules configured.", id="no-rules")
         yield DataTable(id="rules")
+        with Vertical(id="edit-form"):
+            with Horizontal(classes="field-row"):
+                yield Static("Tool:", classes="field-label")
+                yield Input(value="", id="edit-tool-input", compact=True)
+                yield Static("Pattern:", classes="field-label")
+                yield Input(value="", id="edit-pattern-input", compact=True)
+            with Horizontal(classes="field-row"):
+                yield Static("Sensitivity:", classes="field-label")
+                with RadioSet(id="edit-sensitivity-radio"):
+                    for value in VALID_SENSITIVITIES:
+                        yield RadioButton(value, compact=True, id=f"edit-sensitivity-{value}")
+                yield Static("Mode:", classes="field-label")
+                with RadioSet(id="edit-mode-radio"):
+                    for value in VALID_RULE_MODES:
+                        yield RadioButton(value, compact=True, id=f"edit-mode-{value}")
+            with Horizontal(classes="field-row"):
+                yield Static("Trust:", classes="field-label")
+                with RadioSet(id="edit-trust-radio"):
+                    for value in VALID_TRUST_LEVELS:
+                        yield RadioButton(value, compact=True, id=f"edit-trust-{value}")
+                yield Static("Description:", classes="field-label")
+                yield Input(value="", id="edit-description-input", compact=True)
+            yield Static("", id="edit-error")
         yield Static("", id="rule-confirm")
         yield Footer()
 
@@ -615,7 +871,104 @@ class RulesScreen(Screen):
         self._move(1)
 
     def action_back_to_queue(self) -> None:
+        # Escape closes whichever is "innermost" first -- an open edit
+        # form, not the whole screen -- matching the rest of this app's
+        # "close for now" convention (ReviewScreen's own Escape).
+        if self._editing_index is not None:
+            self._close_edit_form()
+            return
         self.dismiss()
+
+    def _close_edit_form(self) -> None:
+        self._editing_index = None
+        self.query_one("#edit-form", Vertical).set_class(False, "visible")
+
+    def action_edit_rule(self) -> None:
+        table = self.query_one("#rules", DataTable)
+        index = table.cursor_row
+        rules = self._load_rules()
+        if index is None or not (0 <= index < len(rules)):
+            return
+        self._disarm_delete()
+        rule = rules[index]
+        self._editing_index = index
+        self.query_one("#edit-tool-input", Input).value = rule.tool
+        self.query_one("#edit-pattern-input", Input).value = rule.pattern
+        self.query_one("#edit-description-input", Input).value = rule.description
+        _set_radio_value(self.query_one("#edit-sensitivity-radio", RadioSet), VALID_SENSITIVITIES, rule.sensitivity)
+        _set_radio_value(self.query_one("#edit-mode-radio", RadioSet), VALID_RULE_MODES, rule.mode)
+        _set_radio_value(self.query_one("#edit-trust-radio", RadioSet), VALID_TRUST_LEVELS, rule.trust)
+        self.query_one("#edit-error", Static).update("")
+        self.query_one("#edit-form", Vertical).set_class(True, "visible")
+        self.query_one("#edit-tool-input", Input).focus()
+
+    def action_save_edit(self) -> None:
+        if self._editing_index is None:
+            return
+        tool = self.query_one("#edit-tool-input", Input).value.strip()
+        pattern = self.query_one("#edit-pattern-input", Input).value
+        sensitivity = _get_radio_value(self.query_one("#edit-sensitivity-radio", RadioSet), VALID_SENSITIVITIES, "public")
+        mode = _get_radio_value(self.query_one("#edit-mode-radio", RadioSet), VALID_RULE_MODES, "allow")
+        trust = _get_radio_value(self.query_one("#edit-trust-radio", RadioSet), VALID_TRUST_LEVELS, "high")
+        description = self.query_one("#edit-description-input", Input).value.strip()
+        try:
+            rule = PolicyRule(tool=tool, pattern=pattern, sensitivity=sensitivity, mode=mode, description=description, trust=trust)
+            update_rule(self._policy_path, self._editing_index, rule)
+        except (PolicyConfigError, IndexError) as exc:
+            self.query_one("#edit-error", Static).update(str(exc))
+            return
+        index = self._editing_index
+        self.refresh_rules()
+        self.query_one("#rules", DataTable).move_cursor(row=index)
+        # Synchronous confirmation, same standard as move-up/move-down.
+        self.query_one("#rule-confirm", Static).update(f"Saved rule #{index + 1}.")
+        self._close_edit_form()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id in ("edit-tool-input", "edit-pattern-input", "edit-description-input"):
+            self.action_save_edit()
+
+    def _disarm_delete(self) -> None:
+        if self._delete_armed:
+            self._delete_armed = False
+            self._delete_index = None
+            self.query_one("#rule-confirm", Static).update("")
+
+    def action_delete_rule(self) -> None:
+        # docs/ARCHITECTURE.md sec23.4/23.7 (Smith's Gate 1 finding, reused
+        # verbatim): 2 consecutive "d" presses required -- the first arms
+        # and names which rule, any other key/row-navigation cancels it
+        # (on_key and on_data_table_row_highlighted below), only the
+        # second consecutive "d" on the *same* row actually deletes.
+        table = self.query_one("#rules", DataTable)
+        index = table.cursor_row
+        rules = self._load_rules()
+        if index is None or not (0 <= index < len(rules)):
+            return
+        if not self._delete_armed or index != self._delete_index:
+            self._delete_armed = True
+            self._delete_index = index
+            self.query_one("#rule-confirm", Static).update(f"Press d again to delete rule #{index + 1}, or any other key to cancel.")
+            return
+        try:
+            delete_rule(self._policy_path, index)
+        except (PolicyConfigError, IndexError) as exc:
+            self.query_one("#rule-confirm", Static).update(str(exc))
+        else:
+            self.refresh_rules()
+            self.query_one("#rule-confirm", Static).update(f"Deleted rule #{index + 1} — saved.")
+        self._delete_armed = False
+        self._delete_index = None
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key != "d":
+            self._disarm_delete()
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        # A mouse click repositioning the cursor doesn't fire a Key event
+        # (Trin's real finding on the queue screen's skip-all, sec23.4) --
+        # this covers that path too, not just on_key's keyboard-only one.
+        self._disarm_delete()
 
 
 class MonitorApp(App):
@@ -644,8 +997,13 @@ class MonitorApp(App):
     */
     #queue { height: 1fr; }
     #status-strip { height: 1; padding: 0 1; color: $text-muted; }
+    #queue-status { height: 1; padding: 0 1; color: $warning; }
     """
-    BINDINGS = [("r", "open_rules", "Rules")]
+    BINDINGS = [
+        ("r", "open_rules", "Rules"),
+        ("s", "skip_selected", "Skip"),
+        ("S", "skip_all", "Skip all"),
+    ]
 
     def __init__(
         self,
@@ -690,6 +1048,27 @@ class MonitorApp(App):
         # before the TUI ever saw it, so an unreviewed entry just stays
         # queued (no timeout).
         self._pending_reviews: list[ReviewEntry] = []
+        # docs/ARCHITECTURE.md sec23.1 (STORY-1801): aggregation index --
+        # maps a block event's identity (review_aggregation_key) to the one
+        # live ReviewEntry group for it, so a repeated identical call
+        # appends to that entry instead of creating a new one. Kept in sync
+        # with `_pending_reviews` at exactly two places: granted in
+        # poll_data()'s new-block branch, revoked in `_forget_entry()` --
+        # no second, parallel bookkeeping path that could drift and
+        # "resurrect" a resolved group. `_next_review_id` is a monotonic
+        # per-process counter, not persisted -- a restart's full log replay
+        # reassigns ids from scratch (a within-session reference aid, not a
+        # persisted identity, per STORY-1801's own AC).
+        self._pending_by_key: dict[tuple[str, str], ReviewEntry] = {}
+        self._next_review_id = 0
+        # docs/ARCHITECTURE.md sec23.3: rebuilt by refresh_queue() on every
+        # call -- table row index -> owning entry (see refresh_queue).
+        self._queue_rows: list[ReviewEntry] = []
+        # docs/ARCHITECTURE.md sec23.4 (STORY-1804): "S" arms, a second
+        # consecutive "S" executes -- any other key in between disarms it
+        # (on_key below). A single accidental keystroke must not be able to
+        # sweep the whole queue.
+        self._skip_all_armed = False
 
     def compose(self) -> ComposeResult:
         # docs/ARCHITECTURE.md sec22.2 (STORY-1701/1702): the queue is the
@@ -703,11 +1082,17 @@ class MonitorApp(App):
         yield Static("No pending reviews.", id="no-queue")
         yield DataTable(id="queue")
         yield Static("", id="status-strip")
+        yield Static("", id="queue-status")
         yield Footer()
 
     def on_mount(self) -> None:
         queue_table = self.query_one("#queue", DataTable)
-        queue_table.add_columns("Tool", "Resources", "Kind", "Reason", "Age")
+        # docs/ARCHITECTURE.md sec23.2/23.3 (STORY-1802/1803): "Resources"
+        # (a count) + "Age" (first-seen) are replaced by "Resource" (the
+        # specific target, one row per target on a multi-target call) and
+        # "Last Seen" (most recent occurrence) -- "Count" is new, showing
+        # how many aggregated occurrences a row represents.
+        queue_table.add_columns("ID", "Tool", "Resource", "Kind", "Reason", "Count", "Last Seen")
         queue_table.cursor_type = "row"
 
         self.refresh_session_line()
@@ -760,12 +1145,30 @@ class MonitorApp(App):
                 for item in new_items:
                     if isinstance(item, ToolCallEvent):
                         if item.event == "block":
-                            self._pending_reviews.append(build_review_entry(item, self._scanners))
+                            # docs/ARCHITECTURE.md sec23.1 (STORY-1801): a
+                            # repeated, byte-for-byte identical call
+                            # appends to its existing aggregate group
+                            # instead of creating a new queue entry.
+                            key = review_aggregation_key(item)
+                            existing = self._pending_by_key.get(key)
+                            if existing is not None:
+                                existing.events.append(item)
+                            else:
+                                self._next_review_id += 1
+                                entry = build_review_entry(item, self._scanners, self._next_review_id)
+                                self._pending_reviews.append(entry)
+                                self._pending_by_key[key] = entry
                             new_reviews = True
                     elif isinstance(item, ReviewResolution):
-                        self._pending_reviews = [
-                            r for r in self._pending_reviews if r.event.log_offset != item.resolved_offset
-                        ]
+                        # sec23.1: operates per-occurrence now, not
+                        # per-entry -- drop just the one resolved
+                        # log_offset from whichever group owns it; the
+                        # group itself is only forgotten once every
+                        # occurrence it ever held has been resolved.
+                        for r in list(self._pending_reviews):
+                            r.events = [e for e in r.events if e.log_offset != item.resolved_offset]
+                            if not r.events:
+                                self._forget_entry(r)
                 if new_reviews:
                     # docs/ARCHITECTURE.md sec20.4 (STORY-1604), Smith's Gate 1
                     # hard-requirement watch-item: a queued review must be
@@ -783,22 +1186,53 @@ class MonitorApp(App):
             pass
 
     def refresh_queue(self) -> None:
-        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): oldest-first, same FIFO
-        # order `_pending_reviews.append()` already produces -- displayed
-        # now instead of only ever consumed by the old 'r'-opens-oldest
-        # binding.
+        # docs/ARCHITECTURE.md sec23.2 (STORY-1802): most-recent-first,
+        # display-only -- `ordered` is a fresh sorted copy computed here on
+        # every call; `_pending_reviews`'s own storage order is never
+        # mutated, so a currently-open ReviewScreen's index into it (see
+        # on_data_table_row_selected below) stays valid even if a
+        # background poll tick fires mid-review and reorders the display.
         table = self.query_one("#queue", DataTable)
         table.clear()
         no_queue_widget = self.query_one("#no-queue", Static)
         no_queue_widget.set_class(not self._pending_reviews, "visible")
-        for entry in self._pending_reviews:
-            table.add_row(
-                entry.event.tool_name,
-                str(len(entry.targets)),
-                _format_kinds(entry.targets),
-                entry.event.reason,
-                _format_relative_time(entry.event.timestamp),
-            )
+        ordered = sorted(self._pending_reviews, key=lambda e: e.last_seen, reverse=True)
+        # docs/ARCHITECTURE.md sec23.3 (STORY-1803): one row per rendered
+        # table row, in the same order as `table.add_row()` below -- maps a
+        # clicked/cursor row back to its owning entry, which may repeat
+        # across N consecutive rows for a multi-target call.
+        self._queue_rows: list[ReviewEntry] = []
+        for entry in ordered:
+            targets = entry.targets
+            n = len(targets)
+            last_seen = _format_relative_time(entry.last_seen)
+            if n <= 1:
+                resource = targets[0].identity if targets else "—"
+                kind = targets[0].kind if targets else "—"
+                table.add_row(str(entry.id), entry.event.tool_name, resource, kind, entry.event.reason, str(entry.count), last_seen)
+                self._queue_rows.append(entry)
+            else:
+                for i, t in enumerate(targets, start=1):
+                    resource = f"{t.identity} ({i} of {n})"
+                    table.add_row(str(entry.id), entry.event.tool_name, resource, t.kind, entry.event.reason, str(entry.count), last_seen)
+                    self._queue_rows.append(entry)
+
+    def _forget_entry(self, entry: ReviewEntry) -> None:
+        """docs/ARCHITECTURE.md sec23.1 (STORY-1801): the one place a
+        ReviewEntry leaves `_pending_reviews` -- every removal path (Allow/
+        Deny, skip/skip-all, auto-resolve, a full-log-replay
+        ReviewResolution draining a group to empty) routes through this so
+        `_pending_by_key` can never drift out of sync and "resurrect" a
+        resolved group. Scans by identity (`v is entry`), not by
+        recomputing `review_aggregation_key(entry.events[0])` -- the latter
+        would raise once `entry.events` is already empty, exactly the state
+        the ReviewResolution branch above produces right before calling
+        this."""
+        if entry in self._pending_reviews:
+            self._pending_reviews.remove(entry)
+        stale_keys = [k for k, v in self._pending_by_key.items() if v is entry]
+        for k in stale_keys:
+            del self._pending_by_key[k]
 
     def _on_review_resolved(self, resolved_entry: ReviewEntry | None) -> None:
         # ReviewScreen reports back the entry that was actually
@@ -807,8 +1241,8 @@ class MonitorApp(App):
         # `None` (plain Escape) leaves it queued -- same "ignoring it just
         # leaves it queued" model as the rest of this design.
         if resolved_entry is not None and resolved_entry in self._pending_reviews:
-            self._pending_reviews.remove(resolved_entry)
             self._append_review_resolved(resolved_entry)
+            self._forget_entry(resolved_entry)
             # 2026-07-30 (direct user request): a just-submitted Allow rule
             # (e.g. widened to cover a whole project folder) may now also
             # validate other still-queued reviews' targets -- a rule
@@ -834,7 +1268,13 @@ class MonitorApp(App):
         # audit.log a restart re-reads from byte 0 -- poll_data() nets
         # this back out against the original `block` event, so it
         # doesn't silently reappear next time.
-        append_audit_log({"event": "review_resolved", "resolved_offset": entry.event.log_offset}, self._audit_log_path)
+        #
+        # 2026-08-07 (docs/ARCHITECTURE.md sec23.1, STORY-1801): an entry
+        # may now represent more than one aggregated occurrence -- every
+        # one of them needs its own resolved marker, or a restart's full
+        # replay would resurrect whichever occurrences didn't get one.
+        for event in entry.events:
+            append_audit_log({"event": "review_resolved", "resolved_offset": event.log_offset}, self._audit_log_path)
 
     def _auto_resolve_now_covered_reviews(self) -> None:
         try:
@@ -842,28 +1282,94 @@ class MonitorApp(App):
         except PolicyConfigError:
             return
         cache = ScanCache(self._cache_path)
-        still_pending = []
-        for entry in self._pending_reviews:
+        for entry in list(self._pending_reviews):
             if entry.targets and all(
                 is_validated_allow(entry.event.tool_name, t, config, cache) for t in entry.targets
             ):
                 self._append_review_resolved(entry)
-            else:
-                still_pending.append(entry)
-        self._pending_reviews[:] = still_pending
+                self._forget_entry(entry)
 
     def _refresh_review_title(self) -> None:
         count = len(self._pending_reviews)
         self.title = f"scg monitor — {count} pending review{'s' if count != 1 else ''}" if count else "scg monitor"
+
+    def _resolve_as_skipped(self, entry: ReviewEntry) -> None:
+        """docs/ARCHITECTURE.md sec23.4 (STORY-1804): dequeues without
+        writing a PolicyRule or touching the ScanCache -- reuses the same
+        review_resolved bookkeeping Allow/Deny already rely on (every
+        occurrence's log_offset, sec23.1), just with no rule-authoring side
+        effect at all. This function never imports/calls anything from
+        onboard.py or scan_cache.py, by construction."""
+        if entry in self._pending_reviews:
+            self._append_review_resolved(entry)
+            self._forget_entry(entry)
+
+    def action_skip_selected(self) -> None:
+        table = self.query_one("#queue", DataTable)
+        if not self._queue_rows or table.cursor_row is None or table.cursor_row >= len(self._queue_rows):
+            return
+        self._resolve_as_skipped(self._queue_rows[table.cursor_row])
+        self._refresh_review_title()
+        self.refresh_queue()
+
+    def action_skip_all(self) -> None:
+        # docs/ARCHITECTURE.md sec23.4 (STORY-1804, Smith's Gate 1 finding):
+        # two consecutive "S" presses required -- the first arms and shows
+        # the pending count, any other key cancels (on_key below), only the
+        # second consecutive "S" actually dequeues everything.
+        if not self._pending_reviews:
+            return
+        if not self._skip_all_armed:
+            self._skip_all_armed = True
+            n = len(self._pending_reviews)
+            self.query_one("#queue-status", Static).update(
+                f"Press S again to skip all {n} pending review{'s' if n != 1 else ''}, or any other key to cancel."
+            )
+            return
+        n = len(self._pending_reviews)
+        for entry in list(self._pending_reviews):
+            self._resolve_as_skipped(entry)
+        self._skip_all_armed = False
+        self._refresh_review_title()
+        self.refresh_queue()
+        self.query_one("#queue-status", Static).update(f"Skipped {n} review{'s' if n != 1 else ''}.")
+
+    def _disarm_skip_all(self) -> None:
+        if self._skip_all_armed:
+            self._skip_all_armed = False
+            self.query_one("#queue-status", Static).update("")
+
+    def on_key(self, event: events.Key) -> None:
+        # Any key other than the confirming second "S" cancels the arm --
+        # verified (not assumed) that App-level on_key sees every keypress
+        # regardless of which focused widget's own bindings also handle it.
+        if event.key != "S":
+            self._disarm_skip_all()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         # docs/ARCHITECTURE.md sec22.2 (STORY-1701): opens the review at
         # whichever row is under the cursor -- supersedes the old 'r'-opens-
         # oldest binding (index 0 was the only reachable one before, and
         # 'r' is freed for the Rules screen, sec22.1).
-        if event.data_table.id == "queue" and event.cursor_row < len(self._pending_reviews):
+        #
+        # sec23.2/23.3 (STORY-1802/1803): the table's row order is now a
+        # display-only sort, and a multi-target entry occupies more than
+        # one row -- `cursor_row` is resolved via `_queue_rows` (built by
+        # refresh_queue(), same order as the rendered rows) to find the
+        # real owning entry, then to that entry's real index in the live
+        # `_pending_reviews` list, so `ReviewScreen` still navigates/
+        # mutates the actual storage-order list exactly as before.
+        #
+        # Trin's UAT (sec23.4): a mouse click opening a review is not a Key
+        # event, so on_key's disarm never sees it -- a click while skip-all
+        # is armed must still cancel the arm (the same "anything else
+        # cancels" guarantee, not just a keyboard-only special case).
+        self._disarm_skip_all()
+        if event.data_table.id == "queue" and event.cursor_row < len(self._queue_rows):
+            entry = self._queue_rows[event.cursor_row]
+            index = self._pending_reviews.index(entry)
             self.push_screen(
-                ReviewScreen(self._pending_reviews, event.cursor_row, self._cache_path, self._scanners, self._policy_path),
+                ReviewScreen(self._pending_reviews, index, self._cache_path, self._scanners, self._policy_path),
                 callback=self._on_review_resolved,
             )
 

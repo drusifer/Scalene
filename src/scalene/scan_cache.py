@@ -58,7 +58,7 @@ class CacheEntry:
     mtime: float | None = None
 
 
-def _cache_key(resource: Resource) -> str:
+def cache_key(resource: Resource) -> str:
     return f"{resource.scanner_name}:{resource.identity}"
 
 
@@ -95,9 +95,18 @@ class ScanCache:
             raise ScanCacheError(f"Scan cache store {self.cache_path} is unwritable: {exc}") from exc
 
     def get(self, resource: Resource) -> CacheEntry | None:
+        return self.get_by_key(cache_key(resource))
+
+    def get_by_key(self, key: str) -> CacheEntry | None:
+        """docs/ARCHITECTURE.md sec15.2 (direct user request, 2026-08-07):
+        looks up a raw `f"{scanner_name}:{identity}"` cache key directly,
+        without needing a reconstructed `Resource` -- `TaintState.
+        pending_trust` (taint_state.py) only ever needs to know a tracked
+        resource's *label*, not re-scan it, so it stores the bare key
+        rather than a full `Resource`."""
         with self._locked():
             data = self._read()
-        raw = data.get(_cache_key(resource))
+        raw = data.get(key)
         if raw is None or "label" not in raw:
             return None
         return CacheEntry(
@@ -118,7 +127,7 @@ class ScanCache:
 
         with self._locked():
             data = self._read()
-            data[_cache_key(resource)] = entry
+            data[cache_key(resource)] = entry
             self._write(data)
 
     def all_entries(self) -> dict:
@@ -132,9 +141,22 @@ class ScanCache:
         if time.time() - entry.scanned_at >= FRESHNESS_SECONDS:
             return False
         if resource.kind == "file":
-            if not os.path.exists(resource.identity):
-                return False
-            if entry.mtime is None or os.stat(resource.identity).st_mtime != entry.mtime:
+            # 2026-08-07 (direct user bug report): `entry.mtime is None`
+            # means `put()` (below) cached this result while the file
+            # didn't exist yet -- a `Write`'s brand-new target, verified as
+            # "nothing to scan yet" (scanner.py's own matching correction).
+            # That result is still fresh as long as the file *still*
+            # doesn't exist (nothing has changed since); if it now DOES
+            # exist, real content has appeared since the cached "nothing
+            # there" result, which must not be trusted as-is -- stale,
+            # forcing a real re-verification, same as any other changed
+            # file. Only once `entry.mtime` is a real value (the file
+            # existed at scan time) does the pre-existing mtime-comparison
+            # path below apply.
+            currently_exists = os.path.exists(resource.identity)
+            if entry.mtime is None:
+                return not currently_exists
+            if not currently_exists or os.stat(resource.identity).st_mtime != entry.mtime:
                 return False
         return True
 
@@ -142,7 +164,7 @@ class ScanCache:
         """Atomically claim the right to spawn a background scan for this
         resource. Returns False if another reservation is still fresh
         (dedup) -- otherwise stakes a new reservation and returns True."""
-        key = _cache_key(resource)
+        key = cache_key(resource)
         with self._locked():
             data = self._read()
             existing = data.get(key, {})

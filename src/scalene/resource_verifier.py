@@ -61,7 +61,7 @@ import re
 from dataclasses import dataclass
 
 from .policy_config import MatchResult, PolicyConfig, PolicyRule
-from .scan_cache import ScanCache, refresh_if_needed
+from .scan_cache import ScanCache, cache_key, refresh_if_needed
 from .scanner import Resource, Scanner
 from .taint_state import TaintState
 
@@ -193,12 +193,52 @@ class AccessDecision:
     block_kind: str | None = None  # "confirmed_bad" | "uncleared" | None (allowed)
 
 
+def _reconcile_pending_trust(taint: TaintState, cache: ScanCache) -> None:
+    """docs/ARCHITECTURE.md sec15.2's own flagged future work ("periodic
+    re-validation/alerting for a resource that goes bad after being
+    trusted"), direct user request 2026-08-07: Scalene has no daemon --
+    one process per hook invocation -- so the only place to notice a
+    "trust but verify" resource's real, since-completed scan verdict is
+    the *next* call in the same session. Runs first, before this call's
+    own resources are even identified: a retroactively-discovered bad
+    finding must affect this call's own `was_clean` check too, not only
+    future ones. A finding that comes back *clean* just stops being
+    tracked -- confirmed, no session-wide consequence either way; only a
+    bad finding escalates."""
+    for key in list(taint.pending_trust):
+        entry = cache.get_by_key(key)
+        if entry is None:
+            continue  # scan still hasn't finished -- keep tracking it
+        if entry.label in _BAD_LABELS:
+            # The original call already happened and can't be un-happened
+            # -- the honest response is to ratchet the session's own tags
+            # to maximum caution going forward, the same severity
+            # `confirmed_bad` would represent had it been known in time.
+            taint.escalate_trust("low")
+            taint.escalate_sensitivity("restricted")
+        taint.resolve_pending_trust(key)
+
+
 def decide_access(
     tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache, taint: TaintState
 ) -> AccessDecision:
     """docs/ARCHITECTURE.md sec15.3/sec21.8: the core call-permission
     decision. Mutates `taint` in place (escalate_trust/escalate_sensitivity)
-    when the call is allowed -- callers persist it (taint.save()) themselves."""
+    when the call is allowed -- callers persist it (taint.save()) themselves.
+
+    2026-08-07 (direct user request, sec15.2's own flagged gap): "trust but
+    verify," not "verify before trust" -- a resource matching a `mode:
+    allow` rule proceeds immediately even before its own background scan
+    confirms it clean (the human already made that determination by
+    authoring the rule); `refresh_if_needed()` below still spawns/confirms
+    a real scan is in flight, tracked in `taint.pending_trust` so
+    `_reconcile_pending_trust()` can catch up on the *next* call if that
+    scan comes back bad. A resource the scanner has *already* found bad,
+    or whose matching rule explicitly isn't `mode: allow`, is still always
+    blocked outright -- this only changes the "not yet independently
+    confirmed" case, not either of those two."""
+    _reconcile_pending_trust(taint, cache)
+
     resources = [r for scanner in config.scanners.values() for r in scanner.identify(tool_name, args)]
     if not resources:
         return AccessDecision(allowed=True)
@@ -207,7 +247,8 @@ def decide_access(
 
     confirmed_bad: list[tuple[Resource, str]] = []
     validated_allow: list[tuple[Resource, PolicyRule]] = []
-    uncleared: list[Resource] = []
+    trust_but_verify: list[tuple[Resource, PolicyRule]] = []
+    unruled: list[Resource] = []
 
     for resource in resources:
         entry = refresh_if_needed(resource, cache)
@@ -221,8 +262,12 @@ def decide_access(
             confirmed_bad.append((resource, f"a matching rule sets mode={rule.mode!r}, not 'allow'"))
         elif rule is not None and is_clean_entry:
             validated_allow.append((resource, rule))
+        elif rule is not None:
+            # Matches a mode=allow rule, but not yet independently
+            # confirmed clean -- "trust but verify" (see docstring above).
+            trust_but_verify.append((resource, rule))
         else:
-            uncleared.append(resource)
+            unruled.append(resource)
 
     if confirmed_bad:
         details = "; ".join(f"{resource.identity} ({why})" for resource, why in confirmed_bad)
@@ -242,18 +287,27 @@ def decide_access(
         # contaminated by something else earlier in the session.
         taint.escalate_trust(rule.trust)
 
-    if not uncleared:
+    for resource, rule in trust_but_verify:
+        # Same tag escalation as a fully validated match -- the rule
+        # already declares this intent; only the independent confirmation
+        # is still outstanding, tracked below for the next call to
+        # reconcile against the real verdict once it lands.
+        taint.escalate_sensitivity(rule.sensitivity)
+        taint.escalate_trust(rule.trust)
+        taint.add_pending_trust(cache_key(resource))
+
+    if not unruled:
         return AccessDecision(allowed=True)
 
     if was_clean:
         taint.escalate_trust("low")
         return AccessDecision(allowed=True)
 
-    names = ", ".join(resource.identity for resource in uncleared)
+    names = ", ".join(resource.identity for resource in unruled)
     return AccessDecision(
         allowed=False,
         reason=(
-            f"Blocked: {names} has no validated, explicitly-allowed rule, and this session "
+            f"Blocked: {names} has no explicitly-allowed rule, and this session "
             f"has already touched sensitive/untrusted data (trust={taint.trust}, "
             f"sensitivity={taint.sensitivity}). Wait for review, then retry."
         ),

@@ -74,6 +74,59 @@ class TestTaintStateEscalation(unittest.TestCase):
         self.assertTrue(state.is_clean)
 
 
+class TestTaintStatePendingTrust(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec15.2 (direct user request, 2026-08-07):
+    tracks resources optimistically trusted on a matching rule before
+    their background scan finished, so the next call in the same session
+    can reconcile against the real, since-completed verdict."""
+
+    def test_add_pending_trust_tracks_the_key(self):
+        state = TaintState(session_id="s1")
+        state.add_pending_trust("secrets:/tmp/new.txt")
+        self.assertEqual(state.pending_trust, ["secrets:/tmp/new.txt"])
+
+    def test_add_pending_trust_does_not_duplicate(self):
+        state = TaintState(session_id="s1")
+        state.add_pending_trust("secrets:/tmp/new.txt")
+        state.add_pending_trust("secrets:/tmp/new.txt")
+        self.assertEqual(state.pending_trust, ["secrets:/tmp/new.txt"])
+
+    def test_resolve_pending_trust_removes_the_key(self):
+        state = TaintState(session_id="s1")
+        state.add_pending_trust("secrets:/tmp/new.txt")
+        state.resolve_pending_trust("secrets:/tmp/new.txt")
+        self.assertEqual(state.pending_trust, [])
+
+    def test_resolve_pending_trust_on_an_untracked_key_is_a_safe_no_op(self):
+        state = TaintState(session_id="s1")
+        state.resolve_pending_trust("secrets:/tmp/never-tracked.txt")
+        self.assertEqual(state.pending_trust, [])
+
+    def test_reset_clears_pending_trust_too(self):
+        state = TaintState(session_id="s1")
+        state.add_pending_trust("secrets:/tmp/new.txt")
+        state.reset()
+        self.assertEqual(state.pending_trust, [])
+
+    def test_pending_trust_round_trips_through_save_and_load(self):
+        with TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            state = TaintState(session_id="s1", state_dir=state_dir)
+            state.add_pending_trust("secrets:/tmp/new.txt")
+            state.add_pending_trust("reputation:https://pending.example.com/x")
+            state.save()
+
+            reloaded = TaintState.load("s1", state_dir=state_dir)
+            self.assertEqual(
+                reloaded.pending_trust, ["secrets:/tmp/new.txt", "reputation:https://pending.example.com/x"]
+            )
+
+    def test_load_missing_session_has_empty_pending_trust(self):
+        with TemporaryDirectory() as tmp:
+            state = TaintState.load("nonexistent", state_dir=Path(tmp))
+            self.assertEqual(state.pending_trust, [])
+
+
 class TestTaintStatePersistence(unittest.TestCase):
     def test_load_missing_session_returns_clean_defaults(self):
         with TemporaryDirectory() as tmp:

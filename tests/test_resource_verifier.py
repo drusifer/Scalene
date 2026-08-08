@@ -431,6 +431,52 @@ class TestDecideAccess(unittest.TestCase):
             self.assertIn("wait", decision.reason.lower())
             self.assertIn("retry", decision.reason.lower())
 
+    def test_a_call_with_only_no_rule_at_all_still_names_that_plainly(self):
+        # 2026-08-07 (direct user bug report -- "my /** rule isn't matching
+        # the nested folders"): the message conflated "no rule matched at
+        # all" with "a rule matched but wasn't yet verified" under one
+        # generic phrase. That 2nd state doesn't block anymore at all (see
+        # TestTrustButVerify below -- superseded by the direct user request
+        # for optimistic "trust but verify" access), so this message now
+        # only ever fires for the genuinely-no-rule case, and stays simple.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig()
+            taint = TaintState(session_id="s1", trust="low")
+            decision = decide_access("WebFetch", {"url": "https://never-seen.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertIn("has no explicitly-allowed rule", decision.reason)
+
+    def test_a_mixed_call_still_blocks_on_the_unruled_resource_even_though_the_other_proceeds(self):
+        # One resource matches an allow rule (proceeds immediately, "trust
+        # but verify" -- TestTrustButVerify below), the other matches no
+        # rule at all (still blocks) -- the whole call blocks on the
+        # unruled one, naming only that resource; the trust-but-verify
+        # resource is not part of the block message at all anymore.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"),
+                )
+            )
+            taint = TaintState(session_id="s1", trust="low")
+            decision = decide_access(
+                "Bash",
+                {"command": "curl https://pending.example.com/x https://unknown.example.net/y"},
+                config,
+                cache,
+                taint,
+            )
+            self.assertFalse(decision.allowed)
+            self.assertIn("https://unknown.example.net/y has no explicitly-allowed rule", decision.reason)
+            self.assertNotIn("pending.example.com", decision.reason)
+            # Same precedent this file already established for
+            # validated_allow resources in a mixed call (escalation isn't
+            # gated on the *whole* call proceeding) -- the trust-but-verify
+            # resource still gets tracked for later reconciliation.
+            self.assertIn("reputation:https://pending.example.com/x", taint.pending_trust)
+
     def test_validated_allow_rule_proceeds_and_escalates_sensitivity(self):
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
@@ -619,9 +665,16 @@ class TestDecideAccess(unittest.TestCase):
             self.assertFalse(decision.allowed)
             self.assertTrue(taint.is_clean)
 
-    def test_allow_rule_matched_but_not_yet_validated_is_treated_as_uncleared(self):
-        # Rule declares intent; the cache hasn't confirmed it clean yet
-        # (never scanned) -- sec15.2: a match only counts once validated.
+    def test_allow_rule_matched_but_not_yet_validated_proceeds_via_trust_but_verify(self):
+        # 2026-08-07 (direct user request, sec15.2's own flagged future
+        # work): superseded from the original "treated as uncleared" model
+        # -- a match on a mode=allow rule now proceeds immediately either
+        # way (clean *or* tainted context), not just via the clean-
+        # context free pass. See TestTrustButVerify below for the full
+        # behavior (tag escalation, pending_trust tracking, tainted-context
+        # proceeding); this test keeps the original clean-context scenario
+        # working, updated for the real (no longer fail-safe-dropped)
+        # trust outcome.
         with TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             config = PolicyConfig(
@@ -633,8 +686,13 @@ class TestDecideAccess(unittest.TestCase):
             )
             taint = TaintState(session_id="s1")
             decision = decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
-            self.assertTrue(decision.allowed)  # clean context -- proceeds, same as unmatched
-            self.assertEqual(taint.trust, "low")
+            self.assertTrue(decision.allowed)
+            # Not the old generic "unrecognized resource" fail-safe drop to
+            # low -- a human already declared trust for this exact resource
+            # by authoring the rule, so the rule's own (default "high",
+            # sec21.8) trust level applies instead.
+            self.assertEqual(taint.trust, "high")
+            self.assertIn("reputation:https://pending.example.com/x", taint.pending_trust)
 
     def test_confirmed_bad_wins_over_validated_allow_in_the_same_call(self):
         with TemporaryDirectory() as tmp:
@@ -728,6 +786,213 @@ class TestDecideAccess(unittest.TestCase):
             decision = decide_access("Read", {"file_path": str(target)}, config, cache, taint)
             self.assertTrue(decision.allowed)  # clean context, unmatched -> proceeds
             self.assertEqual(taint.trust, "low")  # NOT validated_allow -- fell through to uncleared
+
+
+class TestTrustButVerify(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec15.2's own flagged future work, direct user
+    request 2026-08-07: a resource matching a `mode: allow` rule proceeds
+    immediately, before its own background scan confirms it clean -- "trust
+    but verify," not "verify before trust." The rule declares the human's
+    intent; `_reconcile_pending_trust` (TestReconcilePendingTrust below)
+    is what catches up if that intent turns out to be wrong."""
+
+    def test_proceeds_from_a_tainted_context_not_just_a_clean_one(self):
+        # The real behavior change from the old model: this used to block
+        # (uncleared) once the session was no longer clean. Now it
+        # proceeds regardless -- the rule match itself is the "trust"
+        # half of "trust but verify."
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"),)
+            )
+            taint = TaintState(session_id="s1", trust="low")  # already tainted
+            decision = decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertTrue(decision.allowed)
+
+    def test_escalates_tags_the_same_as_a_fully_validated_match(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(
+                    PolicyRule(
+                        tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="restricted", mode="allow", trust="med"
+                    ),
+                )
+            )
+            taint = TaintState(session_id="s1")
+            decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertEqual(taint.sensitivity, "restricted")
+            self.assertEqual(taint.trust, "med")
+
+    def test_tracks_the_resource_in_pending_trust(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"),)
+            )
+            taint = TaintState(session_id="s1")
+            decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertEqual(taint.pending_trust, ["reputation:https://pending.example.com/x"])
+
+    def test_a_real_scan_finding_bad_still_wins_unconditionally_not_trust_but_verify(self):
+        # Guard against a real regression risk of this change: a resource
+        # the scanner has *already* found bad must stay confirmed_bad,
+        # never reclassified as trust-but-verify just because a rule also
+        # happens to match it.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://pending.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="allow"),)
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "confirmed_bad")
+            self.assertEqual(taint.pending_trust, [])
+
+    def test_a_matching_but_non_allow_rule_still_blocks_unconditionally_not_trust_but_verify(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            config = PolicyConfig(
+                rules=(PolicyRule(tool=".*", pattern=r"https://pending\.example\.com/.*", sensitivity="public", mode="block"),)
+            )
+            taint = TaintState(session_id="s1")
+            decision = decide_access("WebFetch", {"url": "https://pending.example.com/x"}, config, cache, taint)
+            self.assertFalse(decision.allowed)
+            self.assertEqual(decision.block_kind, "confirmed_bad")
+            self.assertEqual(taint.pending_trust, [])
+
+    def test_real_end_to_end_new_file_matching_a_wildcard_rule_via_the_real_hook(self):
+        # The exact scenario the user asked about: a real Write to a
+        # brand-new path under a real gitignore-style wildcard rule,
+        # through the actual pre_tool_use hook, not decide_access() called
+        # in isolation.
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            project.mkdir()
+            new_file = str(project / "brand_new.txt")
+            state_dir = Path(tmp) / "state"
+            state_dir.mkdir()
+            config = PolicyConfig(rules=(PolicyRule(tool=".*", pattern=f"{project}/**", sensitivity="public", mode="allow"),))
+
+            from scalene.hook_adapter import pre_tool_use
+
+            result = pre_tool_use(
+                {"session_id": "s1", "tool_name": "Write", "tool_input": {"file_path": new_file, "content": "hi"}},
+                config,
+                state_dir=state_dir,
+                cache_path=Path(tmp) / "scan_cache.json",
+                audit_log_path=Path(tmp) / "audit.log",
+            )
+            self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "allow")
+
+
+class TestReconcilePendingTrust(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec15.2 (direct user request, 2026-08-07): the
+    next call in the same session is the only place Scalene (no daemon,
+    one process per invocation) can notice a "trust but verify" resource's
+    real, since-completed scan verdict."""
+
+    def test_a_bad_finding_escalates_trust_and_sensitivity_to_the_most_restrictive(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://turned-out-bad.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://turned-out-bad.example.com/x")
+
+            config = PolicyConfig()
+            decide_access("Read", {"file_path": "/some/unrelated/file.txt"}, config, cache, taint)
+
+            self.assertEqual(taint.trust, "low")
+            self.assertEqual(taint.sensitivity, "restricted")
+
+    def test_a_bad_finding_stops_being_tracked_once_reconciled(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://turned-out-bad.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://turned-out-bad.example.com/x")
+
+            decide_access("Read", {"file_path": "/some/unrelated/file.txt"}, PolicyConfig(), cache, taint)
+
+            self.assertEqual(taint.pending_trust, [])
+
+    def test_a_clean_finding_just_stops_tracking_it_no_escalation(self):
+        # A no-resource call (nothing identifiable in these args) isolates
+        # what reconciliation alone does -- a resource-touching call would
+        # confound this with the pre-existing, unrelated "clean session's
+        # first touch of an unrecognized resource" free-pass trust drop.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://turned-out-clean.example.com/x", scanner_name="reputation"),
+                ScanResult(label="trusted"),
+            )
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://turned-out-clean.example.com/x")
+
+            decide_access("SomeToolWithNoResources", {"foo": "bar"}, PolicyConfig(), cache, taint)
+
+            self.assertEqual(taint.trust, "high")
+            self.assertEqual(taint.sensitivity, "public")
+            self.assertEqual(taint.pending_trust, [])
+
+    def test_a_still_unresolved_scan_stays_tracked(self):
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")  # never populated -- scan still in flight
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://still-pending.example.com/x")
+
+            decide_access("SomeToolWithNoResources", {"foo": "bar"}, PolicyConfig(), cache, taint)
+
+            self.assertEqual(taint.trust, "high")
+            self.assertEqual(taint.pending_trust, ["reputation:https://still-pending.example.com/x"])
+
+    def test_reconciliation_runs_even_when_the_current_call_identifies_no_resources(self):
+        # _reconcile_pending_trust() must run before the early "no
+        # resources identified" return -- session hygiene shouldn't depend
+        # on this particular call happening to touch anything.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://turned-out-bad.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://turned-out-bad.example.com/x")
+
+            decide_access("SomeToolWithNoResources", {"foo": "bar"}, PolicyConfig(), cache, taint)
+
+            self.assertEqual(taint.trust, "low")
+
+    def test_a_retroactive_bad_finding_affects_this_same_calls_own_was_clean_check(self):
+        # Ordering matters: reconciliation runs BEFORE was_clean is
+        # captured, so an unrelated resource in the same call that would
+        # otherwise get the clean-session free pass is correctly blocked
+        # once the session is known to be tainted, even within one call.
+        with TemporaryDirectory() as tmp:
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            cache.put(
+                Resource(kind="url", identity="https://turned-out-bad.example.com/x", scanner_name="reputation"),
+                ScanResult(label="untrusted", reason="bad reputation"),
+            )
+            taint = TaintState(session_id="s1")
+            taint.add_pending_trust("reputation:https://turned-out-bad.example.com/x")
+
+            decision = decide_access("WebFetch", {"url": "https://brand-new-unrelated.example.com/y"}, PolicyConfig(), cache, taint)
+
+            self.assertFalse(decision.allowed)  # would have been the clean-session free pass otherwise
 
 
 class TestHardcodedRestrictedPaths(unittest.TestCase):

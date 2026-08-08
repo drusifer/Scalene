@@ -107,12 +107,13 @@ For each resource (file path or URL) a call touches:
 
 | Situation | Result |
 |---|---|
-| Matches a rule, cache confirms clean, `mode: allow` | Proceeds. `sensitivity` escalates to the rule's level if higher than current. Bypasses the block-when-tainted gate below entirely — this is what onboarding + a rule is *for*. |
+| Matches a rule, cache confirms clean, `mode: allow` | Proceeds. `sensitivity`/`trust` escalate to the rule's declared level if higher than current. Bypasses the block-when-tainted gate below entirely — this is what onboarding + a rule is *for*. |
+| Matches a rule, `mode: allow`, but not yet independently confirmed clean (never scanned, or a scan is still running) | **Proceeds immediately too** — "trust but verify": you already made the trust call by writing the rule, so Scalene doesn't block waiting on the scan. Tags escalate the same way as the row above. A real background scan still runs; if it later comes back bad, your *next* tool call in the same session escalates `trust`/`sensitivity` to their most restrictive levels then (there's no daemon, so "the next call" is the earliest Scalene can notice). |
 | Cache confirms the resource is actually bad (real scan finding), or a matching rule's `mode` isn't `allow` | **Blocked**, unconditionally — a rule can declare intent, but it never overrides a real, validated bad finding. |
-| No matching rule, and the session is still clean (`trust: high`, `sensitivity: public`) | Proceeds — nothing sensitive is at risk yet. Afterward, `trust` drops to `low` (fail-safe: an unrecognized resource could be anything). |
-| No matching rule, and the session is already tainted | **Blocked** — no explicit clearance exists for this destination while risk is already present. |
+| No matching rule at all, and the session is still clean (`trust: high`, `sensitivity: public`) | Proceeds — nothing sensitive is at risk yet. Afterward, `trust` drops to `low` (fail-safe: an unrecognized resource could be anything). |
+| No matching rule at all, and the session is already tainted | **Blocked** — no explicit clearance exists for this destination while risk is already present. |
 
-Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session.
+Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session. See `docs/ARCHITECTURE.md` §15.2a for "trust but verify"'s full mechanics and its one honestly-stated limitation (a bad finding on a session's very last call never gets a chance to be noticed).
 
 Clearing a destination is always explicit and validated — one `scg onboard` call, covered above under [`scg onboard`](#scg-onboard), does both halves (a real scan, and declaring what to do with it) together. See [Getting Started](GETTING_STARTED.md) for a full worked example.
 
@@ -130,13 +131,22 @@ Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call
 
 ```yaml
 rules:
-  - tool: "WebFetch"                              # regex against the tool name (".*" = any)
-    pattern: "https://internal\\.example\\.com/.*" # regex against the resource's identity (file path or URL)
+  - tool: "WebFetch"                              # always regex against the tool name (".*" = any)
+    pattern: "https://internal\\.example\\.com/.*" # syntax depends on the scanner -- see below
     sensitivity: internal                           # public | internal | restricted
     mode: allow                                     # allow | block
     scanner: reputation                             # optional — inferred otherwise
     description: "Internal wiki — reviewed and trusted"
 ```
+
+**`pattern`'s syntax depends on which scanner ends up matching the resource — it's not uniformly regex:**
+
+| Scanner (resource kind) | `pattern` syntax | Example |
+|---|---|---|
+| `secrets` (file paths) | **gitignore syntax** (same as `.gitignore` — `pathspec`'s `GitIgnoreSpec`), *not* regex | `/home/you/project/**` matches the whole tree; a leading `!` negates |
+| `reputation` (URLs) | plain **regex** | `https://internal\.example\.com/.*` |
+
+The example above matches a URL, so it's correctly regex — a file-path rule would instead use a gitignore-shaped pattern (`scg monitor`'s Allow/Rules-edit forms fill in the right default for you automatically, based on the resource being matched). `pattern` is **not** validated at config-load time (unlike `tool`, which always is) — it can't be, since which syntax applies depends on which scanner is doing the matching, not something knowable from the rule alone. See `docs/ARCHITECTURE.md` §18.2 and `Scanner.match()`/`FileScanner.match()` in `src/scalene/scanner.py` for the authoritative behavior.
 
 **Trust vs. sensitivity are independent.** Trust answers "could this source cause the agent to do something malicious" (verified per exact resource — onboarding one path never vouches for a whole host). Sensitivity answers "what's the blast radius if something does go wrong," exactly three levels (`public`/`internal`/`restricted`), set per-rule.
 
@@ -160,7 +170,7 @@ Scalene is built to **fail safe** — an internal problem should degrade to bloc
 |---|---|
 | No `scalene_policy.yaml` at all | Nothing has been claimed — every unrecognized destination is subject to the block-when-tainted gate, same as an empty `rules:` list. |
 | `scalene_policy.yaml` exists but is malformed (invalid YAML, wrong types, unreadable) | Falls back to the same as a missing file, with a warning logged (`scalene.guard` logger) — **never crashes** `scalene-guard`. |
-| A rule's `tool`/`pattern` isn't a valid regex | Rejected at config-load time with a clear `PolicyConfigError`, not deep in the hot path on the next matching call. |
+| A rule's `tool` isn't a valid regex | Rejected at config-load time with a clear `PolicyConfigError`, not deep in the hot path on the next matching call. `pattern` is **not** validated this way — its syntax (gitignore vs. regex) depends on which scanner ends up matching it, not something knowable at load time; an invalid `pattern` just fails to match (fails safe), it doesn't reject the whole config. |
 | Malformed hook input (bad JSON on stdin) or an unrecognized hook event | Returns `{}` — an empty response, which Claude Code's hook contract treats as "allow, no changes" — the call proceeds unmodified rather than blocking your agent. |
 | A resource has never been scanned yet | Treated as unmatched for this call (see the access-control table above) — not an error, just "not yet verified." |
 | The scan cache store itself is corrupted or unwritable, or a scanner's own scan couldn't run at all | This is the one case that's genuinely fatal, not fail-safe: `scalene-guard` exits non-zero with a plain-language reason on stderr (never a raw traceback) — this means the scanning machinery itself is broken, not that a scan found something bad. |

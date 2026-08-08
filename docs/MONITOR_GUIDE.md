@@ -32,10 +32,13 @@ whatever you're actually doing.
 
 - **Session line** (top) — the current session's id, trust, and
   sensitivity tags, re-pointing automatically if a newer session starts.
-- **Queue** — one row per blocked tool call still awaiting your decision,
-  oldest first: which tool, how many resources it touched, what kind
-  (file/url), the block reason, and how long it's been waiting. `↑`/`↓` to
-  move, `Enter` to open a review — any row, not just the oldest.
+- **Queue** — most-recent-first: an **ID** you can refer to, the tool, the
+  specific resource (one row per target, labeled `(1 of 2)` etc. if a call
+  touched more than one), its kind (file/url), the block reason, how many
+  times an identical call has repeated (**Count**), and when it was last
+  seen. Repeated, byte-for-byte identical calls collapse into one entry
+  instead of piling up as separate rows. `↑`/`↓` to move, `Enter` to open
+  a review — any row, not just the top one.
 - **Status strip** (bottom, above the keybinding row) — one line, one
   clause per configured scanner: `secrets idle · reputation busy`. The
   same real idle/busy signal the hook's own scan cache reservations
@@ -44,6 +47,13 @@ whatever you're actually doing.
 When a call gets blocked, the window title picks up a live count (e.g.
 *"scg monitor — 2 pending reviews"*) and the terminal bell rings — you
 don't have to be staring at the screen to notice.
+
+**Don't have an opinion on an entry?** `s` dequeues just the row under the
+cursor — no rule written, no scan cache touched, it just stops showing up.
+`S` does the same for the *entire* queue at once, useful for clearing a
+backlog you don't want to work through one at a time; it asks you to press
+`S` a second time to confirm first (anything else cancels), since it's the
+one action in this screen that can affect everything at once.
 
 Press **`r`** any time to open the [Rules screen](#reordering-your-rules).
 
@@ -67,7 +77,24 @@ Pattern, the targets table's **Matches?** column updates live, so you can
 see exactly which targets a widened rule would cover *before* you commit
 to it — no more guessing and finding out after the fact. An in-progress
 edit that isn't valid yet (e.g. a half-typed regex) shows `—`, not a false
-`no`.
+`no`. Made a mistake while editing? `ctrl+z` undoes the last change to
+whichever field has focus, `ctrl+y` (or `ctrl+shift+z`) redoes it — each
+field keeps its own independent history, reset whenever you move to a
+different review.
+
+The full original call — the exact command Scalene saw — is shown above
+the targets table; it scrolls if it's long, so you can always read the
+whole thing before deciding.
+
+**Widening a file path to a wildcard doesn't require typing at all.** Below
+the Pattern field, a row of buttons — one per path segment
+(`/`, `home`, `you`, `project`, ...) — lets you click straight to the level
+you want: clicking `project` rewrites the pattern to cover everything under
+that directory, clicking the filename itself resets it back to an exact
+match. Prefer the keyboard? `alt+w` does the same thing one level at a
+time, widening a bit further with each press until it reaches the root.
+Both update the live **Matches?** column the same as typing would, and both
+feed the same undo/redo history above.
 
 Three actions, always visible:
 
@@ -130,6 +157,16 @@ rewrites the real policy file immediately and shows a confirmation
 else — reordering has real, immediate access-control consequences (a
 broad rule moved ahead of a specific one can make the specific one
 permanently unreachable), so the write is never silent.
+
+Made a mistake authoring a rule, or want to fix one by hand instead of
+deleting and re-onboarding? `e` opens the selected rule in an inline edit
+form (Tool, Pattern, Sensitivity, Mode, Trust, Description) pre-filled
+with its real current values — `Enter` saves and rewrites the policy file
+the same way move does, `Escape` closes the form without touching it.
+`d` deletes the selected rule outright; like `S` on the queue screen, it
+asks for a second `d` to confirm first (anything else cancels) — this is
+the one action on this screen that actually removes something rather than
+just repositioning or correcting it.
 
 Press **Escape** to return to the queue.
 

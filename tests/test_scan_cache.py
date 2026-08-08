@@ -191,6 +191,39 @@ class TestScanCacheFreshness(unittest.TestCase):
             target.unlink()
             self.assertFalse(cache.is_fresh(resource, entry))
 
+    def test_entry_cached_before_the_file_existed_is_fresh_while_it_still_does_not_exist(self):
+        # 2026-08-07 (direct user bug report): a Write's brand-new target,
+        # verified as "nothing to scan yet" (scanner.py's own correction --
+        # put() below correctly omits mtime since the file didn't exist at
+        # scan time) -- must stay fresh as long as nothing has actually
+        # changed (the file still doesn't exist), or Allow would never
+        # unlock for it.
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "does-not-exist-yet.txt"
+            self.assertFalse(target.exists())
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity=str(target), scanner_name="secrets")
+            cache.put(resource, ScanResult(label="public"))
+            entry = cache.get(resource)
+            self.assertIsNone(entry.mtime)
+
+            self.assertTrue(cache.is_fresh(resource, entry))
+
+    def test_entry_cached_before_the_file_existed_is_stale_once_it_is_actually_created(self):
+        # The flip side: once real content appears where there was none at
+        # scan time, the cached "nothing there" result must not be trusted
+        # as-is -- forces a real re-verification, same standard as any
+        # other changed file.
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "does-not-exist-yet.txt"
+            cache = ScanCache(Path(tmp) / "scan_cache.json")
+            resource = Resource(kind="file", identity=str(target), scanner_name="secrets")
+            cache.put(resource, ScanResult(label="public"))
+            entry = cache.get(resource)
+
+            target.write_text("real content, created after the cache entry")
+            self.assertFalse(cache.is_fresh(resource, entry))
+
 
 class TestRefreshIfNeeded(unittest.TestCase):
     def test_no_entry_returns_none_and_spawns_a_background_scan(self):

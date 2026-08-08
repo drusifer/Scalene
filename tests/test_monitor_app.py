@@ -9,15 +9,16 @@ its tests -- clearing a destination now always takes two explicit steps
 (a real scan, then a hand-authored rule), not one runnable command."""
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from textual.widgets import DataTable, Input, RadioButton, Static
 
-from scalene.monitor_app import MonitorApp, _NO_SESSIONS_MESSAGE, _format_kinds, _format_relative_time
+from scalene.monitor_app import MonitorApp, RulesScreen, _NO_SESSIONS_MESSAGE, _format_relative_time
 from scalene.monitor_data import ToolCallEvent
-from scalene.scanner import Resource
+from scalene.scanner import Resource, escape_gitignore_literal
 
 
 def _write_state(state_dir: Path, session_id: str, trust: str = "high", sensitivity: str = "public") -> None:
@@ -71,32 +72,6 @@ async def _open_review(pilot, app, row: int = 0) -> None:
     await pilot.press("enter")
     await pilot.pause()
 
-
-class TestFormatKinds(unittest.TestCase):
-    """docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue's Kind column.
-    `_event_tag`/`TestEventTag` (E16, STORY-1603) are retired along with the
-    full tagged call-stream panel they rendered -- STORY-1701's AC removes
-    it outright, not a replacement, so there is no successor test for it."""
-
-    def test_single_target_kind(self):
-        self.assertEqual(_format_kinds([Resource(kind="url", identity="https://x.example.com", scanner_name="reputation")]), "url")
-
-    def test_multiple_targets_same_kind_not_repeated(self):
-        targets = [
-            Resource(kind="file", identity="/a", scanner_name="secrets"),
-            Resource(kind="file", identity="/b", scanner_name="secrets"),
-        ]
-        self.assertEqual(_format_kinds(targets), "file")
-
-    def test_mixed_kinds_joined_and_sorted(self):
-        targets = [
-            Resource(kind="url", identity="https://x.example.com", scanner_name="reputation"),
-            Resource(kind="file", identity="/a", scanner_name="secrets"),
-        ]
-        self.assertEqual(_format_kinds(targets), "file, url")
-
-    def test_no_targets_is_empty_string_not_an_error(self):
-        self.assertEqual(_format_kinds([]), "")
 
 
 class TestFormatRelativeTime(unittest.TestCase):
@@ -235,8 +210,11 @@ class TestMonitorApp(unittest.IsolatedAsyncioTestCase):
             table = app.query_one("#queue", DataTable)
             self.assertEqual(table.row_count, 1)
             row = table.get_row_at(0)
-            self.assertEqual(row[0], "Bash")
-            self.assertEqual(row[3], "no validated, explicitly-allowed rule")
+            # ID, Tool, Resource, Kind, Reason, Count, Last Seen (sec23.2/23.3)
+            self.assertEqual(row[0], "1")
+            self.assertEqual(row[1], "Bash")
+            self.assertEqual(row[4], "no validated, explicitly-allowed rule")
+            self.assertEqual(row[5], "1")
 
     async def test_poll_data_after_teardown_does_not_raise(self):
         # Regression for a real, if rare, flake observed in this suite: the
@@ -725,6 +703,76 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
 
             self.assertFalse(allow_button.disabled)
 
+    async def test_verify_unlocks_allow_for_a_write_targeting_a_file_that_does_not_exist_yet(self):
+        # Direct user bug report (2026-08-07): pre_tool_use runs *before*
+        # the tool itself executes, so a real Write's target is identified
+        # and Verify-able while it still doesn't exist on disk yet -- there
+        # is nothing to scan, which is not the same claim as "the scanning
+        # machinery is broken." Before the fix, Verify silently swallowed a
+        # ScannerMachineryError for this exact case and Allow stayed
+        # disabled forever, with no way to ever allow creating a new file.
+        _write_state(self.state_dir, "s1", trust="low")
+        new_file_target = str(Path(self._tmp.name) / "brand-new-file-that-does-not-exist-yet.txt")
+        self.assertFalse(Path(new_file_target).exists())
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Write",
+                        "tool_input": {"file_path": new_file_target, "content": "hello"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=policy_path
+        )
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            allow_button = app.screen.query_one("#allow-btn")
+            self.assertTrue(allow_button.disabled)
+
+            await pilot.click(app.screen.query_one("#verify-btn"))
+            await pilot.pause()
+
+            self.assertFalse(allow_button.disabled)
+            targets_table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(targets_table.get_row_at(0)[3], "yes")  # Verified column
+
+            await pilot.click(allow_button)
+            await pilot.pause()
+            await pilot.pause()
+
+        self.assertTrue(policy_path.exists())
+        self.assertIn("mode: allow", policy_path.read_text())
+
+        # Trin's UAT: the actual point, proven end-to-end through the real
+        # hook -- the agent's retried Write (still to a file that doesn't
+        # exist -- Scalene never creates it, only the real tool does) now
+        # genuinely succeeds, same standard as every other Allow-then-retry
+        # test in this file.
+        from scalene.hook_adapter import pre_tool_use
+        from scalene.policy_config import PolicyConfig
+
+        self.assertFalse(Path(new_file_target).exists())
+        retry = pre_tool_use(
+            {"session_id": "s1", "tool_name": "Write", "tool_input": {"file_path": new_file_target, "content": "hello"}},
+            PolicyConfig.from_yaml(policy_path),
+            state_dir=self.state_dir,
+            cache_path=self.cache_path,
+            audit_log_path=self.audit_log,
+        )
+        self.assertEqual(retry["hookSpecificOutput"]["permissionDecision"], "allow")
+
     async def test_deny_resolves_the_review_and_writes_no_rule(self):
         _write_state(self.state_dir, "s1", trust="low")
         target_path = Path(self._tmp.name) / "clean.md"
@@ -1012,6 +1060,463 @@ class TestReviewQueueAndDashboard(unittest.IsolatedAsyncioTestCase):
             table = app.query_one("#queue", DataTable)
             self.assertEqual(table.row_count, 2)
             self.assertIn("s1", str(app.query_one("#session-line", Static).content))
+
+
+class TestReviewAggregation(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.1 (STORY-1801): repeated, byte-for-byte
+    identical block events collapse into one ReviewEntry with a stable id,
+    instead of one row per occurrence."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block_with_url(self, tool_name: str, url: str) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": tool_name,
+                        "tool_input": {"url": url},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+    async def test_identical_repeated_calls_aggregate_into_one_entry(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews), 1)
+            self.assertEqual(app._pending_reviews[0].count, 2)
+            self.assertEqual(app._pending_reviews[0].id, 1)
+
+    async def test_a_distinct_call_gets_its_own_id_not_merged(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        self._append_block_with_url("WebFetch", "https://also-evil.example.com/x")
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews), 2)
+            self.assertEqual([e.count for e in app._pending_reviews], [1, 1])
+            self.assertEqual({e.id for e in app._pending_reviews}, {1, 2})
+
+    async def test_a_later_occurrence_of_the_same_call_is_not_a_separate_target_identity(self):
+        # Same tool+input identified via a *different* wrapping Bash call is
+        # deliberately NOT aggregated -- exact tool_name+tool_input match
+        # only (sec23.1's rejected alternative: same identified target).
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "curl https://evil.example.com/x"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews), 2)
+
+    async def test_resolving_one_occurrence_leaves_the_others_pending_after_a_restart(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            entry = first_run._pending_reviews[0]
+            self.assertEqual(entry.count, 2)
+            first_offset = entry.events[0].log_offset
+
+        # Simulate a restart with only the first occurrence ever resolved --
+        # a real, interleaved review_resolved line, not an in-memory-only
+        # removal.
+        with self.audit_log.open("a") as f:
+            f.write(json.dumps({"event": "review_resolved", "resolved_offset": first_offset}) + "\n")
+
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(second_run._pending_reviews), 1)
+            self.assertEqual(second_run._pending_reviews[0].count, 1)
+
+    async def test_resolving_every_occurrence_removes_the_entry_after_a_restart(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            offsets = [e.log_offset for e in first_run._pending_reviews[0].events]
+
+        with self.audit_log.open("a") as f:
+            for offset in offsets:
+                f.write(json.dumps({"event": "review_resolved", "resolved_offset": offset}) + "\n")
+
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
+
+    async def test_allowing_an_aggregated_entry_resolves_every_occurrence_not_just_the_latest(self):
+        # STORY-1801's 4th AC: resolving an aggregate must mark *every*
+        # underlying occurrence resolved, or a restart's replay would
+        # resurrect whichever ones didn't get a marker.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+
+        first_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, first_run)
+            await pilot.click(first_run.screen.query_one("#deny-btn"))
+            await pilot.pause()
+            self.assertEqual(first_run._pending_reviews, [])
+
+        second_run = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
+
+
+class TestQueueDisplaySortAndMultiTargetRows(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.2/23.3 (STORY-1802/1803): most-recent-
+    first display order and one row per identified target on a multi-
+    target call."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block(self, tool_name: str, tool_input: dict, ts: float = 0.0) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": tool_name,
+                        "tool_input": tool_input,
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                        "ts": ts,
+                    }
+                )
+                + "\n"
+            )
+
+    async def test_multi_target_call_renders_as_one_row_per_target(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("Bash", {"command": "curl https://first.example.com/x https://second.example.com/y"})
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.poll_data()
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews[0].targets), 2)
+
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 2)
+            row0, row1 = table.get_row_at(0), table.get_row_at(1)
+            # Same entry (ID, Tool, Reason, Count) on both rows.
+            self.assertEqual(row0[0], row1[0])
+            self.assertEqual(row0[1], row1[1])
+            self.assertIn("(1 of 2)", row0[2])
+            self.assertIn("(2 of 2)", row1[2])
+            self.assertEqual(self._queue_rows_len(app), 2)
+
+            # Either row opens the same underlying review.
+            table.move_cursor(row=1)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(len(app.screen.query_one("#targets", DataTable).rows), 2)
+
+    def _queue_rows_len(self, app) -> int:
+        return len(app._queue_rows)
+
+    async def test_zero_target_call_renders_a_dash_not_a_crash(self):
+        # Trin's UAT (2026-08-07): no existing test covered the queue row
+        # for a block with no identified targets at all (e.g. a Bash
+        # command with nothing scanner-identifiable) -- refresh_queue()'s
+        # `n == 0` branch was previously exercised only in monitor_data.py's
+        # ReviewEntry-level tests, never through the real rendered table.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("Bash", {"command": "echo hi"})
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 1)
+            row = table.get_row_at(0)
+            self.assertEqual(row[2], "—")
+            self.assertEqual(row[3], "—")
+
+    async def test_queue_displays_most_recent_first(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://older.example.com/x"}, ts=1000.0)
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+
+            self._append_block("WebFetch", {"url": "https://newer.example.com/x"}, ts=2000.0)
+            app.poll_data()
+            await pilot.pause()
+
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 2)
+            # Newer entry (higher id, appended later) renders first.
+            self.assertEqual(table.get_row_at(0)[0], "2")
+            self.assertEqual(table.get_row_at(1)[0], "1")
+            # Storage order is untouched -- still append/FIFO order.
+            self.assertEqual([e.id for e in app._pending_reviews], [1, 2])
+
+    async def test_a_poll_tick_mid_review_does_not_change_the_open_reviews_entry(self):
+        # sec23.2: the display sort is recomputed fresh every refresh_queue()
+        # call, including from poll_data()'s own 0.5s timer while a
+        # ReviewScreen is open -- the open screen's entry/index must not
+        # silently change out from under the operator.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://original.example.com/x"}, ts=1000.0)
+
+        app = MonitorApp(state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path)
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+            review_screen = app.screen
+            original_entry = review_screen._entry
+            self.assertEqual(original_entry.targets[0].identity, "https://original.example.com/x")
+
+            # A brand-new, more-recent block arrives while the review is
+            # open -- sorts ahead of the original entry on display (higher
+            # ts), confirming this isn't a coincidental pass.
+            self._append_block("WebFetch", {"url": "https://newer.example.com/x"}, ts=2000.0)
+            app.poll_data()
+            await pilot.pause()
+
+            self.assertIs(app.screen, review_screen)
+            self.assertIs(review_screen._entry, original_entry)
+            self.assertEqual(review_screen._entry.targets[0].identity, "https://original.example.com/x")
+
+
+class TestSkipAndSkipAll(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.4 (STORY-1804): dequeue without writing a
+    rule or touching the scan cache; skip-all requires 2 consecutive "S"
+    presses, any other key in between cancels it."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block(self, tool_name: str, tool_input: dict) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": tool_name,
+                        "tool_input": tool_input,
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+    def _make_app(self) -> MonitorApp:
+        return MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+
+    async def test_skip_selected_dequeues_the_row_under_the_cursor(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            table = app.query_one("#queue", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("s")
+            await pilot.pause()
+
+            self.assertEqual(app._pending_reviews, [])
+            self.assertEqual(table.row_count, 0)
+
+    async def test_skip_writes_no_rule_and_touches_no_scan_cache(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            table = app.query_one("#queue", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("s")
+            await pilot.pause()
+
+            self.assertFalse(self.policy_path.exists())
+            self.assertFalse(self.cache_path.exists())
+
+    async def test_a_single_s_press_alone_does_not_skip_anything(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("S")
+            await pilot.pause()
+
+            self.assertEqual(len(app._pending_reviews), 1)
+            self.assertIn("Press S again", str(app.query_one("#queue-status", Static).content))
+
+    async def test_two_consecutive_s_presses_skip_everything(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://first.example.com/x"})
+        self._append_block("WebFetch", {"url": "https://second.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("S")
+            await pilot.press("S")
+            await pilot.pause()
+
+            self.assertEqual(app._pending_reviews, [])
+            self.assertIn("Skipped 2 reviews", str(app.query_one("#queue-status", Static).content))
+
+    async def test_any_other_key_between_the_two_s_presses_cancels_it(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("S")
+            await pilot.press("x")
+            await pilot.press("S")
+            await pilot.pause()
+
+            # The 2nd "S" re-armed (cancel reset it) rather than executing --
+            # still 1 pending, and the status shows the re-arm prompt again.
+            self.assertEqual(len(app._pending_reviews), 1)
+            self.assertIn("Press S again", str(app.query_one("#queue-status", Static).content))
+
+    async def test_pressing_s_all_with_an_empty_queue_is_a_no_op(self):
+        _write_state(self.state_dir, "s1")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("S")
+            await pilot.pause()
+            self.assertEqual(str(app.query_one("#queue-status", Static).content), "")
+
+    async def test_a_mouse_click_between_the_two_s_presses_cancels_it(self):
+        # Trin's UAT finding: on_key alone can't see a mouse click -- opening
+        # a review by clicking a row must cancel the arm too, the same as
+        # any other keyboard interruption.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await pilot.press("S")
+            await pilot.pause()
+            self.assertTrue(app._skip_all_armed)
+
+            # A bare click alone (no follow-up Enter keypress) already fires
+            # RowSelected in Textual's DataTable -- isolates this from
+            # on_key's own keyboard-based disarm path.
+            await pilot.click("#queue", offset=(2, 1))
+            await pilot.pause()
+
+            self.assertFalse(app._skip_all_armed)
+            self.assertEqual(str(app.query_one("#queue-status", Static).content), "")
+
+    async def test_skipped_entry_does_not_reappear_after_a_restart(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+        self._append_block("WebFetch", {"url": "https://evil.example.com/x"})
+
+        first_run = self._make_app()
+        async with first_run.run_test() as pilot:
+            first_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(first_run._pending_reviews[0].count, 2)
+            first_run.query_one("#queue", DataTable).move_cursor(row=0)
+            await pilot.press("s")
+            await pilot.pause()
+            self.assertEqual(first_run._pending_reviews, [])
+
+        second_run = self._make_app()
+        async with second_run.run_test() as pilot:
+            second_run.poll_data()
+            await pilot.pause()
+            self.assertEqual(second_run._pending_reviews, [])
 
 
 class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
@@ -1399,6 +1904,389 @@ class TestAllowFormEditableFieldsAndLayout(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(self.state_dir.resolve()), app.sub_title)
 
 
+class TestPatternFieldUndoRedo(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.6 (STORY-1806): ctrl+z/ctrl+y undo/redo
+    for the Tool/Pattern rule-editing fields -- confirmed Textual's own
+    Input widget has no built-in undo."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block_with_url(self, tool_name: str, url: str) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": tool_name,
+                        "tool_input": {"url": url},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+    async def _open_review_screen(self, pilot, app) -> None:
+        app.poll_data()
+        await pilot.pause()
+        await _open_review(pilot, app)
+
+    async def test_ctrl_z_with_no_input_focused_is_a_safe_no_op(self):
+        # Trin's UAT: focus could be on a Button/RadioSet (neither is an
+        # Input, neither is in _input_histories) -- must not crash.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            app.screen.query_one("#verify-btn").focus()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            # Nothing raised, and the untouched field's value is unaffected.
+            self.assertEqual(app.screen.query_one("#rule-pattern-input", Input).value, r"https://evil\.example\.com/x")
+
+    async def test_undo_restoring_the_pattern_field_recomputes_the_matches_column(self):
+        # The Matches? column (STORY-1704) must stay live-consistent even
+        # when the pattern field's value changes via undo, not just typing.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = "no-match-for-anything"
+            await pilot.pause()
+            targets_table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(targets_table.get_row_at(0)[4], "no")
+
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertEqual(targets_table.get_row_at(0)[4], "yes")
+
+    async def test_ctrl_z_undoes_the_last_edit_to_the_focused_field(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            default_value = pattern_input.value
+            pattern_input.focus()
+
+            pattern_input.value = "widened-once"
+            await pilot.pause()
+            pattern_input.value = "widened-twice"
+            await pilot.pause()
+
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, "widened-once")
+
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, default_value)
+
+            # At the floor -- one more undo is a no-op, not an error/crash.
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, default_value)
+
+    async def test_ctrl_y_redoes_after_an_undo(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+
+            pattern_input.value = "widened"
+            await pilot.pause()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertNotEqual(pattern_input.value, "widened")
+
+            await pilot.press("ctrl+y")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, "widened")
+
+    async def test_a_new_edit_after_undo_clears_the_redo_stack(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+
+            pattern_input.value = "first-edit"
+            await pilot.pause()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+
+            pattern_input.value = "a-different-edit"
+            await pilot.pause()
+            await pilot.press("ctrl+y")
+            await pilot.pause()
+            # Nothing to redo into -- the new edit invalidated it, standard
+            # undo/redo semantics.
+            self.assertEqual(pattern_input.value, "a-different-edit")
+
+    async def test_the_two_fields_have_independent_undo_history(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://evil.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            tool_input = app.screen.query_one("#rule-tool-input", Input)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+
+            pattern_input.value = "pattern-edit"
+            await pilot.pause()
+            tool_input.focus()
+            tool_input.value = "ToolEdit"
+            await pilot.pause()
+
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            # Undo while the Tool field is focused only affects Tool --
+            # the Pattern field's own edit is untouched.
+            self.assertEqual(pattern_input.value, "pattern-edit")
+            self.assertNotEqual(tool_input.value, "ToolEdit")
+
+    async def test_switching_entries_resets_undo_history(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_with_url("WebFetch", "https://first.example.com/x")
+        self._append_block_with_url("WebFetch", "https://second.example.com/x")
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test() as pilot:
+            await self._open_review_screen(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = "edited-on-first-entry"
+            await pilot.pause()
+
+            await pilot.click(app.screen.query_one("#next-btn"))
+            await pilot.pause()
+            second_entry_default = app.screen.query_one("#rule-pattern-input", Input).value
+
+            # Undo on the new entry must not reach back into the previous
+            # entry's edit -- there is nothing to undo into but its own
+            # freshly-seeded baseline.
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            await pilot.press("ctrl+z")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, second_entry_default)
+
+
+class TestPatternWidenAndBreadcrumbs(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.x (direct user request, 2026-08-07):
+    "hard to select text and type" a long path in the Pattern field --
+    alt+w progressively widens it to a directory-level wildcard from the
+    keyboard, and one clickable breadcrumb button per path segment does
+    the same from the mouse, jumping straight to that level."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _append_block_read(self, file_path: str) -> None:
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": file_path},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+
+    def _make_app(self) -> MonitorApp:
+        return MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+
+    async def test_breadcrumbs_render_one_button_per_path_segment(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/project/src/foo/bar.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+            crumbs = app.screen.query_one("#pattern-breadcrumbs")
+            labels = [str(b.label) for b in crumbs.query("Button")]
+            # Path("/home/user/project/src/foo/bar.py").parts
+            self.assertEqual(labels, ["/", "home", "user", "project", "src", "foo", "bar.py"])
+
+    async def test_breadcrumbs_are_empty_for_a_multi_target_call(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        with self.audit_log.open("a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "event": "block",
+                        "session_id": "s1",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "curl https://first.example.com/x https://second.example.com/x"},
+                        "reason": "blocked",
+                        "block_kind": "uncleared",
+                    }
+                )
+                + "\n"
+            )
+        app = self._make_app()
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+            crumbs = app.screen.query_one("#pattern-breadcrumbs")
+            self.assertEqual(len(crumbs.query("Button")), 0)
+
+    async def test_clicking_a_breadcrumb_widens_the_pattern_to_that_level(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/project/src/foo/bar.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            await pilot.click("#breadcrumb-4")  # "src" -- keep through src/, wildcard the rest
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/project/src") + "/**")
+
+    async def test_clicking_the_final_segment_resets_to_the_exact_literal_pattern(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/project/src/foo/bar.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            await pilot.click("#breadcrumb-4")
+            await pilot.pause()
+            await pilot.click("#breadcrumb-6")  # "bar.py" -- back to exact match
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/project/src/foo/bar.py"))
+
+    async def test_alt_w_progressively_widens_the_pattern(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/project/src/foo/bar.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            default_value = pattern_input.value
+
+            await pilot.press("alt+w")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/project/src/foo") + "/**")
+            self.assertNotEqual(pattern_input.value, default_value)
+
+            await pilot.press("alt+w")
+            await pilot.pause()
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/project/src") + "/**")
+
+    async def test_alt_w_stops_widening_at_the_root_boundary(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/a/b.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+
+            for _ in range(10):  # far more presses than there are segments
+                await pilot.press("alt+w")
+                await pilot.pause()
+
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/") + "/**")
+
+    async def test_widened_pattern_still_matches_the_target_live(self):
+        # The Matches? column (STORY-1704) must reflect the widened
+        # pattern too -- proves the produced gitignore pattern is actually
+        # a valid, matching rule, not just cosmetically plausible text.
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/project/src/foo/bar.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            await pilot.press("alt+w")
+            await pilot.pause()
+
+            targets_table = app.screen.query_one("#targets", DataTable)
+            self.assertEqual(targets_table.get_row_at(0)[4], "yes")
+
+    async def test_breadcrumbs_reset_when_switching_entries(self):
+        _write_state(self.state_dir, "s1", trust="low")
+        self._append_block_read("/home/user/first/a.py")
+        self._append_block_read("/home/user/second/deep/path/b.py")
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.poll_data()
+            await pilot.pause()
+            await _open_review(pilot, app)
+
+            await pilot.click(app.screen.query_one("#next-btn"))
+            await pilot.pause()
+
+            crumbs = app.screen.query_one("#pattern-breadcrumbs")
+            labels = [str(b.label) for b in crumbs.query("Button")]
+            self.assertEqual(labels, ["/", "home", "user", "second", "deep", "path", "b.py"])
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            self.assertEqual(pattern_input.value, escape_gitignore_literal("/home/user/second/deep/path/b.py"))
+
+
 class TestLiveMatchPreview(unittest.IsolatedAsyncioTestCase):
     """docs/ARCHITECTURE.md sec22.4 (STORY-1704): the "Matches?" column,
     recomputed live as the Pattern field is edited -- before any Allow
@@ -1584,6 +2472,14 @@ class TestRulesScreen(unittest.IsolatedAsyncioTestCase):
             await pilot.press("j")
             await pilot.pause()
 
+            # Smith's Gate (sec23.7): 'e'/'d' against an empty table must
+            # not crash either, same standard as k/j above.
+            await pilot.press("e")
+            await pilot.press("d")
+            await pilot.press("d")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, RulesScreen)
+
     async def test_a_single_rule_cannot_move_up_or_down(self):
         # Adversarial boundary case: with exactly 1 rule, both directions
         # are simultaneously the top and bottom boundary.
@@ -1746,6 +2642,197 @@ class TestRulesScreen(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after["hookSpecificOutput"]["permissionDecision"], "deny")
 
 
+class TestRulesScreenEditAndDelete(unittest.IsolatedAsyncioTestCase):
+    """docs/ARCHITECTURE.md sec23.7 (STORY-1807/1808): edit ('e') and
+    delete ('d') actions on the Rules screen. `policy_config.update_rule`/
+    `delete_rule` themselves are unit-tested directly in
+    test_policy_config.py (test pyramid) -- these integration tests cover
+    only what needs the real running screen: keybinding wiring, focus/
+    typing interaction, and the armed/confirm delete flow."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_rules(self, rules: list[dict]) -> None:
+        import yaml
+
+        self.policy_path.write_text(yaml.safe_dump({"rules": rules}, sort_keys=False, default_flow_style=False))
+
+    def _make_app(self) -> MonitorApp:
+        return MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+
+    async def test_e_opens_the_edit_form_prefilled_with_the_real_rule_values(self):
+        self._write_rules(
+            [{"tool": "Bash", "pattern": "a", "sensitivity": "restricted", "mode": "block", "trust": "low", "description": "real"}]
+        )
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            self.assertIn("visible", app.screen.query_one("#edit-form").classes)
+            self.assertEqual(app.screen.query_one("#edit-tool-input", Input).value, "Bash")
+            self.assertEqual(app.screen.query_one("#edit-pattern-input", Input).value, "a")
+            self.assertEqual(app.screen.query_one("#edit-description-input", Input).value, "real")
+
+    async def test_saving_an_edit_writes_the_real_file_and_shows_confirmation(self):
+        self._write_rules([{"tool": ".*", "pattern": "old", "sensitivity": "public", "mode": "allow"}])
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#edit-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = "new-pattern"
+            await pilot.press("enter")
+            await pilot.pause()
+
+            self.assertNotIn("visible", app.screen.query_one("#edit-form").classes)
+            self.assertIn("Saved rule #1", str(app.screen.query_one("#rule-confirm", Static).content))
+            self.assertEqual(app.screen.query_one("#rules", DataTable).get_row_at(0)[2], "new-pattern")
+
+            import yaml
+
+            self.assertEqual(yaml.safe_load(self.policy_path.read_text())["rules"][0]["pattern"], "new-pattern")
+
+    async def test_escape_while_editing_closes_the_form_without_writing(self):
+        self._write_rules([{"tool": ".*", "pattern": "untouched", "sensitivity": "public", "mode": "allow"}])
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#edit-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = "would-have-changed"
+            await pilot.press("escape")
+            await pilot.pause()
+
+            # First Escape closes the form, not the whole screen.
+            self.assertNotIn("visible", app.screen.query_one("#edit-form").classes)
+            self.assertIsInstance(app.screen, RulesScreen)
+            import yaml
+
+            self.assertEqual(yaml.safe_load(self.policy_path.read_text())["rules"][0]["pattern"], "untouched")
+
+    async def test_an_invalid_edit_shows_an_error_and_does_not_write(self):
+        self._write_rules([{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            tool_input = app.screen.query_one("#edit-tool-input", Input)
+            tool_input.focus()
+            tool_input.value = "["  # invalid regex
+            await pilot.press("enter")
+            await pilot.pause()
+
+            self.assertNotEqual(str(app.screen.query_one("#edit-error", Static).content), "")
+            self.assertIn("visible", app.screen.query_one("#edit-form").classes)  # still open
+            import yaml
+
+            self.assertEqual(yaml.safe_load(self.policy_path.read_text())["rules"][0]["tool"], ".*")
+
+    async def test_typing_letters_that_are_also_binding_keys_types_them_instead_of_triggering_the_binding(self):
+        # Real risk this screen didn't have before adding Input fields:
+        # 'e'/'d'/'k'/'j' are all single-letter bindings here -- typing a
+        # pattern containing them (e.g. "database") must type the letters,
+        # not fire edit/delete/move while the field has focus.
+        self._write_rules([{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+
+            pattern_input = app.screen.query_one("#edit-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = ""
+            await pilot.press("d", "a", "t", "a", "b", "a", "s", "e")
+            await pilot.pause()
+
+            self.assertEqual(pattern_input.value, "database")
+            # Still just the one open form, no rule deleted/re-edited.
+            self.assertIn("visible", app.screen.query_one("#edit-form").classes)
+            self.assertEqual(app.screen.query_one("#rules", DataTable).row_count, 1)
+
+    async def test_delete_requires_two_consecutive_d_presses_on_the_same_row(self):
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+            ]
+        )
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("d")
+            await pilot.pause()
+            self.assertEqual(table.row_count, 2)  # first press only arms
+            self.assertIn("Press d again", str(app.screen.query_one("#rule-confirm", Static).content))
+
+            await pilot.press("d")
+            await pilot.pause()
+            self.assertEqual(table.row_count, 1)
+            self.assertEqual(table.get_row_at(0)[2], "b")
+            self.assertIn("Deleted rule #1", str(app.screen.query_one("#rule-confirm", Static).content))
+
+    async def test_navigating_between_the_two_d_presses_cancels_delete(self):
+        self._write_rules(
+            [
+                {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+            ]
+        )
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            table = app.screen.query_one("#rules", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("d")
+            await pilot.pause()
+
+            table.move_cursor(row=1)
+            await pilot.pause()
+            await pilot.press("d")
+            await pilot.pause()
+
+            # Cursor-move disarmed the first arm -- this "d" re-arms on row
+            # 1 instead of deleting row 0.
+            self.assertEqual(table.row_count, 2)
+            self.assertIn("Press d again", str(app.screen.query_one("#rule-confirm", Static).content))
+
+
 class TestE17EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
     """Smith's sprint-close end-to-end test (`*user test E17`) — the full
     queue-first redesign exercised as one continuous real scenario through
@@ -1812,7 +2899,7 @@ class TestE17EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             self.assertIn("1 pending review", app.title)
             queue = app.query_one("#queue", DataTable)
             self.assertEqual(queue.row_count, 1)
-            self.assertEqual(queue.get_row_at(0)[0], "Read")
+            self.assertEqual(queue.get_row_at(0)[1], "Read")
 
             # STORY-1701: Enter on the queue row opens the real blocked call.
             queue.move_cursor(row=0)
@@ -1913,6 +3000,162 @@ class TestE17EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
             app2.poll_data()
             await pilot.pause()
             self.assertEqual(app2.query_one("#queue", DataTable).row_count, 0)
+
+
+class TestE18EndToEndUserJourney(unittest.IsolatedAsyncioTestCase):
+    """Smith's sprint-close end-to-end test (`*user test E18`) — the
+    review-queue overhaul exercised as one continuous real scenario, real
+    binaries/functions throughout. Per-feature behavior is already covered
+    by focused unit/integration tests per phase (test pyramid); this test
+    covers only what a single continuous session proves that isolated
+    tests can't: aggregation + skip + multi-target rows all coexisting in
+    one real queue, and a Rules-screen edit/delete each verified against a
+    real retried `pre_tool_use` call, not just the written YAML."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name) / "state"
+        self.state_dir.mkdir()
+        self.audit_log = Path(self._tmp.name) / "audit.log"
+        self.cache_path = Path(self._tmp.name) / "scan_cache.json"
+        self.policy_path = Path(self._tmp.name) / "scalene_policy.yaml"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    async def test_aggregation_skip_multi_target_and_rules_edit_delete_in_one_session(self):
+        from scalene.hook_adapter import pre_tool_use
+        from scalene.policy_config import PolicyConfig
+
+        _write_state(self.state_dir, "s1", trust="low")
+
+        noisy_target = str(Path(self._tmp.name) / "noisy.env")
+        Path(noisy_target).write_text("x")
+        first_url = "https://first.example.com/x"
+        second_url = "https://second.example.com/x"
+
+        # Same exact call, blocked twice -- must aggregate to one entry.
+        for _ in range(2):
+            pre_tool_use(
+                {"session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": noisy_target}},
+                PolicyConfig(),
+                state_dir=self.state_dir,
+                cache_path=self.cache_path,
+                audit_log_path=self.audit_log,
+            )
+        # A distinct multi-target call.
+        pre_tool_use(
+            {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url} {second_url}"}},
+            PolicyConfig(),
+            state_dir=self.state_dir,
+            cache_path=self.cache_path,
+            audit_log_path=self.audit_log,
+        )
+
+        app = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app.run_test(size=(120, 50)) as pilot:
+            app.poll_data()
+            await pilot.pause()
+
+            # STORY-1801: 2 identical Reads collapsed into 1 entry, count 2.
+            self.assertEqual(len(app._pending_reviews), 2)
+            noisy_entry = next(e for e in app._pending_reviews if e.event.tool_name == "Read")
+            self.assertEqual(noisy_entry.count, 2)
+
+            # STORY-1803: the Bash call's 2 targets render as 2 rows.
+            table = app.query_one("#queue", DataTable)
+            self.assertEqual(table.row_count, 3)  # 1 (Read, aggregated) + 2 (Bash targets)
+
+            # STORY-1804: skip the noisy aggregated entry -- gone, no rule.
+            noisy_row = next(i for i in range(table.row_count) if table.get_row_at(i)[1] == "Read")
+            table.move_cursor(row=noisy_row)
+            await pilot.press("s")
+            await pilot.pause()
+            self.assertEqual(len(app._pending_reviews), 1)
+            self.assertFalse(self.policy_path.exists())
+
+            # Allow the Bash/URL call so there's a real rule to edit next.
+            table = app.query_one("#queue", DataTable)
+            table.move_cursor(row=0)
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.click(app.screen.query_one("#verify-btn"))
+            await pilot.pause()
+            pattern_input = app.screen.query_one("#rule-pattern-input", Input)
+            pattern_input.focus()
+            pattern_input.value = re.escape(first_url)  # one shared rule for both targets
+            await pilot.click(app.screen.query_one("#allow-btn"))
+            await pilot.pause()
+            await pilot.pause()
+
+        self.assertTrue(self.policy_path.exists())
+
+        # Real retry: now allowed.
+        retry_allowed = pre_tool_use(
+            {"session_id": "s2", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url}"}},
+            PolicyConfig.from_yaml(self.policy_path),
+            state_dir=self.state_dir,
+            cache_path=self.cache_path,
+            audit_log_path=self.audit_log,
+        )
+        self.assertEqual(retry_allowed["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        # STORY-1807: edit the just-written rule's pattern away from
+        # first_url -- a real retry of the same call must go back to
+        # blocked, proving the edit took effect through the real hook, not
+        # just in the written YAML.
+        app2 = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app2.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app2.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("e")
+            await pilot.pause()
+            edit_pattern = app2.screen.query_one("#edit-pattern-input", Input)
+            edit_pattern.focus()
+            edit_pattern.value = re.escape("https://totally-different.example.com/x")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIn("Saved rule #1", str(app2.screen.query_one("#rule-confirm", Static).content))
+
+        # Trin's UAT lesson from the update_rule/delete_rule unit tests
+        # (sec23.7): a *clean* session's first touch of an unmatched
+        # resource gets decide_access's own fail-safe free pass regardless
+        # of rule state, so proving the edit actually took effect needs an
+        # already-tainted session, same as this file's own established
+        # precedent for a real deterministic block.
+        _write_state(self.state_dir, "s3", trust="low")
+        retry_after_edit = pre_tool_use(
+            {"session_id": "s3", "tool_name": "Bash", "tool_input": {"command": f"curl {first_url}"}},
+            PolicyConfig.from_yaml(self.policy_path),
+            state_dir=self.state_dir,
+            cache_path=self.cache_path,
+            audit_log_path=self.audit_log,
+        )
+        self.assertEqual(retry_after_edit["hookSpecificOutput"]["permissionDecision"], "deny")
+
+        # STORY-1808: delete the rule outright -- confirmed via the Rules
+        # screen showing 0 rules afterward (the edited pattern no longer
+        # matches anything in this test anyway; the real point already
+        # proven is the edit's real hook effect above).
+        app3 = MonitorApp(
+            state_dir=self.state_dir, audit_log_path=self.audit_log, cache_path=self.cache_path, policy_path=self.policy_path
+        )
+        async with app3.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            app3.screen.query_one("#rules", DataTable).move_cursor(row=0)
+            await pilot.press("d")
+            await pilot.press("d")
+            await pilot.pause()
+            self.assertIn("visible", app3.screen.query_one("#no-rules").classes)
+
+        data = PolicyConfig.from_yaml(self.policy_path)
+        self.assertEqual(data.rules, ())
 
 
 if __name__ == "__main__":

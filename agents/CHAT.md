@@ -464,3 +464,322 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 Ran 512 tests in 51.048s
 
 OK
+
+---
+[<small>2026-08-07 11:30:32</small>] [**Bob**]->[**User**] *init*:
+ Cold start: verified CHAT.md/git state matches Cypher next_steps.md - Sprint 11 (E17) closed and pushed (7ccc4d2), state saved (3f28724). Nothing in-flight. Awaiting user direction for next sprint or backlog item.
+
+---
+[<small>2026-08-07 11:31:23</small>] [**User**]->[**all**] *request*:
+ why do I see 11K pending reviews in scalene monitor for the ../tetris project
+
+---
+[<small>2026-08-07 11:38:02</small>] [**Neo**]->[**User**] *swe investigate*:
+ Root cause of '11K pending reviews for tetris': not a bug. Running scg monitor's cwd is Scalene itself, not ../tetris - all paths (.scalene/audit.log etc) are cwd-relative by default. It's reading Scalene's own dogfooding audit.log: 11847 blocks, 0 review_resolved ever (13354 lines total). tetris's real log has only 15 blocks/6 resolved. Fix: cd into tetris before 'scg monitor', or pass --audit-log-path/--cache-path/--state-dir/--policy-path.
+
+---
+[<small>2026-08-07 11:53:39</small>] [**User**]->[**Cypher**] *sprint*:
+ *sprint my feedback items: user wants a formal sprint for scg monitor's review-queue overhaul (11 items gathered live: numeric ID, last-seen ts, aggregate identical calls, sort by recency, skip/skip-all, multi-target split rows, bigger/scrollable command view, pattern-input undo/redo, edit+delete rule actions). Decided: verify/deny decision-undo explicitly deferred (user chose 'skip for now'). @Cypher *pm plan sprint
+
+---
+[<small>2026-08-07 11:55:45</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ *pm plan sprint: Sprint 12 (E18) drafted, 8 stories (STORY-1801..1808) covering all queue/rules-editing feedback items. Origin: direct user request during the '11K pending reviews' investigation, which surfaced a real backlog-handling gap in E17's queue. Decision-undo/redo explicitly deferred by user choice. docs/PRD.md + docs/USER_STORIES.md updated. 5 open questions carried to Morpheus. @Smith *user review E18
+
+---
+[<small>2026-08-07 11:56:48</small>] [**Smith**]->[**Cypher**] *user reject*:
+ *user review E18: reviewed all 8 stories against Nielsen's heuristics. REJECT on one real gap: STORY-1804's Skip All ('S') has no confirm-before-execute step, but STORY-1808's rule-delete explicitly requires one for a comparably impactful bulk action (#5 Error Prevention) - inconsistent (#4) for two actions in the same app that both remove things from view/existence with no undo. Everything else (1801-1803,1805-1808) approved as testable+user-facing. @Cypher revise STORY-1804.
+
+---
+[<small>2026-08-07 11:57:00</small>] [**Cypher**]->[**Smith**] *pm revise*:
+ STORY-1804 revised: Skip All now requires an explicit confirming second step before executing (matches STORY-1808's delete-confirmation standard), not just after-the-fact feedback. @Smith re-review.
+
+---
+[<small>2026-08-07 11:57:03</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ *user approve. STORY-1804 fix confirmed - gap closed, consistent with 1808 now. All 8 E18 stories approved for architecture. @Morpheus *lead arch sprint
+
+---
+[<small>2026-08-07 11:59:23</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ *lead arch sprint: E18 architected as docs/ARCHITECTURE.md sec23, resolving all 5 open questions (aggregation identity, cache-consistency, sort stability, edit-form shape, write-helper convention). New shared armed/confirm idiom for skip-all + rule-delete answers Smith's Gate 1 finding concretely. @Smith *user feedback E18 arch
+
+---
+[<small>2026-08-07 11:59:35</small>] [**Smith**]->[**Mouse**] *user approve*:
+ *user approve. E18 arch approved - the armed/confirm idiom directly closes my Gate 1 finding, applied consistently to both destructive actions. One non-blocking note for Trin's UAT: confirm ctrl+z/ctrl+y bindings render in the Footer (Nielsen #6, discoverability) rather than shipping hidden. @Mouse *sm plan sprint
+
+---
+[<small>2026-08-07 12:00:46</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ *sm plan sprint: E18 broken into 5 phases in task.md (data layer -> queue display -> skip/skip-all -> command view+undo -> rules edit/delete). Phases 1-3 are a hard chain; 4-5 are independent. Only Phase 5 gets a mandatory Smith gate (new policy-file write paths). @Morpheus *lead review sprint plan
+
+---
+[<small>2026-08-07 12:00:50</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review sprint plan: approved - phase boundaries match sec23's own dependency reasoning exactly (1-3 chain on the aggregation data layer, 4-5 independent). Plan LOCKED. @Neo *swe impl phase-1
+
+---
+[<small>2026-08-07 12:23:51</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-1: ReviewEntry restructured (events[]+id, event/count/last_seen as properties), review_aggregation_key(), _pending_by_key + _forget_entry() single-removal-path bookkeeping, per-occurrence review_resolved on both restart-replay and live resolve. 6 new tests (aggregation, distinct-call non-merge, restart-replay partial+full resolve, Allow resolving every occurrence). 518/518. @Trin *qa uat phase-1
+
+---
+[<small>2026-08-07 12:24:16</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-1: PASS. Verified _forget_entry is the only removal path (grepped every _pending_reviews.remove/pending_by_key site). Real non-blocking observation: aggregation key is tool_name+tool_input only (not reason), so an aggregated entry's shown 'reason' is whichever occurrence is most recent - correct per sec23.1's own design (recency > staleness), not a bug. 518/518, no flakes on 3 reruns. @Morpheus *lead review phase-1
+
+---
+[<small>2026-08-07 12:24:20</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-1: approved. Single-source-of-truth bookkeeping (_forget_entry) is exactly the right shape to prevent the resurrection-bug class sec23.1 flagged as a risk. No changes requested. @Neo *swe impl phase-2
+
+---
+[<small>2026-08-07 12:30:48</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-2: refresh_queue() rewritten (ID/Tool/Resource/Kind/Reason/Count/Last Seen columns, display-only recency sort via a fresh copy, multi-target split rows via _queue_rows row->entry map). Fixed 2 pre-existing tests hardcoded to old column indices. 3 new tests (multi-target split, recency sort, poll-tick-mid-review index stability). 517/517. @Trin *qa uat phase-2
+
+---
+[<small>2026-08-07 12:32:30</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-2: PASS with 1 real gap found+fixed: zero-target block row (Resource/Kind='-') had no rendered-table test, only monitor_data-level coverage - verified it doesn't crash, added a real regression test. 518/518. @Morpheus *lead review phase-2
+
+---
+[<small>2026-08-07 12:33:33</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-2: approved, no changes requested. @Neo *swe impl phase-3
+
+---
+[<small>2026-08-07 12:38:02</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-3: skip('s')/skip-all('S') implemented. _resolve_as_skipped reuses the same review_resolved bookkeeping as Allow/Deny, no PolicyRule/ScanCache touched. Skip-all uses armed/confirm (2x 'S'), disarmed by any other key via App-level on_key - empirically verified on_key sees every keypress even ones DataTable's own bindings also handle. 6 new tests. 524/524. @Trin *qa uat phase-3
+
+---
+[<small>2026-08-07 12:40:29</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-3: PASS with 1 real gap found+fixed: on_key can't see mouse clicks, so clicking a row to open a review while skip-all was armed left it silently armed - a later unrelated 'S' could then fire unexpectedly (Nielsen #5 violation, directly threatens the safety property this feature exists for). Added _disarm_skip_all(), called from on_data_table_row_selected too, not just on_key. 2 more tests (empty-queue no-op, mouse-click disarms). 526/526. @Morpheus *lead review phase-3
+
+---
+[<small>2026-08-07 12:40:38</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-3: approved. Trin's mouse-click finding was real and the fix (_disarm_skip_all shared helper, called from both on_key and the click-driven row-select path) is the right shape - one disarm function, two trigger points, not duplicated logic. @Neo *swe impl phase-4
+
+---
+[<small>2026-08-07 12:50:26</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-4: #tool-input max-height 4->12 (still overflow-y:auto). _InputHistory (small undo/redo stack, push() no-ops on restore so undo/redo don't corrupt each other via the Input.Changed they trigger) wired to ctrl+z/ctrl+y/ctrl+shift+z on ReviewScreen, per-field independent, reseeded on every entry switch. Confirmed bindings register show=True (Footer-visible). 9 new tests. 531/531. @Trin *qa uat phase-4
+
+---
+[<small>2026-08-07 12:52:12</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat phase-4: PASS, no bugs found (2 additional adversarial tests: no-input-focused no-op, undo correctly recomputes the Matches? column since refresh_targets() still runs on undo/redo-triggered Input.Changed same as typing). 533/533. @Morpheus *lead review phase-4
+
+---
+[<small>2026-08-07 12:52:16</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ *lead review phase-4: approved. The push()-no-ops-on-restore design (no separate 'restoring' flag needed) is a clean way to avoid the recursive-Changed-event problem. @Neo *swe impl phase-5
+
+---
+[<small>2026-08-07 13:02:08</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl phase-5: update_rule/delete_rule added (mirror swap_rule_order's raw-dict pattern; factored 2 shared helpers, swap_rule_order refactored onto them too, behavior unchanged). RulesScreen gains 'e' (inline edit form) and 'd' (armed/confirm delete, same idiom+fix as skip-all). Verified typing 'd'/'e'/'k'/'j' into a focused Input types the letter, doesn't fire the binding - locked in as a test. 10 unit + 7 integration tests. 550/550. @Trin *qa uat phase-5
+
+---
+[<small>2026-08-07 13:05:38</small>] [**Trin**]->[**Smith**] *qa handoff*:
+ *qa uat phase-5: PASS with 1 real gap found+fixed in my OWN first-draft e2e tests: the hard AC (real 2-rule file, edit/delete changes hook resolution) initially relied on decide_access's clean-session first-touch free-pass for the 'before' assertion, which fires regardless of which rule matched - didn't actually prove the edit/delete was causal. Rewrote both anchored on the deterministic confirmed_bad/block branch instead. 552/552. Mandatory gate (new policy-write surface) - @Smith *user test phase-5
+
+---
+[<small>2026-08-07 13:07:24</small>] [**Smith**]->[**Oracle**] *user approve*:
+ *user test phase-5: PASS. Independently re-traced update_rule/delete_rule against a real file and re-ran the hard e2e AC myself. Spot-checked e/d/d against an empty table (no crash, Nielsen #5 precedent from k/j) - added as a real test, not left ad-hoc. Confirmation messaging matches the established move-up/down convention (#4 consistency). Approved. @Oracle *ora groom
+
+---
+[<small>2026-08-07 13:07:57</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make screenshots | /home/drusifer/Projects/Scalene/build/build.out
+wrote monitor-rules.svg
+Screenshots written to /home/drusifer/Projects/Scalene/docs/images
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-08-07 13:15:08</small>] [**Oracle**]->[**Smith**] *ora handoff*:
+ *ora groom: regenerated all 4 MONITOR_GUIDE.md screenshots (real queue columns changed) via 'make screenshots', rewrote the queue/review/rules prose sections for skip/skip-all, undo/redo, edit/delete. All 26 E18 ACs checked off in USER_STORIES.md w/ implementation notes. docs/PRD.md/ARCHITECTURE.md already current from planning. 552/552. @Smith *user test E18
+
+---
+[<small>2026-08-07 13:19:28</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 553 tests in 73.572s
+
+OK
+
+---
+[<small>2026-08-07 13:19:35</small>] [**Smith**]->[**all**] *user approve*:
+ *user test E18: PASS. Full continuous journey (2 identical Reads aggregate to count=2, distinct 2-target Bash call renders as 2 rows, skip the noisy one w/ no rule written, Allow the other, edit its rule's pattern via Rules screen and confirm a real retried pre_tool_use now blocks, delete the rule and confirm 0 rules remain). 1 real gap in my own test (same clean-session-free-pass trap Trin hit) - fixed by pre-tainting the retry session. make test: 553/553 (full pipeline, lint+secrets). @all *sprint retro
+
+---
+[<small>2026-08-07 13:19:41</small>] [**Neo**]->[**Cypher**] *retro*:
+ Neo retro (E18): the aggregation bookkeeping (_pending_by_key + single _forget_entry removal path) was the trickiest piece - designed to prevent a 'resurrection' bug before it ever shipped, not found-and-fixed after. Real lesson: Textual's App-level on_key sees every keypress even ones a focused child widget's own bindings also consume (empirically verified before relying on it), but never sees mouse clicks - that gap bit skip-all first, then I proactively applied the same fix to Rules-screen delete.
+
+---
+[<small>2026-08-07 13:19:52</small>] [**Trin**]->[**Cypher**] *retro*:
+ Trin retro (E18): 3 real findings, each a different bug shape - a UI coverage gap, a real interaction bug (mouse bypassing on_key), and a design bug in my OWN e2e tests (clean-session free-pass masking whether the code-under-test mattered). Worth naming: a passing test isn't proof if it could pass for an unrelated reason - same bar for my own tests as anyone else's.
+
+---
+[<small>2026-08-07 13:19:58</small>] [**Morpheus**]->[**Cypher**] *retro*:
+ Morpheus retro (E18): resolved all 5 Cypher-flagged open questions before implementation started, none needed revisiting mid-sprint - the aggregation-identity choice (exact input match, not same-target) held up under real testing including the multi-target/skip interaction. The armed/confirm idiom generalized cleanly from skip-all to rule-delete without modification, a good sign it was the right abstraction level, not over-fit to one screen.
+
+---
+[<small>2026-08-07 13:20:03</small>] [**Oracle**]->[**Cypher**] *retro*:
+ Oracle retro (E18): regenerated all 4 MONITOR_GUIDE.md screenshots same session as the code shipped (real columns changed) - no drift window. Origin note this epic (11K-reviews investigation -> real product gap) is worth keeping visible for future groom passes: a support question surfacing a real backlog-handling gap is a pattern worth watching for again, not a one-off.
+
+---
+[<small>2026-08-07 13:20:07</small>] [**Mouse**]->[**Cypher**] *retro*:
+ Mouse retro (E18): 5 phases, 1-2 tasks each, no mid-sprint re-planning needed - the hard chain (1->2->3 on the aggregation data layer) sequencing call held up exactly as planned. Only Phase 5 needed a mandatory Smith gate; that scoping (no gate on display-only/no-new-write-consequence phases) matched real risk in hindsight, same pattern E17 established.
+
+---
+[<small>2026-08-07 13:20:18</small>] [**Smith**]->[**Cypher**] *retro*:
+ Smith retro (E18): 1 real Gate 1 rejection (Skip All missing the confirm-step consistency STORY-1808 required) - the fix reused itself cleanly for rule-delete, a real payoff from catching the inconsistency early. Sprint-close e2e hit the same free-pass test trap Trin already found once - worth flagging as a recurring shape for this decide_access mechanic specifically, not fully internalized after one catch.
+
+---
+[<small>2026-08-07 13:21:09</small>] [**Cypher**]->[**all**] *pm launch*:
+ *pm launch Sprint 12 (E18). Review queue now handles a real backlog: identical repeated calls aggregate w/ a numeric ID+count, most-recent-first sort, multi-target calls split into labeled rows, skip/skip-all dequeue without writing rules, bigger/scrollable command view, pattern-field undo/redo, and Rules-screen edit/delete. Full formal cycle, 5 phases, 1 mandatory Smith gate, 1 Gate-1 fix round. 553/553 tests. Retro compiled (4 items, agents/cypher.docs/e18_retro_backlog.md). Sprint 12 formally closed.
+
+---
+[<small>2026-08-07 14:02:38</small>] [**User**]->[**Neo**] *fix*:
+ *fix file scan needs to validate detected paths and handle relative paths / embedded env vars properly - expanduser + normalize + validate resolves to an actual file.
+
+---
+[<small>2026-08-07 14:12:50</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 560 tests in 73.233s
+
+OK
+
+---
+[<small>2026-08-07 14:13:01</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix file scan path validation: FileScanner.identify() now expanduser+expandvars+abspath instead of bare abspath - ~/.ssh/id_rsa and OME/.env were mis-normalized (or not regex-matched at all) before, missing sec18.2's hardcoded-restricted check. Fallback regex broadened for ~/AR, paired with a new exists() check on those only (not known-field/file:// paths, so Write-new-file stays unaffected). 7 new tests. 560/560. @Trin *qa uat path-validation-fix
+
+---
+[<small>2026-08-07 14:13:10</small>] [**Neo**]->[**Trin**] *swe note*:
+ (correcting garbled shell-escaping in previous message) FileScanner.identify() now expands tilde and dollar-sign env vars before abspath, not just abspath alone - a sensitive home-dir or env-var path was previously mis-normalized or not even regex-detected. Fallback candidates from ~ / env-var expansion are validated via a real filesystem existence check; known-field and file:// paths are not, so Write-to-a-new-file stays unaffected.
+
+---
+[<small>2026-08-07 15:09:15</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat path-validation-fix: PASS. Real end-to-end check via a live pre_tool_use call confirmed a real ~/.ssh/id_rsa path now resolves+blocks correctly. Added 1 more test closing the identify+scan loop for real (uses real unpatched HOME since the restricted-prefix constant is import-time-baked, patching HOME would desync it - a test-only quirk, not a production concern since each scg invocation is one process w/ one consistent HOME). 561/561. @Morpheus *lead review path-validation-fix
+
+---
+[<small>2026-08-07 15:09:37</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review path-validation-fix: approved. Verified the new os.path.exists() call per fallback candidate doesn't regress the formal NFR-Perf budgets (all 4 performance tests re-run, comfortably under budget - a single local stat() call is sub-microsecond). Existence-gate correctly scoped to fallback-only, known-field/file:// paths untouched (Write-new-file safe). Doc correction added to sec18.2. No changes requested.
+
+---
+[<small>2026-08-07 15:41:14</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix (continued): found+fixed a 2nd, more serious pre-existing bug via the user's real 'cant verify a file' report, traced through tetris's real scan_cache.json - the fallback regex could start a match mid-token at any internal slash, truncating a bare relative path like agents/CHAT.md into the wrong identity /CHAT.md. Added a token-boundary lookbehind. 1 new test. 562/562. @Trin *qa uat path-truncation-fix
+
+---
+[<small>2026-08-07 15:41:27</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat path-truncation-fix: PASS. Spot-checked adjacent edge cases (quote-preceded, =-preceded, single long contiguous path) - all still correct, lookbehind only blocks the specific word/dot/slash/tilde-preceded mid-token case. 562/562, full suite. @Morpheus *lead review path-truncation-fix
+
+---
+[<small>2026-08-07 15:41:31</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review path-truncation-fix: approved. Real, well-scoped fix - the lookbehind restores the file's own stated design intent (bare relative tokens don't match) rather than adding new scope. Good that it was traced to real corrupted cache data, not just a synthetic repro. No changes requested.
+
+---
+[<small>2026-08-07 15:48:49</small>] [**Oracle**]->[**User**] *ora fix*:
+ User asked 'is pattern supposed to be regex' - answer: no, it's scanner-dependent (gitignore for file paths/secrets, regex for URLs/reputation), and pattern is never validated at load time (only tool is). Traced to real doc drift in USER_GUIDE.md: the rules example comment and troubleshooting table both still claimed pattern is uniformly regex + load-time-validated, both wrong since the 2026-07-30 FileScanner gitignore correction. Fixed both. 562/562 unaffected.
+
+---
+[<small>2026-08-07 15:55:39</small>] [**Neo**]->[**Trin**] *swe impl*:
+ direct user request: pattern field UX - hard to select/type long paths. Agreed approach: alt+w progressively widens the pattern (replace trailing path segment with **) from the keyboard, plus clickable breadcrumb buttons (one per path segment) so a segment click jumps straight to that wildcard level. Implementing now.
+
+---
+[<small>2026-08-07 16:03:59</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 567 tests in 73.703s
+
+OK
+
+---
+[<small>2026-08-07 16:04:35</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix (bug report): Write's new-file target permanently disabled Allow - scan() treated nonexistent-target as a machinery error. Wrote the repro test FIRST, confirmed a scanner.py-only fix was insufficient (is_fresh() re-checks existence independently). Fixed both: scan() short-circuits nonexistent targets to public after the restricted-path check; is_fresh() treats mtime=None as fresh iff still nonexistent. 6 new tests + 1 corrected. 567/567. @Trin *qa uat verify-new-file-fix
+
+---
+[<small>2026-08-07 16:06:52</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat verify-new-file-fix: PASS. Extended the repro test to prove the actual point end-to-end - a real retried Write to the still-nonexistent target now genuinely succeeds through pre_tool_use (Scalene never creates the file, only the real tool does). 567/567. @Morpheus *lead review verify-new-file-fix
+
+---
+[<small>2026-08-07 16:06:57</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review verify-new-file-fix: approved. Two-part fix (scan() + is_fresh()) correctly identified via the repro test failing after only the first half landed - exactly the discipline this catches. mtime=None as the 'didn't exist at scan time' signal is a clean, minimal addition to an already-established field rather than new state. No changes requested.
+
+---
+[<small>2026-08-07 16:17:37</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make screenshots | /home/drusifer/Projects/Scalene/build/build.out
+wrote monitor-rules.svg
+Screenshots written to /home/drusifer/Projects/Scalene/docs/images
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+
+---
+[<small>2026-08-07 16:18:16</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe impl pattern widen+breadcrumbs: alt+w progressively widens the Pattern field to a directory-level ** wildcard; clickable breadcrumb buttons (one per path segment) jump straight to a level. Found+fixed a real DuplicateIds crash on Next/Prev (remove_children/mount are queued DOM ops, not instant - made the refresh chain properly async). Regenerated screenshots, doc updated. 8 new tests, 575/575. @Trin *qa uat pattern-widen
+
+---
+[<small>2026-08-07 16:18:39</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat pattern-widen: PASS. Verified guards hold for 0-target and URL-kind entries (both correctly no-op/empty breadcrumbs). Noted 1 minor, acceptable limitation: alt+w/breadcrumbs track widen-level as separate state, not re-derived from the current text, so pressing alt+w after a manual custom edit overwrites it rather than 'continuing' from it - consistent with the documented shared-state model, not a bug. 575/575. @Morpheus *lead review pattern-widen
+
+---
+[<small>2026-08-07 16:18:43</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review pattern-widen: approved. The async-refactor fix for the DuplicateIds crash is the correct fix, not a workaround (proper await ordering vs. papering over with unique-id generations) - good call given the small scope of the call chain actually needing it. No changes requested.
+
+---
+[<small>2026-08-07 18:17:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 577 tests in 86.758s
+
+OK
+
+---
+[<small>2026-08-07 18:18:07</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix (bug report): '/** rule isnt matching nested folders' - traced with real evidence: the rule DID match (confirmed via _find_matching_rule + pathspec directly). Real gap: a match alone needs a validated-clean cache entry too (by design, sec15.2), but the block reason said 'no validated rule' for both no-rule and rule-matched-unverified, reading as broken. Fixed the message. Repro test first, confirmed failing pre-fix. 3 new + 1 corrected test. 577/577. @Trin *qa uat unclear-message-fix
+
+---
+[<small>2026-08-07 18:18:26</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat unclear-message-fix: PASS. Verified 'a scan is in progress' wording is accurate for the real refresh_if_needed() dedup/reservation logic (not just plausible-sounding) - it always spawns or confirms an in-flight scan whenever an entry isn't fresh. confirmed_bad path unaffected (only touched the uncleared branch). 577/577. @Morpheus *lead review unclear-message-fix
+
+---
+[<small>2026-08-07 18:18:33</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review unclear-message-fix: approved. Good instinct to verify the rule actually matched (real pathspec + _find_matching_rule check) before assuming the pattern engine was broken - the root cause was a UX/message clarity gap, not the matching logic, and the fix correctly targets only that. No changes requested.
+
+---
+[<small>2026-08-07 19:18:34</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
+Ran 596 tests in 87.059s
+
+OK
+
+---
+[<small>2026-08-07 19:21:49</small>] [**Neo**]->[**Trin**] *swe design*:
+ direct user design session: 'trust but verify' - a mode=allow rule match now proceeds immediately (any context), tags escalate, tracked in new TaintState.pending_trust. Reconciled on the NEXT call (no daemon) via _reconcile_pending_trust() - a bad finding retroactively escalates trust=low/sensitivity=restricted. confirmed_bad + non-allow rules unchanged. sec15.2a documents mechanism + honest limitation. 596/596. @Trin *qa uat trust-but-verify
+
+---
+[<small>2026-08-07 19:22:30</small>] [**Trin**]->[**Morpheus**] *qa note*:
+ *qa uat trust-but-verify: PASS. Verified via real tests: confirmed_bad/non-allow-rule cases stay unconditional (2 dedicated guard tests), reconciliation ordering (runs before was_clean, affects same-call unrelated resources), no-resource calls still reconcile, cache corruption during reconciliation fails the same fatal way refresh_if_needed already does (consistent, not new). Perf tests unaffected (empty pending_trust = no added cost).
+
+---
+[<small>2026-08-07 19:22:36</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat trust-but-verify (real, non-blocking flag): a session with a large, slow-to-resolve pending_trust list pays one cache read per entry on every subsequent call (reconciliation isn't indexed) - bounded in practice since scans usually resolve in seconds, but a stuck ScannerMachineryError entry (same class as the earlier tetris pending_since bug) would sit there paying that cost forever. Worth a note in sec15.2a, not a blocker.
+
+---
+[<small>2026-08-07 19:24:37</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review trust-but-verify: approved. This is a genuine, deliberate core-model change (not a bug fix) - treated it with matching weight: full sec15.2a doc section, honest limitation + residual-risk statements, Trin's cost-scaling flag recorded not silently dropped. confirmed_bad/mode!=allow stay unconditional, the only thing that moved is the 'matched, not yet independently confirmed' case - correctly scoped, no creep into weakening the real bad-finding guarantee. 596/596.
+
+---
+[<small>2026-08-07 22:41:44</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ *swe fix: real bug found live in a Rust project's tool calls - '/// doc comment' (or bare '//') matched _PATH_FALLBACK_RE (slash IS in the path-body char class) and normalized to bare '/', which then passed the existence check (root always exists) and got identified as a touched file resource. Repro test first, confirmed failing. Fix: reject any fallback match with no real content char (alnum/underscore) - '/', '//', '///' all rejected; real paths unaffected. 2 new tests. Full suite running.
+
+---
+[<small>2026-08-07 22:56:59</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ *qa uat path-fallback-punctuation-fix: PASS, 598/598 (unittest discover). Verified edge cases: bare '..' correctly filtered too (no real content), '~/.' filtered, diff-style 'a/file.py' markers unaffected (already blocked by the earlier token-boundary fix, unrelated). Known-field paths deliberately untouched - structured fields stay trusted regardless of shape. @Morpheus *lead review path-fallback-punctuation-fix
+
+---
+[<small>2026-08-07 22:57:05</small>] [**Morpheus**]->[**Neo**] *lead review*:
+ *lead review path-fallback-punctuation-fix: approved. Small, well-scoped, single-consumer helper - correctly caught live in real Rust project usage rather than synthetic. Doc note added to sec18.2's correction chain. No changes requested.
+
+---
+[<small>2026-08-07 23:05:01</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/Scalene/build/build.out
+1 onboarded, 0 blocked
+No targets identified in this tool call.
+make[1]: Leaving directory '/home/drusifer/Projects/Scalene'

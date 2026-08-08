@@ -9,6 +9,7 @@ logic is new.
 
 import os
 import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -86,8 +87,38 @@ class TestFileScannerIdentify(unittest.TestCase):
         resources = self.scanner.identify("Bash", {"command": "echo hello world"})
         self.assertEqual(resources, [])
 
+    def test_bare_relative_path_with_an_internal_slash_is_not_truncated_to_a_bogus_root_path(self):
+        # Real bug, found via a stuck-Verify report traced through a real
+        # project's scan_cache.json: "agents/CHAT.md" (no /, ./, ../, ~, or
+        # $ prefix -- deliberately NOT supposed to match, same standard
+        # test_no_false_positive_on_unrelated_bash_command above already
+        # covers) was matching anyway, starting mid-token at the internal
+        # "/" between "agents" and "CHAT.md" -- silently dropping "agents"
+        # and producing the wrong absolute identity "/CHAT.md" (filesystem
+        # root) instead of correctly not matching at all.
+        resources = self.scanner.identify("Bash", {"command": "cat agents/CHAT.md"})
+        self.assertEqual(resources, [])
+
     def test_unknown_tool_with_no_path_shaped_args_finds_nothing(self):
         resources = self.scanner.identify("SomeOtherTool", {"foo": "bar"})
+        self.assertEqual(resources, [])
+
+    def test_rust_doc_comment_slashes_are_not_mistaken_for_the_filesystem_root(self):
+        # Real bug report, found live in a real Rust project's tool calls:
+        # a `///` doc comment (or a bare `//`) is pure slash characters with
+        # no actual path segment -- _PATH_FALLBACK_RE happily matched it
+        # anyway (`/` is a valid char within a path body, per the URL-
+        # exclusion span logic), normalizing to the bare filesystem root
+        # "/" -- which then passed the real-file existence check (the root
+        # always exists!) and got identified as a genuine touched resource.
+        resources = self.scanner.identify(
+            "Bash",
+            {"command": "cat >> src/lib.rs << 'EOF'\n/// decouple the rendering from game logic\npub fn foo() {}\nEOF"},
+        )
+        self.assertEqual(resources, [])
+
+    def test_bare_double_slash_is_also_not_mistaken_for_a_path(self):
+        resources = self.scanner.identify("Bash", {"command": "echo // just a stray comment marker"})
         self.assertEqual(resources, [])
 
     def test_no_duplicate_resources_for_repeated_path(self):
@@ -128,6 +159,104 @@ class TestFileScannerIdentify(unittest.TestCase):
         self.assertEqual(resources, [])
 
 
+class TestFileScannerIdentifyPathExpansion(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.2 correction (2026-08-07, direct user
+    request): a detected path may be shell shorthand (`~`) or carry an
+    embedded env var ($HOME) -- both must expand against this process's
+    real environment (the same one the actual Bash call runs in), and the
+    generic fallback's broadened match set (~, $VAR) is only safe paired
+    with validating the expanded candidate resolves to something real."""
+
+    def setUp(self):
+        self.scanner = FileScanner()
+        self._tmp = TemporaryDirectory()
+        self._home = Path(self._tmp.name) / "home"
+        self._home.mkdir()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_generic_fallback_expands_tilde_and_finds_a_real_file(self):
+        (self._home / ".ssh").mkdir()
+        real_key = self._home / ".ssh" / "id_rsa"
+        real_key.write_text("private key material")
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(self._home)}):
+            resources = self.scanner.identify("Bash", {"command": "cat ~/.ssh/id_rsa"})
+        self.assertEqual([r.identity for r in resources], [str(real_key)])
+
+    def test_identified_tilde_path_is_flagged_by_the_real_hardcoded_restricted_check(self):
+        # Trin's UAT: closes the loop between identify() and scan() -- a
+        # sensitive path referenced via `~` in a real call must actually
+        # end up flagged sensitive, not just correctly *identified*.
+        # Deliberately uses the real (unpatched) HOME, not a patched test
+        # one: _HARDCODED_RESTRICTED_PREFIXES is computed once at module
+        # import time from it, so a patched HOME here would desync
+        # identify()'s expansion from the already-fixed prefix list -- a
+        # test-only mismatch (a real `scg` invocation is a single process
+        # with one consistent HOME throughout its own lifetime, so this
+        # never happens in production). The known `file_path` field doesn't
+        # require existence, so this doesn't depend on this machine
+        # actually having a real ~/.ssh directory.
+        resources = self.scanner.identify("Read", {"file_path": "~/.ssh/id_rsa"})
+        self.assertEqual(len(resources), 1)
+        result = self.scanner.scan(resources[0])
+        self.assertEqual(result.label, "sensitive")
+        self.assertIn("restricted", result.reason)
+
+    def test_generic_fallback_expands_an_env_var_and_finds_a_real_file(self):
+        secret_dir = Path(self._tmp.name) / "secrets"
+        secret_dir.mkdir()
+        real_file = secret_dir / ".env"
+        real_file.write_text("API_KEY=xyz")
+        with unittest.mock.patch.dict(os.environ, {"SECRET_DIR": str(secret_dir)}):
+            resources = self.scanner.identify("Bash", {"command": "cat $SECRET_DIR/.env"})
+        self.assertEqual([r.identity for r in resources], [str(real_file)])
+
+        with unittest.mock.patch.dict(os.environ, {"SECRET_DIR": str(secret_dir)}):
+            resources = self.scanner.identify("Bash", {"command": "cat ${SECRET_DIR}/.env"})
+        self.assertEqual([r.identity for r in resources], [str(real_file)])
+
+    def test_generic_fallback_drops_a_path_that_does_not_resolve_to_a_real_file(self):
+        # The whole point of validating existence: broadening the regex to
+        # catch ~/$VAR shapes must not also let through arbitrary
+        # path-shaped noise that was never a real filesystem reference.
+        resources = self.scanner.identify(
+            "Bash", {"command": "echo /this/path/almost/certainly/does/not/exist/on/this/machine/xyz123"}
+        )
+        self.assertEqual(resources, [])
+
+    def test_known_field_path_is_not_required_to_exist(self):
+        # Regression guard: Write's own target legitimately doesn't exist
+        # yet -- the existence gate above must apply only to the generic
+        # fallback, never to a structured known field.
+        target = str(Path(self._tmp.name) / "brand-new-file-that-does-not-exist-yet.txt")
+        self.assertFalse(os.path.exists(target))
+        resources = self.scanner.identify("Write", {"file_path": target, "content": "hello"})
+        self.assertEqual([r.identity for r in resources], [target])
+
+    def test_known_field_also_expands_tilde_regardless_of_existence(self):
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(self._home)}):
+            resources = self.scanner.identify("Write", {"file_path": "~/new-notes.md", "content": "x"})
+        self.assertEqual([r.identity for r in resources], [str(self._home / "new-notes.md")])
+
+    def test_an_unset_env_var_does_not_produce_a_bogus_resource(self):
+        # Trin's UAT: os.path.expandvars() leaves an unresolvable $VAR
+        # reference as a literal string ("$UNDEFINED_VAR/file.txt") rather
+        # than raising -- the existence check is what keeps that literal,
+        # almost-certainly-nonexistent "path" from becoming a resource.
+        os.environ.pop("SCALENE_TEST_UNDEFINED_VAR_XYZ", None)
+        resources = self.scanner.identify(
+            "Bash", {"command": "cat $SCALENE_TEST_UNDEFINED_VAR_XYZ/file.txt"}
+        )
+        self.assertEqual(resources, [])
+
+    def test_file_uri_path_is_not_required_to_exist(self):
+        # Same structured-reference reasoning as the known field above.
+        target = str(Path(self._tmp.name) / "does-not-exist.txt")
+        resources = self.scanner.identify("Bash", {"command": f"cat file://{target}"})
+        self.assertEqual([r.identity for r in resources], [target])
+
+
 class TestFileScannerScan(unittest.TestCase):
     def setUp(self):
         self.scanner = FileScanner()
@@ -151,13 +280,30 @@ class TestFileScannerScan(unittest.TestCase):
             self.assertEqual(result.label, "sensitive")
             self.assertTrue(result.reason)
 
-    def test_target_that_cannot_be_read_raises_machinery_error_not_a_finding(self):
-        # STORY-1004: a scan that couldn't run (target unreadable) is a
-        # machinery failure, distinct from an ordinary "sensitive" finding --
-        # this is what makes the fatal-exit path fire (cli.py), not a
-        # ScanResult a caller would otherwise treat as a normal decision.
-        with self.assertRaises(ScannerMachineryError):
-            self.scanner.scan(Resource(kind="file", identity="/no/such/path/here.md", scanner_name="secrets"))
+    def test_a_genuinely_unreadable_existing_file_raises_machinery_error_not_a_finding(self):
+        # STORY-1004: a scan that couldn't run (target exists but can't be
+        # read -- e.g. permission denied) is a machinery failure, distinct
+        # from an ordinary "sensitive" finding -- this is what makes the
+        # fatal-exit path fire (cli.py), not a ScanResult a caller would
+        # otherwise treat as a normal decision.
+        #
+        # 2026-08-07 (direct user bug report correction): this test used to
+        # use a *nonexistent* path ("/no/such/path/here.md") to represent
+        # "unreadable" -- conflating two different situations. A target
+        # that simply doesn't exist yet (a Write's brand-new file, before
+        # the tool has run) is now its own, deliberately different case --
+        # see TestFileScannerScanNonexistentTarget below -- so this test is
+        # rewritten against a real file made genuinely unreadable
+        # (permissions), the case this docstring is actually about.
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "unreadable.md"
+            target.write_text("secret content")
+            target.chmod(0o000)
+            try:
+                with self.assertRaises(ScannerMachineryError):
+                    self.scanner.scan(Resource(kind="file", identity=str(target), scanner_name="secrets"))
+            finally:
+                target.chmod(0o644)
 
     def test_etc_path_is_sensitive_even_when_clean(self):
         # docs/ARCHITECTURE.md sec18.2 (STORY-1502): /etc/hostname has no
@@ -237,6 +383,36 @@ class TestFileScannerScan(unittest.TestCase):
             target.write_text("just some ordinary docs")
             result = self.scanner.scan(Resource(kind="file", identity=str(target), scanner_name="secrets"))
             self.assertIsNone(result.reputation)
+
+
+class TestFileScannerScanNonexistentTarget(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec18.2 correction (2026-08-07, direct user bug
+    report): `pre_tool_use` runs *before* the tool itself executes, so a
+    `Write`'s target is identified and Verify-able before it exists on
+    disk. There is genuinely nothing to scan yet -- that's not a scanning-
+    machinery failure, and must not be treated like one (it used to be,
+    silently leaving `scg monitor`'s Allow button permanently disabled for
+    any new-file Write)."""
+
+    def setUp(self):
+        self.scanner = FileScanner()
+
+    def test_nonexistent_target_scans_as_clean_not_a_machinery_error(self):
+        with TemporaryDirectory() as tmp:
+            target = str(Path(tmp) / "does-not-exist-yet.txt")
+            self.assertFalse(os.path.exists(target))
+            result = self.scanner.scan(Resource(kind="file", identity=target, scanner_name="secrets"))
+        self.assertEqual(result.label, "public")
+
+    def test_nonexistent_target_under_a_hardcoded_restricted_prefix_is_still_sensitive(self):
+        # The existence check must run AFTER the hardcoded-restricted
+        # check, not before it -- writing a brand-new file under ~/.ssh
+        # must still be caught regardless of whether it exists yet.
+        home_ssh = os.path.expanduser("~/.ssh")
+        target = f"{home_ssh}/a-key-that-does-not-exist-yet"
+        self.assertFalse(os.path.exists(target))
+        result = self.scanner.scan(Resource(kind="file", identity=target, scanner_name="secrets"))
+        self.assertEqual(result.label, "sensitive")
 
 
 class TestURLScannerIdentify(unittest.TestCase):

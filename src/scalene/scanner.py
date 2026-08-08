@@ -56,10 +56,44 @@ _URL_FIELDS = {
     "WebFetch": "url",
 }
 
-# Conservative on purpose: only path-shaped tokens with an explicit `/`,
-# `./`, or `../` prefix match, so ordinary words in a Bash command (e.g.
-# "echo hello world") don't produce false-positive file resources.
-_PATH_FALLBACK_RE = re.compile(r"(?P<path>\.{0,2}/[\w./+-]+)")
+# Conservative on purpose: only path-shaped tokens match, so ordinary words
+# in a Bash command (e.g. "echo hello world") don't produce false-positive
+# file resources. 3 shapes, each requiring a `/` before any path characters
+# so a bare "~" or "$VAR" mid-sentence (no clear path continuation) still
+# doesn't match:
+#   - `/...`, `./...`, `../...`      -- the original, explicit-prefix form
+#   - `~/...`, `~user/...`           -- shell home-dir shorthand
+#   - `$VAR/...`, `${VAR}/...`       -- an embedded environment variable
+# 2026-08-07 (direct user request): a sensitive path like `~/.ssh/id_rsa` or
+# `$HOME/.env` embedded in a Bash command string didn't match the original
+# regex at all (neither `~` nor `$` was an accepted prefix) -- silently
+# invisible to FileScanner regardless of _normalize_path()'s own expansion
+# below. Broadening the match set is only safe because identify() now also
+# validates each fallback match actually resolves to something real on disk
+# (see the `os.path.exists()` check there) -- see that comment for why.
+#
+# 2026-08-07 (2nd correction, same day -- found via a real stuck-`Verify`
+# report, traced through a real project's `.scalene/scan_cache.json`): none
+# of the 3 alternatives above required their own match to *start* at a real
+# token boundary -- `finditer()` happily started a match mid-token, at any
+# internal `/` no matter what came before it, silently dropping everything
+# before that `/`. A deliberately-unmatched bare relative token like
+# "agents/CHAT.md" (no `/`, `./`, `../`, `~`, or `$` prefix -- exactly the
+# case this file's own docstring says should NOT match) was in practice
+# matched anyway, starting at the `/` between "agents" and "CHAT.md",
+# producing the wrong absolute identity "/CHAT.md" (filesystem root) rather
+# than correctly not matching at all. The leading `(?<![\w./~])` negative
+# lookbehind fixes this: a match may only start where the preceding
+# character (if any) is not itself part of a path/word token, so an
+# internal `/` deep inside an unrelated string can never become a match
+# start on its own.
+_PATH_FALLBACK_RE = re.compile(
+    r"(?<![\w./~])(?P<path>"
+    r"~[\w-]*/[\w./+-]+"
+    r"|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/[\w./+-]+"
+    r"|\.{0,2}/[\w./+-]+"
+    r")"
+)
 
 # Generic URI scheme prefix (RFC 3986 scheme grammar, simplified) -- matches
 # any protocol (https://, ftp://, ws://, s3://, ...), not just http(s).
@@ -97,6 +131,39 @@ def _is_file_uri(url: str) -> bool:
 _ANY_URI_SPAN_RE = re.compile(_URI_SCHEME + r"\S+")
 
 
+def _normalize_path(raw: str) -> str:
+    """docs/ARCHITECTURE.md sec18.2 correction (2026-08-07, direct user
+    request): a detected path may be shell shorthand (`~`, `~user`) or
+    carry an embedded environment variable (`$HOME`, `${HOME}`) rather than
+    already being a literal filesystem path -- `os.path.abspath()` alone
+    treats either as a literal relative-path segment (`~/.ssh/id_rsa`
+    normalizes to `<cwd>/~/.ssh/id_rsa`, not the real
+    `/home/user/.ssh/id_rsa`), silently missing the exact class of
+    sensitive path `_HARDCODED_RESTRICTED_PREFIXES` below exists to catch.
+    `expandvars()`/`expanduser()` resolve against *this process's own*
+    environment -- correct here specifically because this hook runs in the
+    same environment the real Bash tool call would, so `$HOME` etc. expand
+    identically to how the shell itself would expand them. Order matters:
+    `expanduser()` first, so a leading `~` resolves before `expandvars()`
+    looks at the rest of the string; `abspath()` last, for the pre-existing
+    relative-path handling."""
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+
+
+def _has_real_path_content(path: str) -> bool:
+    """2026-08-07 (direct user bug report): a match built entirely from
+    separators (`/`, `//`, `///`, `..`) satisfies `_PATH_FALLBACK_RE`'s
+    shape but isn't a reference to any specific resource -- a Rust `///`
+    doc comment, or a bare `//` used as a stray comment marker in prose,
+    both matched and normalized to the bare filesystem root `/` (which
+    then passed the real-file existence check below, since the root always
+    exists, and got identified as a genuinely touched resource). Requires
+    at least one real content character (alnum or `_`) somewhere in the
+    match -- a real path always names *something* under a directory; pure
+    punctuation never does."""
+    return any(c.isalnum() or c == "_" for c in path)
+
+
 def _find_paths_excluding_urls(text: str) -> list[str]:
     url_spans = [m.span() for m in _ANY_URI_SPAN_RE.finditer(text)]
     paths = []
@@ -104,7 +171,10 @@ def _find_paths_excluding_urls(text: str) -> list[str]:
         start, end = match.span()
         if any(start < url_end and end > url_start for url_start, url_end in url_spans):
             continue
-        paths.append(match.group("path"))
+        path = match.group("path")
+        if not _has_real_path_content(path):
+            continue
+        paths.append(path)
     return paths
 
 
@@ -250,19 +320,39 @@ class FileScanner(Scanner):
     def identify(self, tool_name: str, args: dict) -> list[Resource]:
         identities: list[str] = []
 
+        # `known_field`/file:// paths are structured references -- the tool
+        # schema (or an explicit file:// URI) already tells us this string
+        # IS a path, so no existence check here: `Write`'s own target
+        # legitimately doesn't exist yet (docs/ARCHITECTURE.md sec13.4's
+        # abspath-normalization note applies equally to expanduser/
+        # expandvars below -- same identity a live evaluation would produce).
         known_field = _FILE_PATH_FIELDS.get(tool_name)
         known_value = args.get(known_field) if known_field else None
         if isinstance(known_value, str) and known_value:
-            identities.append(os.path.abspath(known_value))
+            identities.append(_normalize_path(known_value))
 
         for value in _string_args(args):
             for path in _find_paths_excluding_urls(value):
-                identities.append(os.path.abspath(path))
+                # 2026-08-07 (direct user request): the generic fallback is
+                # a heuristic regex match over arbitrary string content
+                # (e.g. a whole Bash command), not a structured field known
+                # to be a path -- broadening _PATH_FALLBACK_RE to also catch
+                # `~`/`$VAR`-shaped tokens (above) is only safe paired with
+                # this: validate the *expanded* candidate actually resolves
+                # to something real on disk before treating it as a genuine
+                # resource, dropping stray regex matches (git refs, ratios
+                # in prose, etc.) that were never real paths to begin with.
+                # `os.path.exists()`, not `isfile()` -- a directory is a
+                # legitimate FileScanner resource too (project-folder rules
+                # already match a directory tree, sec18.4).
+                normalized = _normalize_path(path)
+                if os.path.exists(normalized):
+                    identities.append(normalized)
             # 2026-07-22 (direct user request): file:// is a filesystem
             # reference wearing a URI shape -- recognized here, not by
             # URLScanner, regardless of which tool/field it appears in.
             for m in _FILE_URI_RE.finditer(value):
-                identities.append(os.path.abspath(m.group("path")))
+                identities.append(_normalize_path(m.group("path")))
 
         seen: set[str] = set()
         resources = []
@@ -283,6 +373,24 @@ class FileScanner(Scanner):
         # "a secret was found").
         if _is_hardcoded_restricted(resource.identity):
             return ScanResult(label="sensitive", reason="path matches a hardcoded restricted system location")
+
+        # 2026-08-07 (direct user bug report): `pre_tool_use` runs *before*
+        # the tool itself executes, so a `Write` to a brand-new path is
+        # identified and Verify-able before the file exists. Scanning a
+        # nonexistent target used to mean scan_worker's plain `open(path)`
+        # raising `FileNotFoundError`, surfacing as a generic `machinery_
+        # error` this method doesn't distinguish from a real scanning
+        # failure -- `ReviewScreen.action_verify()` already fails safe on
+        # that (catches `ScannerMachineryError`, leaves the target
+        # unverified rather than crashing the screen), which meant Allow
+        # stayed permanently disabled for any new-file `Write`, forever --
+        # there is genuinely nothing to scan yet, which is not a finding of
+        # "sensitive" (nothing was found), so it shouldn't behave like one.
+        # Checked *after* the hardcoded-restricted check above, not before:
+        # writing a brand-new file under e.g. `~/.ssh` must still be caught
+        # regardless of whether the file exists yet.
+        if not os.path.exists(resource.identity):
+            return ScanResult(label="public")
 
         result = run_scanner("secrets", resource.identity)
         if result.get("machinery_error"):

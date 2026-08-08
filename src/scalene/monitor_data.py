@@ -86,9 +86,20 @@ class ReviewResolution:
 @dataclass
 class ReviewEntry:
     """docs/ARCHITECTURE.md sec20.4 (STORY-1604): one queued review per
-    block event. Not a live gate -- `pre_tool_use` already resolved (denied)
-    this call synchronously before the TUI ever saw it (sec20.1), so an
-    entry that never gets reviewed just stays queued; no timeout logic.
+    *aggregate group* of block events (sec23.1, STORY-1801, 2026-08-07) --
+    not a live gate: `pre_tool_use` already resolved (denied) this call
+    synchronously before the TUI ever saw it (sec20.1), so an entry that
+    never gets reviewed just stays queued; no timeout logic.
+
+    2026-08-07 (docs/ARCHITECTURE.md sec23.1, STORY-1801, direct user
+    request): repeated, byte-for-byte identical block events (same
+    `tool_name`/`tool_input`, `review_aggregation_key()` below) collapse
+    into one `ReviewEntry` instead of one per occurrence -- `event` (a
+    single `ToolCallEvent`) becomes `events` (every occurrence, oldest
+    first) plus a stable `id` for the life of the running monitor process.
+    `event`/`count`/`last_seen` are read-only properties derived from
+    `events`, not separately-tracked fields, so there is exactly one source
+    of truth for "how many times, and when most recently."
 
     2026-07-30 (direct user report: "restarted scg monitor and it lost the
     verified status"): Verify completion used to be tracked in a separate
@@ -105,8 +116,26 @@ class ReviewEntry:
     from it -- matches this project's own repeated "poll real files, don't
     invent a parallel store" precedent."""
 
-    event: ToolCallEvent
+    id: int
+    events: list[ToolCallEvent]
     targets: list[Resource]
+
+    @property
+    def event(self) -> ToolCallEvent:
+        # The most recent occurrence -- every event in a group shares the
+        # same tool_name/tool_input by construction (that's the
+        # aggregation identity), so any field a caller reads off this
+        # (reason, session_id, tool_input) is real data from an actual
+        # occurrence; recency is just the natural representative to pick.
+        return self.events[-1]
+
+    @property
+    def count(self) -> int:
+        return len(self.events)
+
+    @property
+    def last_seen(self) -> float:
+        return max((e.timestamp for e in self.events), default=0.0)
 
     def is_verified(self, target: Resource, cache: ScanCache) -> bool:
         entry = cache.get(target)
@@ -116,13 +145,30 @@ class ReviewEntry:
         return bool(self.targets) and all(self.is_verified(t, cache) for t in self.targets)
 
 
-def build_review_entry(event: ToolCallEvent, scanners: dict) -> ReviewEntry:
+def review_aggregation_key(event: ToolCallEvent) -> tuple[str, str]:
+    """docs/ARCHITECTURE.md sec23.1 (STORY-1801): two block events are "the
+    same tool call" iff `tool_name` and `tool_input` are identical -- a real
+    repeated retry of the exact same call, not merely one touching the same
+    resource (a `cat secret.txt` and a `rm secret.txt` are not "the same
+    call" even though they identify the same target; conflating them would
+    hide a real, distinct action from the operator). `json.dumps(...,
+    sort_keys=True)` gives a stable, hashable identity regardless of dict
+    insertion order, without requiring `tool_input` itself to be hashable;
+    `default=str` so a non-JSON-native value (should never happen for a
+    real hook payload, but this reads an on-disk log) still keys instead of
+    raising."""
+    return (event.tool_name, json.dumps(event.tool_input, sort_keys=True, default=str))
+
+
+def build_review_entry(event: ToolCallEvent, scanners: dict, entry_id: int) -> ReviewEntry:
     """docs/ARCHITECTURE.md sec20.4: reconstructs matched scanner(s)/
     target(s) via `onboard.identify_targets()` -- the exact function `scg
     onboard` already uses on the real tool call -- no second identification
-    mechanism."""
+    mechanism. `entry_id` (sec23.1, STORY-1801): the caller assigns this --
+    a monotonically increasing counter scoped to one running monitor
+    process, not derived from anything in `event` itself."""
     targets = identify_targets(event.tool_name, event.tool_input, scanners)
-    return ReviewEntry(event=event, targets=targets)
+    return ReviewEntry(id=entry_id, events=[event], targets=targets)
 
 
 def target_status(resource: Resource, cache: ScanCache) -> str:

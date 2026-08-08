@@ -1,7 +1,7 @@
 # User Stories — Project Scalene
 
 **Owner:** Cypher (PM)
-**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped and closed 2026-07-21, full formal cycle, 3 phases, 1 fix round; STORY-1406 remains flagged, not committed. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) shipped and closed 2026-07-21** — full formal cycle, 4 phases, Phase 4 gated twice after a direct mid-sprint user design correction (implicit in-memory rule replaced with a real on-disk one), 1 real infra finding from Tank (URLhaus's "no API key" premise was false, resolved with a real Auth-Key + env var). 389/389 tests. **Sprint 10 (E16, Interactive Onboarding Dashboard & Non-Blocking Review Loop) shipped 2026-07-23** — full formal cycle, 6 phases, 2 mandatory Smith gates (accessibility, core interactive flow) both passed. Origin: direct user `*user consult` with Smith. One mid-planning correction (STORY-1603 restored to full-call-log scope after a cost-conflation error, direct user catch) and one mid-implementation correction (STORY-1606's OS-mount verification shelved and its replacement design backlogged, direct user decision) — both recorded, not silently absorbed. 439/439 tests. E16 follow-up (2026-07-30, fast-tracked with the user, no formal cycle): directory-scan fix, Next/Prev review nav, scanner-owned matching, `PolicyRule.trust`, gitignore-style rule matching, persisted review state — sec21. **Sprint 11 (E17, Queue-First Monitor Redesign) shipped 2026-08-03** — full formal cycle, 4 phases, 3 mandatory Smith gates (queue-first primary surface, approval-screen safety-critical surface, rules-screen write consequences) all passed. Origin: direct user `*user consult` with Smith (`agents/smith.docs/e17_monitor_queue_first_consult.md`). One architecture-gate rejection (Smith's Gate 2: promoting the match-expr fields to always-visible removed the Allow-requires-Verify enforcement path — fixed same session by moving the guard into `action_submit_allow()` itself, re-approved) and one mid-implementation design correction (the status strip's `dock: bottom`-on-both CSS assumption was wrong per real-rendered-geometry testing, corrected to `#queue { height: 1fr }` + an un-docked strip) — both recorded, not silently absorbed. 512/512 tests.
+**Status:** Sprint 1 (E1-E6) shipped and closed 2026-07-09. Sprint 2 (E7-E8) shipped and closed 2026-07-10. Sprint 3 (E9) shipped and closed 2026-07-16. Sprint 4 (E10) shipped and closed 2026-07-15. Sprint 5 (E11 → sec15) shipped and closed 2026-07-18. Sprint 6 (E12, tech debt) shipped and closed 2026-07-18. Sprint 7 (E13 / sec16 correction) shipped and closed 2026-07-20. Sprint 8 (E14, Tool-Call-Driven Onboarding) shipped and closed 2026-07-21, full formal cycle, 3 phases, 1 fix round; STORY-1406 remains flagged, not committed. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) shipped and closed 2026-07-21** — full formal cycle, 4 phases, Phase 4 gated twice after a direct mid-sprint user design correction (implicit in-memory rule replaced with a real on-disk one), 1 real infra finding from Tank (URLhaus's "no API key" premise was false, resolved with a real Auth-Key + env var). 389/389 tests. **Sprint 10 (E16, Interactive Onboarding Dashboard & Non-Blocking Review Loop) shipped 2026-07-23** — full formal cycle, 6 phases, 2 mandatory Smith gates (accessibility, core interactive flow) both passed. Origin: direct user `*user consult` with Smith. One mid-planning correction (STORY-1603 restored to full-call-log scope after a cost-conflation error, direct user catch) and one mid-implementation correction (STORY-1606's OS-mount verification shelved and its replacement design backlogged, direct user decision) — both recorded, not silently absorbed. 439/439 tests. E16 follow-up (2026-07-30, fast-tracked with the user, no formal cycle): directory-scan fix, Next/Prev review nav, scanner-owned matching, `PolicyRule.trust`, gitignore-style rule matching, persisted review state — sec21. **Sprint 11 (E17, Queue-First Monitor Redesign) shipped 2026-08-03** — full formal cycle, 4 phases, 3 mandatory Smith gates (queue-first primary surface, approval-screen safety-critical surface, rules-screen write consequences) all passed. Origin: direct user `*user consult` with Smith (`agents/smith.docs/e17_monitor_queue_first_consult.md`). One architecture-gate rejection (Smith's Gate 2: promoting the match-expr fields to always-visible removed the Allow-requires-Verify enforcement path — fixed same session by moving the guard into `action_submit_allow()` itself, re-approved) and one mid-implementation design correction (the status strip's `dock: bottom`-on-both CSS assumption was wrong per real-rendered-geometry testing, corrected to `#queue { height: 1fr }` + an un-docked strip) — both recorded, not silently absorbed. 512/512 tests. **Sprint 12 (E18, Review Queue Overhaul & Rules Editing) shipped 2026-08-07** — full formal cycle, 5 phases, 1 mandatory Smith gate (Phase 5, new policy-write surface) passed. Origin: direct user request, gathered live across several follow-up messages during an unrelated support investigation (a "11K pending reviews" report that turned out to be a cwd mistake, not a bug). 8 stories (STORY-1801–1808). One Gate 1 rejection (Smith: STORY-1804's Skip All needed the same confirm-before-execute step STORY-1808 requires for delete — fixed same session, re-approved) and 2 real mid-phase findings (Trin: a mouse click bypassing `on_key`'s keyboard-only disarm for skip-all's armed state, fixed and the same fix pattern reused proactively for Rules-screen delete; Trin: Trin's own first-draft e2e tests for update_rule/delete_rule relied on `decide_access`'s clean-session free-pass rather than the rule match itself, rewritten to be deterministic) — all recorded, not silently absorbed. Decision-undo/redo (Verify/Allow/Deny) explicitly deferred by direct user choice, not silently dropped — carried to the backlog. 552/552 tests.
 
 Format: `STORY-ID: As a <role>, I want <capability>, so that <value>.`
 
@@ -652,5 +652,87 @@ As a developer, I want a screen listing my policy rules in their real matching o
 2. **Status-strip widget shape** — a single `Static` whose text is rebuilt each poll (matching how every other panel already refreshes) is the obvious default; confirm nothing about STORY-1703's "future indicators" requirement needs more than that (e.g. per-clause independent update rather than a full-string rebuild) before Phase 2 starts.
 3. **Rule-reorder write function's failure mode** — `onboard.write_rule`'s existing `OSError`/`PermissionError` handling (STORY-1606, E16) is the closest precedent; confirm the new reorder-write function degrades the same way (a real read-only policy file must not crash the Rules screen) rather than needing new error handling invented from scratch.
 4. **Confirmation-toast mechanism** — is a `Static` status line reused (e.g. `#allow-error`'s pattern) sufficient for STORY-1705's write-confirmation, or does it need to auto-clear after some interval? Recommend reusing the existing pattern (persists until the next action, no timer) unless Morpheus finds a concrete reason it needs to expire.
+
+---
+
+## E18 — Review Queue Overhaul & Rules Editing
+
+Direct user request (2026-08-07), gathered live over several follow-up messages while diagnosing an unrelated support question (a "11K pending reviews" report that turned out to be a cwd mistake pointing `scg monitor` at Scalene's own dogfooding audit log instead of the target project's — see `agents/neo.docs/next_steps.md`). That investigation surfaced a real, separate gap: E17's queue has no way to handle a large real backlog gracefully — no identity to refer to a row by, no way to tell a stuck-in-a-retry-loop call apart from 40 individual rows, no way to clear a backlog without either reviewing or silently losing track of it. The user then kept adding related queue/editor gaps as they came to mind.
+
+Explicitly deferred, not silently dropped: **undo/redo for Verify/Allow/Deny decisions** — Deny is trivially undoable (it only re-queues), but Allow/Verify write to `scalene_policy.yaml`/`scan_cache.json`, and unwinding those safely once something else may have relied on them is a real, separate design question. User chose to skip it this sprint (`agents/CHAT.md`, 2026-08-07) rather than have it rushed. Flagged as a backlog item for its own future story/architecture pass.
+
+### STORY-1801
+As a developer with a large pending-review queue, I want each queue row to carry a stable, visible numeric ID, and repeated identical tool calls to collapse into one row instead of one row per occurrence, so I can refer to a specific entry unambiguously and the queue reflects distinct problems, not raw event volume.
+
+**Acceptance Criteria**
+- [x] Two `block` events are "the same tool call" iff `tool_name` and `tool_input` are identical (order-independent) — a real repeated retry of the exact same call, not merely a similar one. `monitor_data.review_aggregation_key()`.
+- [x] A newly aggregated occurrence appends to the existing entry rather than creating a new one; a genuinely new call gets a new entry with a freshly assigned, monotonically increasing integer ID, unique for the life of the running monitor process.
+- [x] IDs are not required to survive a monitor restart (a restart's full log replay may reassign them) — this is a within-session reference aid, not a persisted identity.
+- [x] Resolving an aggregated entry (Allow/Deny/Skip) marks *every* underlying occurrence's `log_offset` as resolved in the audit log, not just the most recent one — a restart's full replay must not resurrect the other occurrences.
+
+### STORY-1802
+As a developer triaging the queue, I want to see how recently each entry last happened and have the busiest/most-current items surface at the top automatically, so I don't have to hunt through old, already-cold entries to find what's active right now.
+
+**Acceptance Criteria**
+- [x] Each queue row shows a "Last Seen" relative timestamp (reusing `_format_relative_time`), derived from the most recent occurrence in an aggregated entry — not the first-seen time.
+- [x] The queue table renders most-recent-first, recomputed on every refresh. The underlying `_pending_reviews` storage order and a currently-open `ReviewScreen`'s Next/Prev navigation are unaffected by this display reordering (no index instability while a review is open mid-session).
+- [x] A new occurrence of an already-aggregated entry moves that row back to the top on the next refresh, same as a brand-new entry would.
+
+### STORY-1803
+As a developer reviewing a call that touched more than one resource, I want each identified resource shown on its own queue row (labeled "1 of N", "2 of N", ...) instead of hidden behind a single count, so I can see every distinct asset at a glance without opening the review.
+
+**Acceptance Criteria**
+- [x] An entry with exactly one identified target renders as today (one row, no "of N" suffix).
+- [x] An entry with N>1 identified targets renders as N rows, each showing that target's own identity + kind and an "(i of N)" position marker; all N rows share the same entry ID, Tool, Reason, Count, and Last Seen.
+- [x] Selecting *any* of an entry's N rows opens the same `ReviewScreen` for that one entry (all N targets still reviewed/Allowed/Denied together, matching today's per-call-not-per-target Allow/Deny semantics) — this story only changes what's visible in the list, not the unit of review.
+
+### STORY-1804
+As a developer facing a large backlog, I want to dismiss a queue entry without writing any rule or touching the scan cache, and to clear the whole backlog in one action to start fresh, so a real backlog (like the dogfooding-log incident) doesn't force me to either Allow/Deny things I don't have an opinion on, or leave it cluttering the queue forever.
+
+**Acceptance Criteria**
+- [x] `s` on the row under the cursor dequeues that entry via the existing `review_resolved` audit-log mechanism (every occurrence's `log_offset`, per STORY-1801) — no `PolicyRule` is written, no `ScanCache` entry is touched or created.
+- [x] `S` requires an explicit confirming step before it executes (e.g. a "press S again to skip all N" second keypress, or an inline y/n prompt) — same standard STORY-1808 sets for rule deletion (Smith's Gate 1 finding, 2026-08-07): a single accidental keystroke must not be able to sweep the whole queue.
+- [x] Both actions show a visible confirmation (count skipped), matching this app's established never-silent-after-a-write convention (`RulesScreen`'s move confirmation).
+- [x] A skipped entry does not reappear on a subsequent poll tick or a monitor restart (verified via a real full-log replay, not just in-memory state).
+
+### STORY-1805
+As a developer reviewing a blocked call, I want to read the full command that triggered it without it being cramped into a few lines, so I can actually evaluate what I'm about to Allow or Deny.
+
+**Acceptance Criteria**
+- [x] `ReviewScreen`'s tool-input display is visibly larger than today's 4-line cap, while staying scrollable for anything still too long to fit (`overflow-y: auto`, already present — this story raises the cap, not the mechanism).
+- [x] The rest of the screen (nav row, allow-form fields, targets table, action buttons) still fits and remains reachable on a standard 80x24 terminal — the existing regression test covering this must still pass, adjusted if the layout genuinely needs it.
+
+### STORY-1806
+As a developer editing the Tool/Pattern fields before submitting a rule, I want to undo and redo my edits, so a mistyped or overwritten pattern isn't a full restart of the field.
+
+**Acceptance Criteria**
+- [x] `ctrl+z` undoes the last edit to whichever of `#rule-tool-input`/`#rule-pattern-input` currently has focus; `ctrl+y` (or `ctrl+shift+z`) redoes it. Confirmed Textual's `Input` widget (installed version) has no built-in undo — this is new, `ReviewScreen`-local behavior, not a framework feature being wired up.
+- [x] Each field's undo history is independent of the other's.
+- [x] Opening a different queue entry (Next/Prev, or a fresh `ReviewScreen`) resets both fields' undo history — no cross-entry undo.
+
+### STORY-1807
+As a developer who wrote a rule with a mistake, I want to edit an existing rule directly in the Rules screen, so I don't have to delete and re-author it or hand-edit the YAML.
+
+**Acceptance Criteria**
+- [x] An "edit" action on the rule under the cursor makes that row's Tool/Pattern/Sensitivity/Mode/Trust editable in place (or via a focused sub-form — Morpheus to confirm the concrete widget shape), pre-filled with the real current values.
+- [x] Saving validates via the same `PolicyRule` construction every other writer already uses (invalid regex/sensitivity/mode/trust is rejected with a clear message, matching `PolicyConfigError`'s existing role) and rewrites `scalene_policy.yaml` in place at that rule's real position — every other rule and field ordering is unaffected except the edited rule's own fields.
+- [x] A visible, synchronous confirmation follows the write, same convention as move-up/move-down.
+- [x] Canceling the edit (Escape) leaves the file untouched.
+
+### STORY-1808
+As a developer cleaning up my policy file, I want to delete a rule from the Rules screen, so a rule I no longer want doesn't require hand-editing the YAML.
+
+**Acceptance Criteria**
+- [x] A "delete" action on the rule under the cursor removes it from `scalene_policy.yaml`'s `rules:` list; every other rule's order and fields are otherwise unaffected.
+- [x] A visible, synchronous confirmation follows the write (e.g. "Deleted rule #N — saved."), same convention as move-up/move-down/edit.
+- [x] Deleting requires an explicit confirming keypress/step, not a single accidental keystroke — this is the only genuinely destructive, hard-to-reverse action in this screen (the reorder/edit actions all preserve every rule; this one doesn't).
+
+## Open Questions for Architecture (Morpheus) — E18
+
+1. **Aggregation identity** — STORY-1801 proposes `(tool_name, tool_input)` exact-match as "the same call." Confirm this is the right identity (vs., e.g., same identified *target* regardless of exact input) — the two give different results for a call whose irrelevant argument varies (e.g. a timestamp embedded in a command) while touching the same resource every time.
+2. **ID/aggregation cache correctness** — confirm the bookkeeping approach for keeping `_pending_by_key` (or equivalent) in sync with `_pending_reviews` across every removal path (Allow/Deny, skip, skip-all, auto-resolve, and a full-log-replay `ReviewResolution`) so a resolved entry's key can never "resurrect" a phantom group.
+3. **Recency-sort vs. open-`ReviewScreen`-stability** — confirm the display-only-sort approach (STORY-1802's 2nd AC: sort a fresh copy for the table, keep `_pending_reviews`'s storage order and the currently-open screen's index stable) rather than sorting the live list in place.
+4. **RulesScreen edit widget shape** — confirm whether STORY-1807's in-place edit reuses `ReviewScreen`'s allow-form field pattern (Tool/Pattern Inputs + Sensitivity/Mode RadioSets) or needs its own, and whether `Trust` (not present on `ReviewScreen`'s form) needs a 3rd RadioSet or a simple text field.
+5. **`policy_config.py` write-helper shape for edit/delete** — confirm these mirror `swap_rule_order`'s real-read-modify-write-raw-dict pattern (preserving unknown fields) rather than reconstructing every rule via `PolicyRule`, consistent with the existing convention.
 
 ---

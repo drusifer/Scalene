@@ -650,4 +650,70 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 ## Notes
 - No Tank phase — same reasoning as every prior monitor-focused sprint (no daemon, no new infra surface).
 - Phase 1 and Phase 3 both touch `ReviewScreen`/`MonitorApp`'s layout; sequenced (not parallelized) to avoid two in-flight changes to the same file, per this project's single-implementer-per-phase pacing.
+
+# Sprint 12 (E18 — Review Queue Overhaul & Rules Editing)
+
+**Status:** Planned 2026-08-07 — Cypher → Smith Gate 1 (1 reject/fix round: STORY-1804's Skip All needed the same confirm-before-execute step STORY-1808 requires for delete — fixed same session, re-approved) → Morpheus (`docs/ARCHITECTURE.md` §23) → Smith Gate 2 (approved, no further findings) all passed. Phase-broken below, plan pending Morpheus's review before Neo starts Phase 1.
+**Source:** `docs/USER_STORIES.md` E18 (STORY-1801–1808) + `docs/ARCHITECTURE.md` §23. Origin: direct user request, gathered live during the "11K pending reviews" support investigation (`agents/neo.docs/next_steps.md`).
+
+5 phases. Phase 1 (`ReviewEntry`/aggregation data layer) is a hard prerequisite for Phase 2 (queue display reads `.id`/`.count`/`.last_seen`) and Phase 3 (skip needs `_forget_entry`/the per-occurrence `_append_review_resolved`, both Phase 1 deliverables). Phase 4 and Phase 5 are independent of 1-3 and of each other (different screens, no shared new state).
+
+## Phase 1 — Aggregation Data Layer & Numeric ID
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing. No Smith gate — no user-visible surface yet (queue still renders the old way until Phase 2 wires the new fields in).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `monitor_data.py`: `ReviewEntry` restructured (`events: list[ToolCallEvent]` + `id: int` replace `event`; `event`/`count`/`last_seen` become read-only properties). New `review_aggregation_key()`. `build_review_entry(event, scanners, entry_id)` signature change. | §23.1, STORY-1801 |
+| 1.2 | `monitor_app.py`: `MonitorApp._pending_by_key`/`_next_review_id`, aggregation wired into `poll_data()`'s block-event branch, `_forget_entry()` helper, `ReviewResolution` handling rewritten to filter per-occurrence, `_append_review_resolved()` loops every `entry.events`. | §23.1, STORY-1801 |
+
+**Exit criteria:** every existing `_pending_reviews`-touching test still passes against the new shape (field-rename fallout); new tests confirm 2 identical block events collapse into 1 entry with `count == 2`, a 3rd distinct call gets its own id, and a full-log replay with an interleaved `review_resolved` for one occurrence correctly drops only that occurrence (group survives if others remain).
+
+## Phase 2 — Queue Display: ID/Count/Last-Seen Columns, Recency Sort, Multi-Target Rows
+*Chain: Neo → Trin → Morpheus*
+*Depends on: Phase 1 (reads `.id`/`.count`/`.last_seen`, the aggregated `.targets`). No Smith gate — same queue surface E17's Phase 1 already had a mandatory gate on; this is a column/sort/row-count change to it, not a new interaction model.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 2.1 | `refresh_queue()` rewritten: `ID`/`Tool`/`Resource`/`Kind`/`Reason`/`Count`/`Last Seen` columns, display-only `sorted(..., key=last_seen, reverse=True)` copy (storage order in `_pending_reviews` untouched), `self._queue_rows` row→entry mapping (one row per target when `len(targets) > 1`, "(i of N)" suffix). `_format_kinds()` deleted. | §23.2, §23.3, STORY-1802, STORY-1803 |
+| 2.2 | `on_data_table_row_selected` updated to resolve via `self._queue_rows[cursor_row]` then `self._pending_reviews.index(entry)`. Regression test: a poll tick firing while `ReviewScreen` is open (new block arrives, reordering the sorted display) does not change the open screen's current entry/index. | §23.2, STORY-1802 |
+
+**Exit criteria:** a 3-target call renders as 3 rows sharing one ID; a real re-sort (2 entries, force the older one's `last_seen` forward) moves it to the top on the next `refresh_queue()`; the Next/Prev-index-stability test from 2.2 passes.
+
+## Phase 3 — Skip / Skip-All
+*Chain: Neo → Trin → Morpheus*
+*Depends on: Phase 1 (`_forget_entry`, per-occurrence `_append_review_resolved`). No Smith gate — Smith already gated the underlying confirm-mechanism design at architecture review (§23 Gate 2); Trin/Morpheus verify the real implementation matches it.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 3.1 | `_resolve_as_skipped()`, `"s"` → `action_skip_selected` (no confirm, single entry). `"S"` → `action_skip_all` with the armed/confirm 2-keypress flow, `#queue-status` `Static`, `on_key` disarm-on-anything-else. | §23.4, STORY-1804 |
+
+**Exit criteria:** skip writes zero `PolicyRule`/`ScanCache` changes (grep the test's own assertions, not just "still passes"); a real full-log replay confirms a skipped aggregate's every occurrence stays gone after restart; a single `"S"` press alone does not skip anything (must press twice); any other key between the two `"S"` presses cancels it (verified, not assumed).
+
+## Phase 4 — Bigger Command View & Pattern-Field Undo/Redo
+*Chain: Neo → Trin → Morpheus*
+*Depends on: nothing (independent of Phases 1-3's files, both land in `ReviewScreen`). No Smith gate — a display-size change and a text-editing convenience, not a new decision surface.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 4.1 | `#tool-input` CSS `max-height: 4` → `12`. Re-verify (or adjust) the standard-80x24-screen layout regression test. | §23.5, STORY-1805 |
+| 4.2 | `_InputHistory` helper class; 2 instances per `ReviewScreen` (reset in `refresh_header()`); `ctrl+z`/`ctrl+y`/`ctrl+shift+z` bindings, `action_undo_field`/`action_redo_field` dispatch by `self.focused`. Confirm bindings render in the Footer (Smith's Gate 2 note). | §23.6, STORY-1806 |
+
+**Exit criteria:** a long real Bash command is readable without scrolling on a common terminal size, still scrolls if longer; undo/redo round-trips correctly on both fields independently; switching entries (Next/Prev) resets both histories (verified: undo after switching does not reach back into the previous entry's edits).
+
+## Phase 5 — Rules Screen: Edit & Delete
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Depends on: nothing (independent screen, new write paths). Mandatory Smith gate — same standing this project gives every write-on-use access-control surface (E17 Phase 4's own gate, Smith's consult precedent).*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 5.1 | `policy_config.update_rule(policy_path, index, rule)` / `delete_rule(policy_path, index)`, mirroring `swap_rule_order`'s real read-modify-write-raw-dict pattern; `update_rule`'s dict shape matches `onboard.write_rule`'s existing convention. | §23.7, STORY-1807, STORY-1808 |
+| 5.2 | `RulesScreen`: `"e"` mounts an inline edit form (Tool/Pattern `Input`s, Sensitivity/Mode/**Trust** `RadioSet`s, Description `Input`) pre-filled from the selected rule, Enter saves via `update_rule` + validates via real `PolicyRule` construction, Escape cancels untouched. `"d"` reuses the Phase 3 armed/confirm idiom for `delete_rule`. | §23.7, STORY-1807, STORY-1808 |
+
+**Exit criteria:** editing a rule's pattern to an invalid regex is rejected with a clear message and no write; a real 2-rule policy file where editing one rule's pattern changes which rule a real `pre_tool_use` call resolves with, verified end-to-end; delete requires 2 keypresses, removes exactly the targeted rule, every other rule's fields/order unaffected; Smith's mandatory gate independently re-verifies both write paths against a real file, not just the unit tests.
+
+## Notes
+- No Tank phase — same reasoning as every prior monitor-focused sprint (no daemon, no new infra surface).
+- Only Phase 5 gets a mandatory Smith gate — Phases 1-4 either have no new user-facing decision surface (1, 2 are display/data-layer refinements of an already-gated screen) or no new *write* consequence beyond what's already gated (3's skip writes no rule/cache; 4 is read-only-view sizing + an editing convenience). Phase 5 introduces two genuinely new ways to mutate `scalene_policy.yaml`.
+- Phases 1→2→3 are a hard chain (each builds on the prior phase's new fields/helpers); Phase 4 and Phase 5 can run in either order relative to each other and relative to 1-3, but are listed last since neither is a dependency for anything.
 - 3 of 4 phases carry mandatory Smith gates (Phase 1: primary-surface replacement; Phase 3: the epic's one real safety-critical finding; Phase 4: new screen with live write-on-use access-control consequences) — Phase 2 is the only phase without one, consistent with prior sprints only gating phases with a genuine new user-facing risk.

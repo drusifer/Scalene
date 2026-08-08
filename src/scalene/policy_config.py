@@ -300,6 +300,89 @@ def write_default_project_policy(path: Path, project_root: Path) -> None:
     path.write_text(yaml.safe_dump({"rules": [rule]}, sort_keys=False, default_flow_style=False))
 
 
+def _load_rules_document(policy_path: Path) -> dict:
+    """docs/ARCHITECTURE.md sec23.7: shared real-read-parse step for
+    `swap_rule_order`/`update_rule`/`delete_rule` -- `yaml.safe_load`,
+    `OSError`/`YAMLError` raised as this module's own `PolicyConfigError`,
+    same standard every writer in this file already follows. Always
+    returns a dict with a real (possibly empty) `"rules"` list already
+    validated and assigned, so every caller can index into it directly."""
+    try:
+        raw_text = policy_path.read_text()
+    except OSError as exc:
+        raise PolicyConfigError(f"Cannot read policy file {policy_path}: {exc}") from exc
+
+    try:
+        data = yaml.safe_load(raw_text)
+    except yaml.YAMLError as exc:
+        raise PolicyConfigError(f"Invalid YAML in {policy_path}: {exc}") from exc
+
+    data = data or {}
+    if not isinstance(data, dict):
+        raise PolicyConfigError(f"Policy file {policy_path} must be a YAML mapping, got {type(data).__name__}")
+
+    rules = data.get("rules") or []
+    if not isinstance(rules, list):
+        raise PolicyConfigError(f"'rules' in {policy_path} must be a list")
+    data["rules"] = rules
+    return data
+
+
+def _write_rules_document(policy_path: Path, data: dict) -> None:
+    try:
+        policy_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+    except OSError as exc:
+        raise PolicyConfigError(f"Could not write {policy_path}: {exc}") from exc
+
+
+def update_rule(policy_path: Path, index: int, rule: PolicyRule) -> None:
+    """docs/ARCHITECTURE.md sec23.7 (STORY-1807): `scg monitor`'s Rules
+    screen edit action. `rule` has already been constructed -- and so
+    already passed `PolicyRule.__post_init__`'s own validation -- by the
+    caller before this is invoked; this function only ever writes an
+    already-valid rule.
+
+    Replaces `rules[index]` wholesale with a dict in the same shape
+    `onboard.write_rule`'s own convention uses (`tool`/`pattern`/
+    `sensitivity`/`mode` always present; `scanner`/`description` only if
+    non-empty; `trust` only if not `"high"`, its default) -- duplicated
+    here rather than imported, since `onboard.py` already imports from
+    this module and the reverse would be circular (same reasoning
+    `write_default_project_policy` above already applies). A full
+    replace, not a field-by-field merge, so an edited rule serializes
+    identically to one freshly authored via `write_rule`, with no stale
+    keys left over from before the edit.
+
+    Same caller-bounds-checks-first contract as `swap_rule_order`: an
+    out-of-range `index` raises `IndexError` via the list assignment
+    itself, rather than a separate explicit check."""
+    data = _load_rules_document(policy_path)
+    rules = data["rules"]
+    rule_dict = {"tool": rule.tool, "pattern": rule.pattern, "sensitivity": rule.sensitivity, "mode": rule.mode}
+    if rule.scanner:
+        rule_dict["scanner"] = rule.scanner
+    if rule.description:
+        rule_dict["description"] = rule.description
+    if rule.trust != "high":
+        rule_dict["trust"] = rule.trust
+    rules[index] = rule_dict
+    data["rules"] = rules
+    _write_rules_document(policy_path, data)
+
+
+def delete_rule(policy_path: Path, index: int) -> None:
+    """docs/ARCHITECTURE.md sec23.7 (STORY-1808): `scg monitor`'s Rules
+    screen delete action. Every other rule's fields/order are otherwise
+    unaffected. Same caller-bounds-checks-first contract as
+    `swap_rule_order`/`update_rule` -- an out-of-range `index` raises
+    `IndexError` via `del` itself."""
+    data = _load_rules_document(policy_path)
+    rules = data["rules"]
+    del rules[index]
+    data["rules"] = rules
+    _write_rules_document(policy_path, data)
+
+
 def swap_rule_order(policy_path: Path, index: int, direction: int) -> None:
     """docs/ARCHITECTURE.md sec22.5 (STORY-1705): `scg monitor`'s Rules
     screen move-up/move-down. `direction` is `+1` (move down) or `-1` (move
@@ -327,30 +410,15 @@ def swap_rule_order(policy_path: Path, index: int, direction: int) -> None:
     actions are disabled at the boundary, same pattern `ReviewScreen`'s
     Prev/Next already uses) -- an out-of-range index raises `IndexError`
     here rather than silently no-op'ing, since that would only happen from
-    a real caller bug, not an ordinary operator action."""
-    try:
-        raw_text = policy_path.read_text()
-    except OSError as exc:
-        raise PolicyConfigError(f"Cannot read policy file {policy_path}: {exc}") from exc
+    a real caller bug, not an ordinary operator action.
 
-    try:
-        data = yaml.safe_load(raw_text)
-    except yaml.YAMLError as exc:
-        raise PolicyConfigError(f"Invalid YAML in {policy_path}: {exc}") from exc
-
-    data = data or {}
-    if not isinstance(data, dict):
-        raise PolicyConfigError(f"Policy file {policy_path} must be a YAML mapping, got {type(data).__name__}")
-
-    rules = data.get("rules") or []
-    if not isinstance(rules, list):
-        raise PolicyConfigError(f"'rules' in {policy_path} must be a list")
-
+    2026-08-07 (sec23.7): body factored into `_load_rules_document`/
+    `_write_rules_document`, shared with the new `update_rule`/
+    `delete_rule` -- behavior unchanged, same real read/validate/write
+    steps as before, just no longer duplicated 3 times in this module."""
+    data = _load_rules_document(policy_path)
+    rules = data["rules"]
     other = index + direction
     rules[index], rules[other] = rules[other], rules[index]
     data["rules"] = rules
-
-    try:
-        policy_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
-    except OSError as exc:
-        raise PolicyConfigError(f"Could not write {policy_path}: {exc}") from exc
+    _write_rules_document(policy_path, data)

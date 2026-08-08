@@ -24,7 +24,9 @@ from scalene.policy_config import (
     PolicyConfig,
     PolicyConfigError,
     PolicyRule,
+    delete_rule,
     swap_rule_order,
+    update_rule,
     write_default_project_policy,
 )
 from scalene.scanner import FileScanner, Resource
@@ -618,6 +620,213 @@ class TestSwapRuleOrder(unittest.TestCase):
             finally:
                 policy_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
                 os.chmod(tmp, 0o755)
+
+
+class TestUpdateRule(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec23.7 (STORY-1807): `scg monitor`'s Rules
+    screen edit action. Pure file-level unit tests -- no Textual/UI
+    dependency, matching TestSwapRuleOrder's own style."""
+
+    def _write_rules(self, policy_path: Path, rules: list[dict]) -> None:
+        policy_path.write_text(yaml.safe_dump({"rules": rules}, sort_keys=False, default_flow_style=False))
+
+    def test_replaces_the_rule_at_the_given_index(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [{"tool": ".*", "pattern": "old", "sensitivity": "public", "mode": "allow"}],
+            )
+            update_rule(policy_path, 0, PolicyRule(tool="Bash", pattern="new", sensitivity="restricted", mode="block"))
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(
+                data["rules"][0],
+                {"tool": "Bash", "pattern": "new", "sensitivity": "restricted", "mode": "block"},
+            )
+
+    def test_other_rules_and_order_are_unaffected(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "c", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            update_rule(policy_path, 1, PolicyRule(tool=".*", pattern="edited-b", sensitivity="public", mode="allow"))
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in data["rules"]], ["a", "edited-b", "c"])
+
+    def test_serializes_in_write_rule_shape_omitting_defaults(self):
+        # scanner/description omitted when empty, trust omitted at its
+        # default "high" -- matches onboard.write_rule's own convention so
+        # an edited rule looks identical to a freshly-authored one.
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [{"tool": "Bash", "pattern": "old", "sensitivity": "restricted", "mode": "block", "scanner": "secrets", "description": "stale", "trust": "low"}],
+            )
+            update_rule(policy_path, 0, PolicyRule(tool=".*", pattern="new", sensitivity="public", mode="allow"))
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(data["rules"][0], {"tool": ".*", "pattern": "new", "sensitivity": "public", "mode": "allow"})
+
+    def test_serializes_non_default_scanner_description_and_trust(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(policy_path, [{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+            update_rule(
+                policy_path,
+                0,
+                PolicyRule(tool="Bash", pattern="b", sensitivity="restricted", mode="block", scanner="secrets", description="real", trust="low"),
+            )
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual(
+                data["rules"][0],
+                {"tool": "Bash", "pattern": "b", "sensitivity": "restricted", "mode": "block", "scanner": "secrets", "description": "real", "trust": "low"},
+            )
+
+    def test_out_of_range_index_raises_index_error(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(policy_path, [{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+            with self.assertRaises(IndexError):
+                update_rule(policy_path, 5, PolicyRule(tool=".*", pattern="b", sensitivity="public", mode="allow"))
+
+    def test_missing_file_raises_policy_config_error_not_a_traceback(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "does_not_exist.yaml"
+            with self.assertRaises(PolicyConfigError):
+                update_rule(policy_path, 0, PolicyRule(tool=".*", pattern="a", sensitivity="public", mode="allow"))
+
+    def test_editing_a_rules_pattern_changes_which_rule_a_real_hook_call_resolves_with(self):
+        # Trin's UAT (sec23.7, mirrors TestSwapRuleOrder's own hard e2e AC):
+        # the real point of "edit" is that it's a genuine access-control
+        # write, not just a YAML content change -- verified via
+        # PolicyConfig.from_yaml + the real matching path.
+        #
+        # Deliberately anchored on the `confirmed_bad`/block branch for
+        # "before" (Trin's own correction after a first draft of this test
+        # wrongly relied on decide_access's separate "clean session's first
+        # touch gets a free pass" behavior for its *before* assertion too --
+        # that path fires regardless of which rule matched, so it couldn't
+        # actually prove the edit was what changed the outcome). A matching
+        # `mode=block` rule blocks deterministically, independent of session
+        # state, so "before" only passes because the rule really matched.
+        from scalene.resource_verifier import decide_access
+        from scalene.scan_cache import ScanCache
+        from scalene.taint_state import TaintState
+
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            target = str(Path(tmp) / "secret.env")
+            Path(target).write_text("nothing")
+            other = str(Path(tmp) / "other.env")
+            Path(other).write_text("nothing")
+            self._write_rules(policy_path, [{"tool": ".*", "pattern": target, "sensitivity": "restricted", "mode": "block"}])
+            cache_path = Path(tmp) / "scan_cache.json"
+            state_dir = Path(tmp) / "state"
+            state_dir.mkdir()
+
+            config_before = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1", state_dir=state_dir)
+            decision_before = decide_access("Read", {"file_path": target}, config_before, ScanCache(cache_path), taint)
+            self.assertFalse(decision_before.allowed)  # rule matches `target` with mode=block
+
+            update_rule(policy_path, 0, PolicyRule(tool=".*", pattern=other, sensitivity="restricted", mode="block"))
+
+            config_after = PolicyConfig.from_yaml(policy_path)
+            taint2 = TaintState(session_id="s2", state_dir=state_dir)
+            decision_after = decide_access("Read", {"file_path": target}, config_after, ScanCache(cache_path), taint2)
+            self.assertTrue(decision_after.allowed)  # edited rule no longer matches `target`
+
+
+class TestDeleteRule(unittest.TestCase):
+    """docs/ARCHITECTURE.md sec23.7 (STORY-1808): `scg monitor`'s Rules
+    screen delete action."""
+
+    def _write_rules(self, policy_path: Path, rules: list[dict]) -> None:
+        policy_path.write_text(yaml.safe_dump({"rules": rules}, sort_keys=False, default_flow_style=False))
+
+    def test_removes_the_rule_at_the_given_index(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            delete_rule(policy_path, 0)
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in data["rules"]], ["b"])
+
+    def test_other_rules_and_order_are_unaffected(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(
+                policy_path,
+                [
+                    {"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "b", "sensitivity": "public", "mode": "allow"},
+                    {"tool": ".*", "pattern": "c", "sensitivity": "public", "mode": "allow"},
+                ],
+            )
+            delete_rule(policy_path, 1)
+            data = yaml.safe_load(policy_path.read_text())
+            self.assertEqual([r["pattern"] for r in data["rules"]], ["a", "c"])
+
+    def test_out_of_range_index_raises_index_error(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            self._write_rules(policy_path, [{"tool": ".*", "pattern": "a", "sensitivity": "public", "mode": "allow"}])
+            with self.assertRaises(IndexError):
+                delete_rule(policy_path, 5)
+
+    def test_missing_file_raises_policy_config_error_not_a_traceback(self):
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "does_not_exist.yaml"
+            with self.assertRaises(PolicyConfigError):
+                delete_rule(policy_path, 0)
+
+    def test_deleting_a_rule_changes_which_rule_a_real_hook_call_resolves_with(self):
+        # Trin's UAT (sec23.7): deleting the rule that was actively
+        # blocking a resource must genuinely stop blocking it, verified via
+        # the real matching path -- not just that the YAML shrank by one.
+        #
+        # Anchored on the deterministic `confirmed_bad`/block branch for
+        # "before" (same correction as TestUpdateRule's e2e test above --
+        # a matching mode=block rule blocks regardless of session state,
+        # unlike an "allow" outcome, which can also come from decide_
+        # access's separate clean-session first-touch free pass and so
+        # wouldn't actually prove the *rule* was what granted it).
+        from scalene.resource_verifier import decide_access
+        from scalene.scan_cache import ScanCache
+        from scalene.taint_state import TaintState
+
+        with TemporaryDirectory() as tmp:
+            policy_path = Path(tmp) / "scalene_policy.yaml"
+            target = str(Path(tmp) / "secret.env")
+            Path(target).write_text("nothing")
+            self._write_rules(policy_path, [{"tool": ".*", "pattern": target, "sensitivity": "restricted", "mode": "block"}])
+            cache_path = Path(tmp) / "scan_cache.json"
+            state_dir = Path(tmp) / "state"
+            state_dir.mkdir()
+
+            config_before = PolicyConfig.from_yaml(policy_path)
+            taint = TaintState(session_id="s1", state_dir=state_dir)
+            decision_before = decide_access("Read", {"file_path": target}, config_before, ScanCache(cache_path), taint)
+            self.assertFalse(decision_before.allowed)  # rule matches `target` with mode=block
+
+            delete_rule(policy_path, 0)
+
+            config_after = PolicyConfig.from_yaml(policy_path)
+            taint2 = TaintState(session_id="s2", state_dir=state_dir)
+            decision_after = decide_access("Read", {"file_path": target}, config_after, ScanCache(cache_path), taint2)
+            self.assertTrue(decision_after.allowed)  # no rule left to block it
 
 
 if __name__ == "__main__":

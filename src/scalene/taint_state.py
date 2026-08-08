@@ -37,6 +37,17 @@ class TaintState:
     trust: str = "high"
     sensitivity: str = "public"
     state_dir: Path = field(default=DEFAULT_STATE_DIR, repr=False, compare=False)
+    # 2026-08-07 (docs/ARCHITECTURE.md sec15.2's own flagged future work,
+    # direct user request): resources this session was optimistically
+    # granted access to on a matching `mode: allow` rule *before* their
+    # background scan finished -- "trust but verify," not "verify before
+    # trust." Raw `scan_cache.cache_key()` strings (scanner_name:identity),
+    # not full `Resource` objects: `resource_verifier._reconcile_pending_
+    # trust()` only ever needs to look up the label, never re-scan. Scalene
+    # has no daemon -- one process per hook invocation -- so this list is
+    # what makes reconciliation possible at all: without it, there'd be
+    # nothing recorded to check on the *next* call in this session.
+    pending_trust: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.trust not in TRUST_LEVELS:
@@ -59,10 +70,26 @@ class TaintState:
         if _SENSITIVITY_RESTRICTIVENESS[level] > _SENSITIVITY_RESTRICTIVENESS[self.sensitivity]:
             self.sensitivity = level
 
+    def add_pending_trust(self, key: str) -> None:
+        """Start tracking `key` (`scan_cache.cache_key()`'s format) as
+        optimistically trusted, pending its background scan's real verdict.
+        A no-op if already tracked -- a resource touched more than once
+        before its scan finishes shouldn't accumulate duplicate entries."""
+        if key not in self.pending_trust:
+            self.pending_trust.append(key)
+
+    def resolve_pending_trust(self, key: str) -> None:
+        """Stop tracking `key` -- its scan has finished (clean or bad;
+        callers decide what a bad finding means for `trust`/`sensitivity`
+        themselves, this method only ever removes the tracking entry)."""
+        if key in self.pending_trust:
+            self.pending_trust.remove(key)
+
     def reset(self) -> None:
         """Explicit session/context reset — the only path back to clean (sec15.4)."""
         self.trust = "high"
         self.sensitivity = "public"
+        self.pending_trust = []
         path = self._path()
         if path.exists():
             path.unlink()
@@ -79,6 +106,7 @@ class TaintState:
             trust=data.get("trust", "high"),
             sensitivity=data.get("sensitivity", "public"),
             state_dir=Path(state_dir),
+            pending_trust=list(data.get("pending_trust", [])),
         )
 
     def save(self) -> None:
@@ -91,6 +119,7 @@ class TaintState:
                         "session_id": self.session_id,
                         "trust": self.trust,
                         "sensitivity": self.sensitivity,
+                        "pending_trust": self.pending_trust,
                     }
                 )
             )

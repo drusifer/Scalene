@@ -230,7 +230,7 @@ class TestBuildReviewEntry(unittest.TestCase):
             block_kind="uncleared",
             tool_input={"url": "https://example.com/x"},
         )
-        entry = build_review_entry(event, SCANNERS)
+        entry = build_review_entry(event, SCANNERS, 1)
         self.assertEqual(len(entry.targets), 1)
         self.assertEqual(entry.targets[0].identity, "https://example.com/x")
 
@@ -238,7 +238,7 @@ class TestBuildReviewEntry(unittest.TestCase):
         event = ToolCallEvent(
             session_id="s1", tool_name="Bash", reason="blocked", event="block", tool_input={"command": "echo hi"}
         )
-        entry = build_review_entry(event, SCANNERS)
+        entry = build_review_entry(event, SCANNERS, 1)
         self.assertEqual(entry.targets, [])
 
     def test_all_verified_is_false_until_a_real_fresh_cache_entry_exists(self):
@@ -259,7 +259,7 @@ class TestBuildReviewEntry(unittest.TestCase):
                 event="block",
                 tool_input={"url": "https://example.com/x"},
             )
-            entry = build_review_entry(event, SCANNERS)
+            entry = build_review_entry(event, SCANNERS, 1)
             self.assertFalse(entry.all_verified(cache))
 
             cache.put(entry.targets[0], ScanResult(label="trusted", reason=""))
@@ -269,7 +269,7 @@ class TestBuildReviewEntry(unittest.TestCase):
             # same event, built fresh from the audit log the way a real
             # restart would -- still verified, because the real cache
             # (the only thing this now reads) was never touched.
-            restarted_entry = build_review_entry(event, SCANNERS)
+            restarted_entry = build_review_entry(event, SCANNERS, 1)
             self.assertTrue(restarted_entry.all_verified(cache))
 
     def test_all_verified_is_false_with_zero_targets(self):
@@ -277,7 +277,7 @@ class TestBuildReviewEntry(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cache = ScanCache(Path(tmp) / "scan_cache.json")
             event = ToolCallEvent(session_id="s1", tool_name="Bash", reason="blocked", event="block", tool_input={})
-            entry = build_review_entry(event, SCANNERS)
+            entry = build_review_entry(event, SCANNERS, 1)
             self.assertFalse(entry.all_verified(cache))
 
 

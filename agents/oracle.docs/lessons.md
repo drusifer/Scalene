@@ -244,3 +244,21 @@ When a `Pilot`-driven interaction test on a multi-widget screen doesn't behave a
 
 ### References
 - **Files:** `tests/test_monitor_app.py` (`test_allow_writes_a_real_rule_and_a_retry_of_the_same_call_is_then_allowed`, `test_bad_finding_blocks_allow_unless_mode_is_block` — both fixed with `size=(100, 50)`), `.venv/lib/python3.13/site-packages/textual/screen.py` (`Screen.dismiss()`, `ResultCallback.__call__`)
+
+---
+
+## [2026-08-07] Sprint 12: A Clean Session's First Touch Is a Free Pass, Independent of Which Rule Matched
+
+> **Tags:** #Trin #Smith #Testing #TestDesign
+
+### Context
+E18's `update_rule`/`delete_rule` needed a real end-to-end test proving a policy-file edit actually changes what a real `pre_tool_use` call resolves to — the same standard `TestSwapRuleOrder.test_reordering_changes_which_rule_actually_wins` already set. Trin's first draft used a brand-new `TaintState` session for the "before" assertion, with an `allow` rule matching the target, and asserted `allowed=True` — which passed, but for the wrong reason: `resource_verifier.decide_access()` grants a **fail-safe free pass** on a clean session's first-ever touch of an unrecognized resource (`if was_clean: taint.escalate_trust("low"); return AccessDecision(allowed=True)`), completely independent of whether any rule matched. The test would have passed identically with the rule deleted, or absent entirely — it never actually exercised the code under test. Caught during Trin's own UAT, then hit *again*, independently, by Smith during the sprint-close e2e test on a different assertion in the same shape.
+
+### The Issue
+`decide_access`'s two `allowed=True` paths look identical from a test's assertion (`self.assertTrue(decision.allowed)`) but have entirely different causes: (1) a matching `PolicyRule` with a fresh clean cache entry (`validated_allow`), or (2) `was_clean` — a session that has never yet touched an uncleared resource gets one free pass regardless of rule state. Only path (1) proves a rule mattered. A `mode=block` (or any `confirmed_bad`) match, by contrast, blocks **unconditionally**, checked before `was_clean` is ever consulted — so a test anchored on a real *block* transition (matching rule present → removed/edited-away) is deterministic and actually proves causation, where an *allow* transition on a fresh session might not.
+
+### The Rule (The "Lesson")
+When writing a real end-to-end test through `decide_access`/`pre_tool_use` that's meant to prove "this specific rule/edit/deletion is what changed the outcome," anchor the "before" (and any other) assertion on the deterministic `confirmed_bad`/`mode=block` branch, not a bare `allowed=True` — a fresh `TaintState` session's first touch of *anything* uncleared is allowed by the free-pass alone. If the scenario needs an `allowed=True` assertion, either pre-taint the session (`trust="low"` state file, matching this file's own standard test setup) so `was_clean` is already false, or make sure the specific rule under test is what's actually driving that branch (a real, cached `validated_allow` match), not incidental.
+
+### References
+- **Files:** `src/scalene/resource_verifier.py` (`decide_access`, the `confirmed_bad` vs. `was_clean` branches), `tests/test_policy_config.py` (`TestUpdateRule.test_editing_a_rules_pattern_changes_which_rule_a_real_hook_call_resolves_with`, `TestDeleteRule.test_deleting_a_rule_changes_which_rule_a_real_hook_call_resolves_with` — both rewritten onto the `mode=block` branch), `tests/test_monitor_app.py` (`TestE18EndToEndUserJourney` — hit the same trap independently on session `"s3"`, fixed by pre-tainting it)

@@ -39,8 +39,14 @@ class TestDemo(unittest.TestCase):
         self.assertIn("Allowed. Session was clean", result.stdout)
 
     def test_demo_shows_unrecognized_destination_blocked(self):
+        # 2026-08-07 (direct user bug report correction): the reason text
+        # now distinguishes "no rule matched at all" from "a rule matched
+        # but this resource hasn't been verified yet" -- this demo step has
+        # no rule at all, so it gets the "no explicitly-allowed rule"
+        # clause (the "validated" phrasing that used to apply to both
+        # cases was itself the source of the real confusion).
         result = subprocess.run([sys.executable, str(DEMO_SCRIPT)], capture_output=True, text=True, timeout=30)
-        self.assertIn("has no validated, explicitly-allowed rule", result.stdout)
+        self.assertIn("has no explicitly-allowed rule", result.stdout)
 
     def test_demo_shows_onboard_and_rule_clearing_a_destination(self):
         # docs/ARCHITECTURE.md sec17 (Sprint 8/E14): --target is gone --
