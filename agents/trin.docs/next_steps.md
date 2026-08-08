@@ -1,10 +1,12 @@
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START
-`*qa uat decide_access-correction` is DONE — PASS (2026-08-08). Both `decide_access()`'s corrected gate logic and the `RulesScreen` UX change (including the silent-downgrade bug I found and Neo fixed) verified, 602/602 at `make test`. Handed to Morpheus for review — nothing further for Trin here unless Morpheus/Smith kick something back.
+`*qa uat decide_access-correction` is DONE — PASS (2026-08-08). Both `decide_access()`'s corrected gate logic and the `RulesScreen` UX change (including the silent-downgrade bug I found and Neo fixed) verified, 602/602 at `make test`. Morpheus and Smith both subsequently approved; committed + pushed as `6d350fe`. Nothing in-flight for Trin.
+
+Also worth knowing on cold start (not mine, Neo's direct-user-session work, same commit): `make test` dropped from ~600-625s to ~74s, and the 2 genuine full-journey E2E tests moved to `tests/uat_test_monitor_app_journeys.py` (`make test-uat`-only) — no formal Trin UAT pass has run against that change specifically.
 
 ## Waiting On
-Nothing. Morpheus's review, then Smith's UX gate (RulesScreen behavior is directly user-observable).
+Nothing.
 
 ## Minor finding, not blocking (E15 Phase 1)
 `make test-q ARGS="-k pattern"` doesn't actually filter — the `test-q` Makefile target runs `unittest discover`, which ignores `-k`. Neo's own `SKILL.md` documents `ARGS="-k pattern"` as valid usage for `test-q`; it isn't, for this target. Not an E15 bug, pre-existing infra/doc mismatch — flagging for Bob to correct the doc, not fixing the Makefile myself mid-sprint.

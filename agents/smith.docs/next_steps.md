@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START
-`decide_access-correction`'s `*impl` Bloop chain is fully closed (2026-08-08): Neo implemented → Trin found+Neo fixed a real silent-downgrade bug → Morpheus approved → Smith (me) approved with 1 non-blocking display-gap finding (backlogged sensitivity/trust values show no visible selection when editing such a rule — see `context.md`). Nothing further needed from any persona unless the user raises something new. Next real step is committing (Neo's `next_steps.md` notes: ask the user before pushing).
+`decide_access-correction`'s `*impl` Bloop chain is fully closed (2026-08-08): Neo implemented → Trin found+Neo fixed a real silent-downgrade bug → Morpheus approved → Smith (me) approved with 1 non-blocking display-gap finding (backlogged sensitivity/trust values show no visible selection when editing such a rule — see `context.md`, still open/unfixed, not blocking). Committed + pushed as `6d350fe`. Nothing further needed from any persona unless the user raises something new.
 
 ## Carried, not re-litigated
 Sprint 12 (E18) Gate 1 done (2026-08-07): 1 real reject-fix round (STORY-1804's Skip All lacked the same confirm-before-execute step STORY-1808 requires for delete — Cypher fixed, re-approved same session), then approved, handed to Morpheus for arch. Next Smith touchpoint is Gate 2 (architecture review) once Morpheus hands back — watch specifically for STORY-1804/1808's confirmation-step *mechanism* actually landing consistently between the two (not just described consistently in the stories), and STORY-1801's ID-not-persisted-across-restart decision for any real discoverability friction once it's actually running.

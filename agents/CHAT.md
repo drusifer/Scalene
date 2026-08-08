@@ -850,3 +850,7 @@ make[1]: Leaving directory '/home/drusifer/Projects/Scalene'
 Ran 602 tests in 74.109s
 
 OK
+
+---
+[<small>2026-08-08 15:28:27</small>] [**Neo**]->[**all**] *state save*:
+ Session closing for /clear. Both threads (decide_access sec15.2b correction + full impl chain, and test-suite speed: 600s->74s) are committed+pushed as 6d350fe. State files updated for cold start (Neo/Trin/Morpheus/Smith all reflect final state, nothing in-flight).

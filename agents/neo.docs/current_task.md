@@ -1,24 +1,24 @@
-**Status:** §15.2b `decide_access()` correction implemented, 602/602, uncommitted — handed to Trin for UAT (2026-08-08).
+**Status:** Both session threads (§15.2b `decide_access()` correction + test-suite speed) done, reviewed, committed and pushed as `6d350fe` (2026-08-08). Nothing in-flight.
 **Assigned to:** Neo
 **Started:** 2026-08-08
-**Finished:** 2026-08-08 (implementation; sprint-style review chain still open)
+**Finished:** 2026-08-08
 
-## Task Description (most recent): `decide_access()` correction — validated_allow/trust_but_verify no longer bypass the contamination gate
-Full detail: `docs/ARCHITECTURE.md` §15.2b, `context.md` above. Resumed from last session's flagged-but-unconfirmed correction (`next_steps.md` had the truth table). Re-confirmed the exact semantics with the user (2 follow-up rounds — scope of the fix, then the sensitivity/trust granularity) before touching the function, per this session's own "no 3rd guess without confirmation" rule. Traced the proposed design by hand against the full existing `TestDecideAccess`/`TestTrustButVerify`/`TestProjectFolderDefault` suite before implementing — found and reported a real conflict (STORY-1504's project-folder convenience feature would have broken under a naive "any non-public sensitivity blocks" reading) rather than implementing first and discovering it via test failures.
+## Task Description (most recent): test-suite speed — direct user session
+Full detail: `next_steps.md`'s session summary. `make test` was ~600-625s; measured (stdlib timing wrapper, no pytest in this project) rather than assumed. Fixed 3 real things: `unittest.IsolatedAsyncioTestCase`'s hardcoded `asyncio.Runner(debug=True)` (~2.4x tax, no override hook) via `tests/_fast_async.py`; moved the 2 genuine full-journey E2E tests to `tests/uat_test_monitor_app_journeys.py` (`make test-uat`-only, named to dodge default `unittest discover`); `FileLock()` calls in `scan_cache.py`/`taint_state.py` had no timeout (blocked forever on contention) — added `timeout=5` to all three, with regression tests. `make test`: 602/602 in ~74s (was ~600-625s).
 
 ## Progress
-- [x] `resource_verifier.decide_access()`: `validated_allow`/`trust_but_verify` tag then gate (`trust=="low" and sensitivity=="restricted"`), unruled resources unchanged.
-- [x] `tests/test_resource_verifier.py`: rewrote 1 test that encoded the old bypass (`test_validated_allow_no_longer_bypasses_an_already_restricted_untainted_session`), added 2 new (trust_but_verify equivalent, med/internal-stay-inert regression).
-- [x] `tests/test_hook_adapter.py`: same rewrite for the equivalent real-hook-path test (`TestPreToolUseContaminatedContext`).
-- [x] `monitor_app.RulesScreen`: Sensitivity/Trust fields hide for Mode=block/mask, show for allow (`RadioSet.Changed` handler — new pattern for this file, no prior `reactive`/`watch_*` precedent existed); reduced to 2 pickable values each (`_LABELING_SENSITIVITIES`/`_LABELING_TRUST_LEVELS`).
-- [x] `tests/test_monitor_app.py`: new Pilot test for the show/hide behavior (real `pilot.click()`, not arrow-key nav — tried arrow keys first, they don't drive `RadioSet.pressed_index` the way this file's `j`/`k` custom bindings do elsewhere, a real repro not an assumption).
-- [x] `docs/ARCHITECTURE.md` §15.2b written.
-- [x] `make test`: 602/602.
-- [ ] Trin UAT, Morpheus review, Smith UX gate (RulesScreen behavior is directly user-observable) — not yet run.
-- [ ] Commit (ask user before pushing, per this repo's own convention).
+- [x] `tests/_fast_async.py` (`FastIsolatedAsyncioTestCase`), swapped into all 13 `test_monitor_app.py` classes.
+- [x] `tests/uat_test_monitor_app_journeys.py` — `TestE17`/`TestE18EndToEndUserJourney` extracted, verified both discovery paths (default excludes, `-p 'uat_test*.py'` includes).
+- [x] `Makefile`: `test-uat` target (both the real recipe and the `else`-block stub), `.PHONY` updated in both places.
+- [x] `src/scalene/scan_cache.py`/`taint_state.py`: `FileLock(..., timeout=5)`, 2 new regression tests (`test_a_held_lock_fails_fast_instead_of_hanging_forever` in each of `test_scan_cache.py`/`test_taint_state.py`).
+- [x] `make test`: 602/602 in ~74s.
+- [x] Committed + pushed (`6d350fe`), direct user request.
+
+## Task Description (prior): `decide_access()` correction — validated_allow/trust_but_verify no longer bypass the contamination gate
+Full detail: `docs/ARCHITECTURE.md` §15.2b, `context.md`. Went through the full `*impl` Bloop chain — Trin found a real silent-downgrade bug in `RulesScreen` (fixed), Morpheus approved, Smith approved (1 non-blocking display-gap finding). `make test`: 602/602 before the speed work above.
 
 ## Blockers
-None — chain in progress via Bloop `*impl`.
+None.
 
 ## Oracle Consultations
 None this session.

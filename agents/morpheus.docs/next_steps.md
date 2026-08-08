@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START
-§15.2b `decide_access()` correction reviewed and APPROVED (2026-08-08) — see `context.md`. Handed to Smith for the UX gate (`RulesScreen`'s Mode-responsive Sensitivity/Trust fields are directly user-observable behavior, matches this project's own standing bloop rule for when Smith re-engages). On re-invocation: nothing further from me unless Smith kicks something back — if Smith approves, this is ready to commit (ask the user before pushing, per this repo's convention).
+§15.2b `decide_access()` correction reviewed and APPROVED (2026-08-08) — see `context.md`. Smith's UX gate also passed. Committed + pushed as `6d350fe` (a later direct-user-session test-suite speed pass rode along in the same commit — see Neo's `context.md`/`next_steps.md` for that thread, not independently reviewed by me). Nothing in-flight.
 
 ## Waiting On
-Smith's UX gate verdict on the `RulesScreen` change.
+Nothing.
 
 ## Carried (older, still real)
 E16 architecture (`docs/ARCHITECTURE.md` §20, 2026-07-22) — status of its own Gate 2/Mouse phase breakdown not re-checked this session, was mid-flight as of 2026-07-22's save; reconcile against `agents/mouse.docs/` on next full sprint-planning entry rather than assuming still-current.
