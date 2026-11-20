@@ -1,3 +1,28 @@
+**Status:** E19 OLOY mode: all 3 sprint phases implemented, reviewed and gated; sprint closed 2026-11-20. Uncommitted pending user OK.
+**Assigned to:** Neo
+**Started:** 2026-11-20
+
+## Task Description (most recent): OLOY mode — direct user request
+"Streamline vetting resources during a session: auto-review, auto-mask, don't ask the user, just check." Opt-in via `defaults.oloy` / `SCALENE_OLOY`. Synchronous scan replaces background refresh + human review; scanner-clean unruled resources auto-clear; secrets in a tainted session's payload are masked via `updatedInput`; OLOY blocks never enter the monitor review queue.
+
+## Progress
+- [x] `policy_config.py`: `PolicyConfig.oloy`, `oloy_enabled()` (env override).
+- [x] `resource_verifier.py`: `_lookup_now()`, `decide_access(oloy=)`, `AccessDecision.auto_cleared`; low/restricted gate also covers auto-cleared.
+- [x] `masking.py`: `MaskingEngine.mask_secrets()`; `hook_adapter.py` wires auto-mask + audit fields (logs masked input, never the secret).
+- [x] `monitor_data.py`/`monitor_app.py`: `ToolCallEvent.oloy`, OLOY blocks not queued.
+- [x] `Makefile`: `test-one T=<module>` target.
+- [x] `tests/test_oloy.py` (17 tests); full `make test-q` 619/619 before the audit-log masking fix; affected modules re-run green after.
+- [x] Live E2E via real `scalene-guard` (tainted session: clean outside file allowed only with OLOY; secret file blocked; Bash secret masked).
+- [x] Docs: USER_GUIDE "OLOY mode", ARCHITECTURE §24, commented example in scalene_policy.yaml.
+- [x] Re-planned on user instruction; Phases 1-3 (warning, scan budget, mask scope, monitor summary) done + gated.
+- [ ] Commit (awaiting user).
+
+## Blockers
+None.
+
+---
+*Last updated: 2026-11-20*
+
 **Status:** Both session threads (§15.2b `decide_access()` correction + test-suite speed) done, reviewed, committed and pushed as `6d350fe` (2026-08-08). Nothing in-flight.
 **Assigned to:** Neo
 **Started:** 2026-08-08

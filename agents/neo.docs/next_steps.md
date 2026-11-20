@@ -1,3 +1,7 @@
+## 2026-11-20: OLOY mode follow-ups
+- E19 closed. Commit awaiting user.
+- Not done (deferred in §24.4): `scg` toggle subcommand; masking nested payload values; monitor-app-level test for OLOY blocks not queueing (only data layer is tested).
+
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START

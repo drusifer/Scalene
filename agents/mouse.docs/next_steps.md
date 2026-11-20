@@ -1,3 +1,6 @@
+## 2026-11-20
+- Track E19 phases 1-3; Smith gate on Phase 3; then close (Oracle, Smith e2e, retro, Cypher launch).
+
 # Next Steps
 
 ## Immediate Next Action

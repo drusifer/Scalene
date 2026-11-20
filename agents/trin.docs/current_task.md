@@ -1,5 +1,11 @@
 # Current Task
 
+**Status:** E19 UAT done, all 3 phases PASS (mutation checks on budget + queue exclusion), 19/19 ACs ticked, fail-closed AC test added at close. 2026-11-20.
+
+---
+
+# Current Task
+
 **Status:** `*qa uat decide_access-correction` — PASS after Neo's fix, handed to Morpheus (2026-08-08).
 **Assigned to:** Trin
 

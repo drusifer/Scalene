@@ -173,3 +173,7 @@
 
 ---
 *Last updated: 2026-07-09*
+
+## OLOY mode (2026-11-20, §24)
+- Opt-in auto-vetting. Key safety decision: the (low, restricted) gate also applies to auto-cleared resources, so OLOY never opens egress from a restricted session. Auto-mask only in tainted sessions; audit log stores masked input.
+- `make test-one T=<module>` exists now for focused runs.

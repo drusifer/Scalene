@@ -2,6 +2,7 @@ defaults:
   sensitive_by_default: true
   untrusted_by_default: true
   mode: mask
+  # oloy: true   # docs/USER_GUIDE.md "OLOY mode": auto-scan + auto-mask, no review queue (or SCALENE_OLOY=1)
 
 # 2026-07-17 (Sprint 5 / E11, docs/ARCHITECTURE.md sec14.6): this file's
 # previous `allowlist:` block (tool/jsonpath/pattern/target/description, one

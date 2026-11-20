@@ -31,7 +31,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .policy_config import PolicyConfig
+from .masking import MaskingEngine
+from .policy_config import PolicyConfig, oloy_setting
 from .resource_verifier import decide_access
 from .scan_cache import DEFAULT_CACHE_PATH, ScanCache
 from .taint_state import DEFAULT_STATE_DIR, TaintState
@@ -45,6 +46,7 @@ def _pre_tool_use_response(
     permission_decision: str,
     reason: str | None = None,
     updated_input: dict[str, Any] | None = None,
+    warning: str | None = None,
 ) -> dict[str, Any]:
     hook_specific: dict[str, Any] = {"hookEventName": "PreToolUse", "permissionDecision": permission_decision}
     if reason is not None:
@@ -58,6 +60,11 @@ def _pre_tool_use_response(
         # PreToolUse) — included defensively so the reason surfaces
         # regardless of which field Claude Code actually reads for this event.
         response["systemMessage"] = reason
+    if warning is not None:
+        # sec24.1 (Smith Gate 2): a config warning is appended to the
+        # user-visible systemMessage, never to permissionDecisionReason --
+        # the decision and its reason are unaffected by it.
+        response["systemMessage"] = f"{reason}\n{warning}" if reason is not None else warning
     return response
 
 
@@ -93,39 +100,68 @@ def pre_tool_use(
     tool_name = hook_input["tool_name"]
     session_id = hook_input["session_id"]
 
+    oloy, oloy_warning = oloy_setting(config)
     taint = TaintState.load(session_id, state_dir=state_dir)
-    decision = decide_access(tool_name, tool_input, config, ScanCache(cache_path), taint)
+    decision = decide_access(tool_name, tool_input, config, ScanCache(cache_path), taint, oloy=oloy)
     taint.save()
+
+    # docs/ARCHITECTURE.md sec24 (OLOY auto-mask): once a session is tainted,
+    # an allowed call's outgoing payload is scanned for real secrets and any
+    # field containing one is masked via `updatedInput`, instead of asking a
+    # human. A clean session's payloads pass through untouched -- nothing
+    # untrusted has been seen yet, so there's nothing to exfiltrate *to*.
+    masked_input: dict[str, Any] | None = None
+    masked_fields: dict[str, tuple[str, ...]] = {}
+    if oloy and decision.allowed and not taint.is_clean:
+        candidate, masked_fields = MaskingEngine().mask_secrets(tool_input, tool_name=tool_name)
+        if masked_fields:
+            masked_input = candidate
 
     # docs/ARCHITECTURE.md sec20.3 (STORY-1603, corrected 2026-07-22): every
     # call is logged, allow or block -- not just blocks -- so scg monitor's
     # event panel is a genuine tool-call stream, not a block-only feed. The
     # append is a single buffered write, not a scan/subprocess spawn, so
     # this doesn't share the measured first-sighting latency cost (sec13.3).
-    append_audit_log(
-        {
-            "event": "allow" if decision.allowed else "block",
-            "session_id": session_id,
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-            "reason": decision.reason,
-            "block_kind": decision.block_kind,
-            # docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue screen's
-            # "Age" column needs a real occurrence time -- nothing before
-            # this recorded one at all (ScanCache.scanned_at is a different
-            # timestamp, when a *scan* completed, not when the call itself
-            # happened). Defaults to 0.0 on read for any pre-existing
-            # audit-log line written before this field existed (monitor_
-            # data.ToolCallEvent), same "don't crash on an old-format line"
-            # convention as block_kind/tool_input already use.
-            "ts": time.time(),
-        },
-        audit_log_path,
-    )
+    entry: dict[str, Any] = {
+        "event": "allow" if decision.allowed else "block",
+        "session_id": session_id,
+        "tool_name": tool_name,
+        # sec24: a masked call logs what actually ran -- never write the
+        # secret that was just masked out of the call into the audit log.
+        "tool_input": masked_input if masked_input is not None else tool_input,
+        "reason": decision.reason,
+        "block_kind": decision.block_kind,
+        # docs/ARCHITECTURE.md sec22.2 (STORY-1701): the queue screen's
+        # "Age" column needs a real occurrence time -- nothing before
+        # this recorded one at all (ScanCache.scanned_at is a different
+        # timestamp, when a *scan* completed, not when the call itself
+        # happened). Defaults to 0.0 on read for any pre-existing
+        # audit-log line written before this field existed (monitor_
+        # data.ToolCallEvent), same "don't crash on an old-format line"
+        # convention as block_kind/tool_input already use.
+        "ts": time.time(),
+    }
+    if oloy:
+        # sec24: marks this event as decided automatically -- `scg monitor`
+        # never queues an OLOY block for human review (monitor_app.py).
+        entry["oloy"] = True
+        if decision.auto_cleared:
+            entry["auto_cleared"] = list(decision.auto_cleared)
+        if masked_fields:
+            entry["masked_fields"] = {key: list(found) for key, found in masked_fields.items()}
+    append_audit_log(entry, audit_log_path)
 
+    if masked_input is not None:
+        fields = ", ".join(sorted(masked_fields))
+        return _pre_tool_use_response(
+            "allow",
+            reason=f"Scalene OLOY: masked possible secret(s) in {fields} before this call ran.",
+            updated_input=masked_input,
+            warning=oloy_warning,
+        )
     if decision.allowed:
-        return _pre_tool_use_response("allow")
-    return _pre_tool_use_response("deny", reason=decision.reason)
+        return _pre_tool_use_response("allow", warning=oloy_warning)
+    return _pre_tool_use_response("deny", reason=decision.reason, warning=oloy_warning)
 
 
 def post_tool_use(

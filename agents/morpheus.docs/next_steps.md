@@ -1,3 +1,6 @@
+## 2026-11-20
+- Backlog: explicit hook timeout in scg install-hooks; per-mode strategy extraction if a 3rd mode appears.
+
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START

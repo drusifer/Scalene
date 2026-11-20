@@ -1,5 +1,27 @@
 # Current Task
 
+**Status:** Sprint 13 (E19, OLOY Mode) CLOSED and launched 2026-11-20. Not committed: per this file's standing note, ask the user before committing/pushing.
+
+---
+
+# Current Task
+
+**Status:** Sprint 13 (E19, OLOY Mode) stories drafted, handed to Smith for Gate 1.
+**Assigned to:** Cypher
+**Started:** 2026-11-20
+
+## Task Description: `*pm plan sprint` — E19 stories (OLOY Mode)
+Direct user request: auto-review, auto-mask, no review queue. Implementation preceded planning; user then directed "don't skip planning and review", so stories were written against the request and every AC left unchecked for Trin. Wrote STORY-1901 (toggle), 1902 (auto-review), 1903 (auto-mask), 1904 (monitor visibility). Grounding in code found a real gap: E17 retired the monitor event stream, so the existing impl's "visible in the event stream" doc claim is false — STORY-1904 requires a real visibility surface.
+
+## Progress
+- [x] Stories + ACs in docs/USER_STORIES.md (E19), PRD row + sprint mapping.
+- [ ] Smith Gate 1.
+
+---
+*Last updated: 2026-11-20*
+
+# Current Task
+
 **Status:** Sprint 12 (E18) drafted, handed to Smith for Gate 1.
 **Assigned to:** Cypher
 **Started:** 2026-08-07

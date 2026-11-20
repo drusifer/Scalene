@@ -1,5 +1,11 @@
 # Current Task
 
+**Status:** E19 groom done (2026-11-20): CHAT archived (151 msgs -> CHAT-ARCHIVE-20261120.md), 2 lessons recorded, sec24 symbol refs verified against src, E19 ACs ticked (19, not 18 as Trin's post said).
+
+---
+
+# Current Task
+
 **Status:** `*ora groom` (Sprint 9 / E15 close) complete. Handed to Smith for end-to-end test.
 **Assigned to:** Oracle
 **Started:** 2026-07-21

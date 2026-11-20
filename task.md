@@ -1,7 +1,7 @@
 # Sprint Task Board — Project Scalene
 
 **Owner:** Mouse
-**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing. **Sprint 7 (E13, `scg onboard` sec16 correction) closed 2026-07-20** — direct user design session, post-Sprint-6, same shape as sec15: `scg onboard` re-scoped to author a full `PolicyRule` in one call instead of only pre-seeding the cache (`docs/ARCHITECTURE.md` §16, reversing §14.3's "CLI surface never changes" requirement). Re-gated after the fact (Trin UAT + Morpheus review + Smith end-to-end test against the shipped sec16 code; Smith's gate found a real `--help` discoverability gap, fixed and re-verified within the same close). 291/291 tests passing. **Sprint 8 (E14, Tool-Call-Driven Onboarding) closed 2026-07-21** — full formal cycle including Smith's mandatory Phase 2 gate (verified live via a real pty-driven interactive session, 1 fix round for an axis-validation ordering bug) and a full sprint end-to-end test encoded as a permanent test (`TestE14EndToEndUserJourney`). 332/332 tests passing. Retro compiled, launched by Cypher. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) planned 2026-07-21** — Cypher→Smith Gate 1→Morpheus (`docs/ARCHITECTURE.md` §18)→Smith Gate 2 all passed same day; phase-broken below, plan pending Morpheus's review before Neo starts Phase 1.
+**Status:** Sprint 1 closed 2026-07-09. Sprint 2 closed 2026-07-10. **Sprint 3 closed 2026-07-16** (implemented 2026-07-14; Phase 3's UAT/review/gate never ran before the session moved to unrelated work — closed retroactively once noticed). **Sprint 4 (E10) closed 2026-07-15** — all 5 phases complete, every required gate passed (Trin UAT + Morpheus review every phase; Smith UX gate on Phases 3-5, found and closed a real regression-window decision plus a real UI rendering bug). Full end-to-end test passed. 230/230 tests passing. Retro complete, launched by Cypher. **Sprint 5 (E11) closed 2026-07-18** — planned as a 3-phase masking refinement, but Phase 3's Smith gate found a real gap that led to replacing the sprint's entire mechanism mid-gate (`docs/ARCHITECTURE.md` §15, rule-driven access control, superseding §14.4). Re-reviewed after the fact (Trin UAT + Morpheus review against the shipped sec15 code). 266/266 tests passing. **Sprint 6 (E12, tech debt) closed 2026-07-18** — 1 phase, 3 small independent stories pulled from the Sprint 3-5 retro backlog, verified against current code before scoping. 275/275 tests passing. **Sprint 7 (E13, `scg onboard` sec16 correction) closed 2026-07-20** — direct user design session, post-Sprint-6, same shape as sec15: `scg onboard` re-scoped to author a full `PolicyRule` in one call instead of only pre-seeding the cache (`docs/ARCHITECTURE.md` §16, reversing §14.3's "CLI surface never changes" requirement). Re-gated after the fact (Trin UAT + Morpheus review + Smith end-to-end test against the shipped sec16 code; Smith's gate found a real `--help` discoverability gap, fixed and re-verified within the same close). 291/291 tests passing. **Sprint 8 (E14, Tool-Call-Driven Onboarding) closed 2026-07-21** — full formal cycle including Smith's mandatory Phase 2 gate (verified live via a real pty-driven interactive session, 1 fix round for an axis-validation ordering bug) and a full sprint end-to-end test encoded as a permanent test (`TestE14EndToEndUserJourney`). 332/332 tests passing. Retro compiled, launched by Cypher. **Sprint 9 (E15, Configurable Scanner Registry & Extended Scanner Coverage) planned 2026-07-21** — Cypher→Smith Gate 1→Morpheus (`docs/ARCHITECTURE.md` §18)→Smith Gate 2 all passed same day; phase-broken below, plan pending Morpheus's review before Neo starts Phase 1. **Sprint 13 (E19, OLOY Mode) planned 2026-11-20** — see bottom of board.
 
 ---
 
@@ -717,3 +717,45 @@ Larger than Sprint 3 — 5 phases, since this replaces a subsystem shipped one c
 - Only Phase 5 gets a mandatory Smith gate — Phases 1-4 either have no new user-facing decision surface (1, 2 are display/data-layer refinements of an already-gated screen) or no new *write* consequence beyond what's already gated (3's skip writes no rule/cache; 4 is read-only-view sizing + an editing convenience). Phase 5 introduces two genuinely new ways to mutate `scalene_policy.yaml`.
 - Phases 1→2→3 are a hard chain (each builds on the prior phase's new fields/helpers); Phase 4 and Phase 5 can run in either order relative to each other and relative to 1-3, but are listed last since neither is a dependency for anything.
 - 3 of 4 phases carry mandatory Smith gates (Phase 1: primary-surface replacement; Phase 3: the epic's one real safety-critical finding; Phase 4: new screen with live write-on-use access-control consequences) — Phase 2 is the only phase without one, consistent with prior sprints only gating phases with a genuine new user-facing risk.
+
+---
+
+# Sprint 13 (E19 — OLOY Mode: Automatic In-Session Vetting)
+
+**Status:** ✅ **SPRINT CLOSED 2026-11-20.** All 3 phases passed Trin UAT and Morpheus review; Phase 3's mandatory Smith gate passed on real screenshots; Smith's sprint-close e2e PASS; retro done (`agents/cypher.docs/e19_retro_backlog.md`); launched by Cypher. 635/635 tests. Planning record: Cypher stories → Smith Gate 1 (1 rejection: silent fallback on an unrecognized `SCALENE_OLOY` value, fixed) → Morpheus `docs/ARCHITECTURE.md` §24 → Smith Gate 2 (1 rejection: the warning went to invisible stderr, moved to `systemMessage`) → this plan. **Honest record:** a first implementation was written on the user's direct request *before* planning. The user then said "don't skip planning and review", so this plan treats that code as a starting point. Each phase below is only the delta to §24 (§24.6), and every story AC stays unchecked until Trin verifies it.
+**Source:** `docs/USER_STORIES.md` E19 (STORY-1901–1904) + `docs/ARCHITECTURE.md` §24
+
+## Phase 1 — Toggle Warning & Scan Budget
+*Chain: Neo → Trin → Morpheus*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 1.1 | `oloy_setting(config) -> (enabled, warning)`; unrecognized non-empty `SCALENE_OLOY` → file setting + warning in `systemMessage` on every call (appended to any block/mask reason, never replacing it). | §24.1, STORY-1901 |
+| 1.2 | `OLOY_SCAN_BUDGET_SECONDS = 20` per call; resources past the budget fall back to `refresh_if_needed()` and block as `uncleared` in a tainted session, with a "still being scanned, retry shortly" message. | §24.2, STORY-1902 |
+
+**Exit criteria:** `SCALENE_OLOY=enable` produces a user-visible `systemMessage` and an unchanged decision. A budget-exhausted call never runs a synchronous scan past the budget, and it blocks instead of failing open (proven with a fake slow scanner, not by sleeping 20 s).
+
+## Phase 2 — Mask Scope
+*Chain: Neo → Trin → Morpheus*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 2.1 | `mask_secrets` never masks a tool's locator field (`_FILE_PATH_FIELDS`/`_URL_FIELDS`). Needs the tool name. | §24.3, STORY-1903 |
+
+**Exit criteria:** a `Write` whose `content` holds a secret has `content` masked and `file_path` intact, and the audit log never contains the secret.
+
+## Phase 3 — Monitor Visibility & Docs
+*Chain: Neo → Trin → Morpheus → **Smith (required)***
+*Mandatory Smith gate: this is the epic's only new user-facing surface.*
+
+| Task | Description | Ref |
+|------|-------------|-----|
+| 3.1 | `ToolCallEvent.auto_cleared`/`masked` parsed from the audit log; pure `format_oloy_summary(counts)` (`""` when no OLOY events). | §24.4, STORY-1904 |
+| 3.2 | `MonitorApp` accumulates per-session OLOY counts in `poll_data()`, and the session line appends the summary for the latest session. | §24.4, STORY-1904 |
+| 3.3 | Fix docs: USER_GUIDE's OLOY section (no event stream; describe the session line, warning, budget, mask scope). | STORY-1904 |
+
+**Exit criteria:** a real audit log with OLOY events renders `OLOY: N cleared · M masked · K blocked` on the session line (Pilot plus a real screenshot check), and the line is unchanged with no OLOY events. An OLOY block never enters the queue.
+
+## Notes
+- No Tank phase: no infra, deploy, or CI surface.
+- Hard chain 1→2→3 (Phase 3's counts depend on the audit fields that Phases 1-2 finalize).

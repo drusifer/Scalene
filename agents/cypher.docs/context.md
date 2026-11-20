@@ -24,3 +24,6 @@
 
 ---
 *Last updated: 2026-07-02*
+
+## E19 (2026-11-20)
+- OLOY mode is opt-in automatic vetting; human-independent guarantees (bad findings, block rules, low+restricted gate) must not weaken. Monitor has no event stream since E17 — any 'visible in the monitor' claim needs a real surface.

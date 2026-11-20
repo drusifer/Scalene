@@ -1258,3 +1258,34 @@ Both open with the identical read/validate block `swap_rule_order` already has (
 
 ### References
 `src/scalene/monitor_data.py` (`ReviewEntry` restructure, `review_aggregation_key`, `build_review_entry`), `src/scalene/monitor_app.py` (`MonitorApp._pending_by_key`/`_forget_entry`/`_resolve_as_skipped`/`action_skip_selected`/`action_skip_all`, `refresh_queue()` rewrite, `ReviewScreen._InputHistory`/undo-redo bindings, `RulesScreen` edit/delete), `src/scalene/policy_config.py` (`update_rule`, `delete_rule`), `src/scalene/onboard.py` (`write_rule`'s dict-shape convention, reused by `update_rule`), `docs/USER_STORIES.md` (E18, STORY-1801–1808).
+
+## 24. OLOY Mode — Automatic In-Session Vetting (E19, Sprint 13, 2026-11-20)
+
+Stories: `docs/USER_STORIES.md` E19 (STORY-1901–1904). Origin: direct user request — "auto-review, auto-mask … don't ask the user, just check." Opt-in; default behavior (§15) is unchanged when off. A first implementation preceded this design; this section is the design of record, and the code is reworked to match it where they differ (§24.6).
+
+### 24.1 Toggle (STORY-1901)
+`PolicyConfig.oloy` (`defaults.oloy`, default `False`) and `policy_config.oloy_enabled(config)`, which applies the `SCALENE_OLOY` override: on = `1/true/on/yes`, off = `0/false/off/no` (case/whitespace-insensitive), unset/empty → file. Any other value → file setting **plus** a warning naming the bad value and the accepted set (Smith Gate 1). Delivered in the hook response's `systemMessage` on every call until fixed (Smith Gate 2: nothing configures logging and Claude Code hides an exit-0 hook's stderr, so stderr would be invisible); the permission decision is unaffected. `oloy_setting(config) -> (enabled, warning | None)` returns both; `oloy_enabled()` stays as the bool-only convenience. When a call already has a reason (block/mask), the warning is appended to `systemMessage`, never replacing the decision reason.
+
+### 24.2 Auto-review (STORY-1902)
+`decide_access(..., oloy=True)` resolves each resource with `_lookup_now()`: a fresh cache entry is used as-is; a missing/stale one is scanned in-process (`Scanner.scan()`, already subprocess-isolated) and cached. A clean, unruled resource goes to a new `auto_cleared` bucket: allowed regardless of `was_clean`, `trust` escalated to `low` (scanner-clean ≠ human-vetted origin), named in `AccessDecision.auto_cleared`.
+
+Unchanged guarantees: bad finding / non-`allow` rule → `confirmed_bad`; the `("low", "restricted")` gate now covers `auto_cleared` too (otherwise OLOY reopens the exfiltration path Scalene exists to close), and in OLOY mode its message says no review is queued and a new session is needed, not "wait for review". Scanner-machinery failure → `ScannerMachineryError` → exit 2, fail closed.
+
+**Latency budget (open question 1).** Measured: one real scan is 0.3–0.8 s (process spawn + scan), plus up to the 3 s URLhaus timeout when live. The per-scan subprocess cap is 30 s, and the hooks are registered without an explicit timeout (Claude Code's default applies). A hook that times out is a *non-blocking* error — the call proceeds — so an unbounded number of sequential scans in one call is a fail-open risk. Decision: `OLOY_SCAN_BUDGET_SECONDS = 20` total synchronous-scan time per call, checked before each scan. A resource reached after the budget is spent falls back to the default path (`refresh_if_needed()`, background scan), so it is unscanned and blocks as `uncleared` in a tainted session with a message telling the agent it is still being scanned and to retry shortly (correct guidance here: the retry will hit the cache). Worst case per call ≈ budget + one capped scan, below the default hook timeout. A past-budget resource with a *stale* cache entry is decided on that last-known label (Trin, Phase 1 UAT) — the same semantics `refresh_if_needed()` already gives default mode; a background rescan is still triggered.
+
+### 24.3 Auto-mask (STORY-1903)
+After an allowed decision in a tainted session, `MaskingEngine.mask_secrets(tool_input)` runs `detect-secrets` over each **top-level string** field and replaces any field with findings by `MASK_LITERAL`, returned as `updatedInput` + `systemMessage` naming the fields. **Mask scope (open question 2):** top-level strings only this sprint (nested values deferred); the structured locator fields scanners identify resources from (`scanner._FILE_PATH_FIELDS` / `_URL_FIELDS` values — `file_path`, `url`) are never masked: replacing a path/URL breaks the call in a confusing way, and those resources were already vetted by §24.2. The audit log records the masked input, never the original.
+
+### 24.4 No review queue + monitor visibility (STORY-1904, open question 3)
+OLOY audit events carry `"oloy": true`, plus `auto_cleared` / `masked_fields` where relevant. `ToolCallEvent` gains `oloy`, `auto_cleared` (tuple) and `masked` (bool). `MonitorApp` never enqueues an OLOY block.
+
+Visibility: the monitor has had no event stream since §22.6, so the OLOY summary goes on the existing session line (§22.2, latest session, recomputed every poll): `Session: … (trust=…, sensitivity=…)  ·  OLOY: N cleared · M masked · K blocked`. Counts accumulate per `session_id` in `MonitorApp` as `poll()` delivers events (same full-log replay on restart as the queue), formatted by a pure `monitor_data.format_oloy_summary()` that returns `""` when that session has no OLOY events — so the line is unchanged for non-OLOY users. Derived from the audit log, never the monitor's own environment (it needn't match the hook's).
+
+### 24.5 Deferred
+`scg` toggle subcommand; masking nested values; showing "OLOY on" before the first OLOY decision (Smith Gate 1 non-blocking note).
+
+### 24.6 Rework vs. the pre-planning implementation
+Already matches: §24.2 core, §24.3 core, queue exclusion. Rework (Neo): unrecognized-value warning (§24.1), scan budget (§24.2), locator-field exclusion (§24.3), `ToolCallEvent.auto_cleared/masked` + session-line summary (§24.4), and the docs' false "event stream" claim.
+
+### References
+`src/scalene/policy_config.py` (`oloy_enabled`), `src/scalene/resource_verifier.py` (`_lookup_now`, `decide_access`, `AccessDecision.auto_cleared`, `OLOY_SCAN_BUDGET_SECONDS`), `src/scalene/masking.py` (`mask_secrets`), `src/scalene/hook_adapter.py` (`pre_tool_use`), `src/scalene/monitor_data.py` (`ToolCallEvent`, `format_oloy_summary`), `src/scalene/monitor_app.py` (queue exclusion, session line), `tests/test_oloy.py`.

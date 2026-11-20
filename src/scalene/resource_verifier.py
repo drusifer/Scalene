@@ -58,10 +58,11 @@ proceeds only if the session is currently clean, escalating `trust` to
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 
 from .policy_config import MatchResult, PolicyConfig, PolicyRule
-from .scan_cache import ScanCache, cache_key, refresh_if_needed
+from .scan_cache import CacheEntry, ScanCache, cache_key, refresh_if_needed
 from .scanner import Resource, Scanner
 from .taint_state import TaintState
 
@@ -73,6 +74,15 @@ _CLEAN_LABELS = ("public", "trusted")
 
 _SENSITIVITY_RANK = {"public": 0, "internal": 1, "restricted": 2}
 _MODE_RANK = {"allow": 0, "mask": 1, "block": 2}
+
+# docs/ARCHITECTURE.md sec24.2: total synchronous-scan time one OLOY call
+# may spend. A hook that runs past Claude Code's timeout is a non-blocking
+# error (the call proceeds), so unbounded sequential scans would fail open.
+# Measured single scans are 0.3-0.8s (+ up to the 3s URLhaus timeout); the
+# per-scan subprocess cap is 30s, so worst case ~= budget + one capped scan.
+OLOY_SCAN_BUDGET_SECONDS = 20.0
+# Indirection so tests can drive a fake clock instead of sleeping.
+_clock = time.monotonic
 
 
 def _find_matching_rule(
@@ -191,6 +201,11 @@ class AccessDecision:
     allowed: bool
     reason: str = ""
     block_kind: str | None = None  # "confirmed_bad" | "uncleared" | None (allowed)
+    # sec24 (OLOY mode): identities of unruled resources this call let
+    # through because a synchronous scan just confirmed them clean, in place
+    # of a human review. Empty outside OLOY mode. Logged so the audit trail
+    # shows exactly what was auto-cleared rather than hand-cleared.
+    auto_cleared: tuple[str, ...] = ()
 
 
 def _reconcile_pending_trust(taint: TaintState, cache: ScanCache) -> None:
@@ -219,8 +234,39 @@ def _reconcile_pending_trust(taint: TaintState, cache: ScanCache) -> None:
         taint.resolve_pending_trust(key)
 
 
+def _lookup_now(
+    resource: Resource, config: PolicyConfig, cache: ScanCache, deadline: float
+) -> tuple[CacheEntry | None, bool]:
+    """sec24.2 (OLOY mode): the synchronous counterpart to
+    `refresh_if_needed()`. Returns `(entry, deferred)`. A fresh cache entry
+    is used as-is; a missing/stale one is scanned right now, in this hook
+    process, and cached -- unless this call's scan budget (`deadline`) is
+    already spent, in which case the resource is handed to the normal
+    background path (`refresh_if_needed()`, last-known entry or None) and
+    reported as `deferred`. A scanner-machinery failure
+    (`ScannerMachineryError`) propagates: fail closed (exit 2), same as
+    every other scan failure. An unregistered scanner behaves like the
+    background lookup (no new entry)."""
+    entry = cache.get(resource)
+    if entry is not None and cache.is_fresh(resource, entry):
+        return entry, False
+    scanner = config.scanners.get(resource.scanner_name)
+    if scanner is None:
+        return entry, False
+    if _clock() >= deadline:
+        return refresh_if_needed(resource, cache), True
+    result = scanner.scan(resource)
+    cache.put(resource, result)
+    return cache.get(resource), False
+
+
 def decide_access(
-    tool_name: str, args: dict, config: PolicyConfig, cache: ScanCache, taint: TaintState
+    tool_name: str,
+    args: dict,
+    config: PolicyConfig,
+    cache: ScanCache,
+    taint: TaintState,
+    oloy: bool = False,
 ) -> AccessDecision:
     """docs/ARCHITECTURE.md sec15.3/sec21.8: the core call-permission
     decision. Mutates `taint` in place (escalate_trust/escalate_sensitivity)
@@ -251,7 +297,17 @@ def decide_access(
     themselves trip this gate -- only the literal `("low", "restricted")`
     combination does. The extra granularity is backlogged, not deleted.
     Unruled resources are unaffected by this correction -- they keep the
-    pre-existing `was_clean` gate below, unchanged."""
+    pre-existing `was_clean` gate below, unchanged.
+
+    sec24 (OLOY mode, `oloy=True`): every resource is looked up via
+    `_lookup_now()` (synchronous scan on a miss/stale entry) instead of
+    `refresh_if_needed()`, so "trust but verify" never occurs and an
+    unruled resource is never left waiting on a human: if its scan comes
+    back clean it is auto-cleared (proceeds even in a contaminated session,
+    trust still escalates to `low` since nobody vetted its origin); if bad,
+    it lands in `confirmed_bad` exactly as before. Explicit non-`allow`
+    rules and the `("low", "restricted")` gate still block -- OLOY replaces
+    the human review step, not the scanner or the human-authored rules."""
     _reconcile_pending_trust(taint, cache)
 
     resources = [r for scanner in config.scanners.values() for r in scanner.identify(tool_name, args)]
@@ -264,9 +320,17 @@ def decide_access(
     validated_allow: list[tuple[Resource, PolicyRule]] = []
     trust_but_verify: list[tuple[Resource, PolicyRule]] = []
     unruled: list[Resource] = []
+    auto_cleared: list[Resource] = []
+    deferred: set[str] = set()  # sec24.2: identities left to a background scan (budget spent)
+    deadline = _clock() + OLOY_SCAN_BUDGET_SECONDS
 
     for resource in resources:
-        entry = refresh_if_needed(resource, cache)
+        if oloy:
+            entry, was_deferred = _lookup_now(resource, config, cache, deadline)
+            if was_deferred:
+                deferred.add(resource.identity)
+        else:
+            entry = refresh_if_needed(resource, cache)
         is_bad = entry is not None and entry.label in _BAD_LABELS
         is_clean_entry = entry is not None and entry.label in _CLEAN_LABELS
         rule = _find_matching_rule(tool_name, resource, config.rules, config.scanners)
@@ -281,6 +345,8 @@ def decide_access(
             # Matches a mode=allow rule, but not yet independently
             # confirmed clean -- "trust but verify" (see docstring above).
             trust_but_verify.append((resource, rule))
+        elif oloy and is_clean_entry:
+            auto_cleared.append(resource)
         else:
             unruled.append(resource)
 
@@ -311,31 +377,71 @@ def decide_access(
         taint.escalate_trust(rule.trust)
         taint.add_pending_trust(cache_key(resource))
 
+    for resource in auto_cleared:
+        # Scanner-confirmed clean, but no human vouched for its origin --
+        # same trust signal an unruled resource in a clean session gets.
+        taint.escalate_trust("low")
+    cleared_names = tuple(resource.identity for resource in auto_cleared)
+
     labeled = validated_allow + trust_but_verify
-    if labeled and taint.trust == "low" and taint.sensitivity == "restricted":
+    # sec24: auto-cleared resources face the same gate -- OLOY must never
+    # open an egress path out of a session that holds restricted data.
+    gated = [resource for resource, _ in labeled] + auto_cleared
+    if gated and taint.trust == "low" and taint.sensitivity == "restricted":
         # 2026-08-07 correction (see docstring above): a rule can declare
         # intent, but it can't rescue an already-restricted, already-
         # untrusted session -- tagging happened above regardless of this
         # outcome (pending_trust tracking included), same as it always did.
-        names = ", ".join(resource.identity for resource, _ in labeled)
+        names = ", ".join(resource.identity for resource in gated)
         return AccessDecision(
             allowed=False,
             reason=(
                 f"Blocked: {names}. This session is untrusted and has touched "
                 f"restricted data (trust={taint.trust}, sensitivity={taint.sensitivity}). "
-                f"Wait for review, then retry."
+                + (
+                    # sec24: no human review is coming in OLOY mode -- only a
+                    # fresh session clears these tags.
+                    "OLOY mode: no review is queued; start a new session to clear this. Do not retry."
+                    if oloy
+                    else "Wait for review, then retry."
+                )
             ),
             block_kind="uncleared",
         )
 
     if not unruled:
-        return AccessDecision(allowed=True)
+        return AccessDecision(allowed=True, auto_cleared=cleared_names)
 
     if was_clean:
         taint.escalate_trust("low")
-        return AccessDecision(allowed=True)
+        return AccessDecision(allowed=True, auto_cleared=cleared_names)
 
     names = ", ".join(resource.identity for resource in unruled)
+    if oloy and all(resource.identity in deferred for resource in unruled):
+        # sec24.2: nothing is wrong with these yet -- this call's scan
+        # budget ran out first. A retry will find the background result.
+        return AccessDecision(
+            allowed=False,
+            reason=(
+                f"Blocked: {names} is still being scanned (this call's OLOY scan budget "
+                f"was used up). Retry shortly."
+            ),
+            block_kind="uncleared",
+            auto_cleared=cleared_names,
+        )
+    if oloy:
+        # Unruled and no clean/bad verdict (e.g. a custom scanner's
+        # unrecognized label) -- no human review is coming in OLOY mode.
+        return AccessDecision(
+            allowed=False,
+            reason=(
+                f"Blocked: {names} could not be verified automatically and has no "
+                f"explicitly-allowed rule (trust={taint.trust}, sensitivity={taint.sensitivity}). "
+                f"OLOY mode: no review is queued. Do not retry without a rule/config change."
+            ),
+            block_kind="uncleared",
+            auto_cleared=cleared_names,
+        )
     return AccessDecision(
         allowed=False,
         reason=(

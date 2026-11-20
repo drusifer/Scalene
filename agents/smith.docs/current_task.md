@@ -1,5 +1,14 @@
 # Current Task
 
+**Status:** E19 Gate 1 + Gate 2 APPROVED (each after 1 rejection). Phase 3 gate pending.
+**Started:** 2026-11-20
+
+Gate docs: e19_gate1_review.md, e19_gate2_review.md. Both rejections were found by running the real code (SCALENE_OLOY=enable probe; live hook response).
+
+---
+
+# Current Task
+
 **Status:** `*user test decide_access-correction` — APPROVED, 1 non-blocking finding. Bloop `*impl` chain done (2026-08-08).
 **Assigned to:** Smith
 **Started:** 2026-08-08

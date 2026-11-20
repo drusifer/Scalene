@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .policy_config import MatchResult
+from .scanner import locator_fields
 from .secrets_scan import scan_text_for_secrets
 
 logger = logging.getLogger("scalene.masking")
@@ -66,3 +67,31 @@ class MaskingEngine:
         masked = dict(args)
         masked[payload_field] = self.MASK_LITERAL
         return masked
+
+    def mask_secrets(self, args: Any, tool_name: str = "") -> tuple[Any, dict[str, tuple[str, ...]]]:
+        """docs/ARCHITECTURE.md sec24 (OLOY auto-mask): scans every top-level
+        string value in `args` for real secret content and replaces each one
+        that has findings with MASK_LITERAL. Returns `(masked_args,
+        findings_by_field)`; `findings_by_field` is empty (and `args` returned
+        unchanged) when nothing was found. Never raises on a non-dict `args`.
+
+        `tool_name`'s locator fields (`scanner.locator_fields()` -- e.g.
+        `Write.file_path`, `WebFetch.url`) are never scanned or masked
+        (sec24.3): masking one would break the call outright."""
+        if not isinstance(args, dict):
+            return args, {}
+        skip = locator_fields(tool_name)
+        findings_by_field: dict[str, tuple[str, ...]] = {}
+        for key, value in args.items():
+            if key in skip:
+                continue
+            if isinstance(value, str) and value:
+                findings = tuple(scan_text_for_secrets(value))
+                if findings:
+                    findings_by_field[key] = findings
+        if not findings_by_field:
+            return args, {}
+        masked = dict(args)
+        for key in findings_by_field:
+            masked[key] = self.MASK_LITERAL
+        return masked, findings_by_field

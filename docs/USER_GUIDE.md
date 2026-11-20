@@ -117,6 +117,43 @@ Tags persist for the life of the session (most-restrictive-wins if multiple call
 
 Clearing a destination is always explicit and validated — one `scg onboard` call, covered above under [`scg onboard`](#scg-onboard), does both halves (a real scan, and declaring what to do with it) together. See [Getting Started](GETTING_STARTED.md) for a full worked example.
 
+## OLOY mode: automatic vetting, no review queue
+
+OLOY ("YOLO" backward) streamlines vetting during a session. Instead of parking an unknown resource for you to review in `scg monitor`, Scalene checks it on the spot and lets the scanner's verdict decide. It is **off by default**. Turn it on for a project in `scalene_policy.yaml`:
+
+```yaml
+defaults:
+  oloy: true
+```
+
+or for one session/process with the `SCALENE_OLOY` environment variable, which overrides the file. Accepted values (case-insensitive): `1`/`true`/`on`/`yes` to turn it on, `0`/`false`/`off`/`no` to turn it off. Anything else (say, `SCALENE_OLOY=enable`) is ignored in favor of the file's setting, and every tool call shows a warning naming the bad value until you fix it.
+
+What changes when it's on:
+
+| Situation | Default mode | OLOY mode |
+|---|---|---|
+| Resource has no cache entry, or a stale one | Background scan; decision uses last-known/fail-safe state | **Scanned synchronously** before the call is decided (auto-review) |
+| No matching rule, session already tainted, scan is clean | Blocked, waiting for review | **Proceeds** (auto-cleared). `trust` still drops to `low`. |
+| No matching rule, scan finds a real issue | Blocked | Blocked (unchanged) |
+| Matching `mode: allow` rule, not yet scanned | Proceeds, "trust but verify" | Scanned first, so it's always fully validated |
+| Matching rule with `mode: block` | Blocked | Blocked (unchanged) |
+| Session is `trust: low` + `sensitivity: restricted` | Blocked | Blocked (unchanged). OLOY never opens egress from a session holding restricted data. Only a new session clears it. |
+| Tainted session, an allowed call's input contains a secret | Proceeds unchanged | **Masked** (auto-mask): each field with a detected secret is replaced with `[MASKED_BY_POLICY_PROVENANCE_GUARD]` and the call proceeds. You see which fields were masked. |
+
+**Scan budget.** One call spends at most 20 seconds scanning synchronously. A call that names many new resources may run out. Anything not yet scanned is handed to a background scan and blocks with "still being scanned … Retry shortly". The retry will find the result. This keeps the hook inside Claude Code's hook timeout, because a timed-out hook would let the call through unchecked.
+
+**Mask scope.** Only top-level string fields of a call's input are masked. A tool's own target field (`Read`/`Write`/`Edit` `file_path`, `WebFetch` `url`) is never masked, because that would break the call, and auto-review has already vetted that resource. Clean sessions are never masked: nothing untrusted has been touched yet. The audit log records the masked input, never the secret.
+
+**Seeing what OLOY did.** Nothing OLOY decides goes into the review queue; an OLOY block is the scanner's final verdict. `scg monitor`'s session line summarizes the latest session's OLOY decisions:
+
+```
+Session: 4f1c…  (trust=low, sensitivity=public)  ·  OLOY: 3 cleared · 1 masked · 1 blocked
+```
+
+The summary only appears once OLOY has decided something in that session, and it's counted from the audit log, so it reflects the hook's real setting regardless of the monitor's own environment. Audit-log lines carry `"oloy": true`, plus `auto_cleared` / `masked_fields` where relevant.
+
+**Costs.** A resource's first sighting adds a real scan's latency to that call (typically under a second; up to a few seconds for a live URL reputation lookup). A scanner-machinery failure fails closed (call blocked), same as any other scan failure.
+
 ## Resource verification & the scan cache
 
 Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit):

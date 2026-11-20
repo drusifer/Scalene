@@ -1,3 +1,9 @@
+## 2026-11-20 (E19 launched)
+- E19 retro backlog: agents/cypher.docs/e19_retro_backlog.md. Ask the user before commit/push.
+
+## 2026-11-20
+- Waiting on Smith Gate 1 for E19. After launch: fold E19 retro items into backlog.
+
 # Next Steps
 
 ## Immediate Next Action

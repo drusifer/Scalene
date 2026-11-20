@@ -1,5 +1,11 @@
 # Current Task
 
+**Status:** E19 arch (§24) + plan review + 3 phase reviews done, 2026-11-20. Gate 2 rejection fixed (warning via systemMessage).
+
+---
+
+# Current Task
+
 **Status:** `*lead review decide_access-correction` — APPROVED, handed to Smith for UX gate.
 **Assigned to:** Smith next
 **Started:** 2026-08-08

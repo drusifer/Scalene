@@ -262,3 +262,23 @@ When writing a real end-to-end test through `decide_access`/`pre_tool_use` that'
 
 ### References
 - **Files:** `src/scalene/resource_verifier.py` (`decide_access`, the `confirmed_bad` vs. `was_clean` branches), `tests/test_policy_config.py` (`TestUpdateRule.test_editing_a_rules_pattern_changes_which_rule_a_real_hook_call_resolves_with`, `TestDeleteRule.test_deleting_a_rule_changes_which_rule_a_real_hook_call_resolves_with` — both rewritten onto the `mode=block` branch), `tests/test_monitor_app.py` (`TestE18EndToEndUserJourney` — hit the same trap independently on session `"s3"`, fixed by pre-tainting it)
+
+---
+## [2026-11-20] Sprint 13: A Hook's stderr Is Not a User-Visible Channel
+> **Tags:** #Morpheus #Smith #Neo #HookContract
+### Context
+E19's arch first specified a `logger.warning` for an unrecognized `SCALENE_OLOY` value. That satisfied Smith's Gate 1 requirement ("never a silent fallback") on paper. Smith's Gate 2 ran `SCALENE_OLOY=enable scalene-guard` live and got a JSON response byte-identical to a normal allow. Nothing in `src/scalene` configures logging, and Claude Code shows a successful (exit 0) hook's stderr only in verbose mode.
+### The Rule (The "Lesson")
+For anything the *user* must notice from `scalene-guard`, use the response's `systemMessage` (or a deny reason), never stderr or logging. stderr is only seen on the exit-2 fatal path. When a requirement says "visible", verify it against the real hook output, not the code path that emits it.
+### References
+- **Files:** `src/scalene/hook_adapter.py` (`_pre_tool_use_response(warning=)`), `src/scalene/policy_config.py` (`oloy_setting`), `agents/smith.docs/e19_gate2_review.md`
+
+---
+## [2026-11-20] Sprint 13: Code Written Before Planning Carries Unverified Claims Into Its Docs
+> **Tags:** #Cypher #Oracle #Process
+### Context
+OLOY mode was implemented directly on the user's request. The user then directed "don't skip planning and review". Cypher, grounding the stories in the current code, found that the pre-planning docs claimed OLOY decisions "still appear in the event stream". E17 (§22.6) had removed that stream entirely, so the feature was invisible in `scg monitor`. The planning pass that followed produced 4 real rework items (§24.6) and 2 gate rejections, none of which the pre-planning implementation had.
+### The Rule (The "Lesson")
+When code precedes planning, plan against the *request*, not the code: write ACs unchecked, and treat every doc claim the code shipped with as unverified until it has been checked against the current system. Prior sprints can remove a surface that a new feature's docs still assume exists.
+### References
+- **Files:** `docs/USER_STORIES.md` (E19 process note), `docs/ARCHITECTURE.md` §24.6

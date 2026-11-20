@@ -69,6 +69,46 @@ class ToolCallEvent:
     # `pre_tool_use`) -- same graceful-degrade convention as `block_kind`/
     # `tool_input` above, not a crash on old data.
     timestamp: float = 0.0
+    # docs/ARCHITECTURE.md sec24 (OLOY mode): True when `pre_tool_use`
+    # decided this call automatically (no human review). The queue screen
+    # never queues an OLOY block -- it's already a final verdict. Defaults
+    # False for every pre-sec24 line.
+    oloy: bool = False
+    # sec24.4: identities OLOY auto-cleared on this call, and whether it
+    # masked any field -- both empty/False for every non-OLOY line.
+    auto_cleared: tuple[str, ...] = ()
+    masked: bool = False
+
+
+@dataclass
+class OloyCounts:
+    """docs/ARCHITECTURE.md sec24.4 (STORY-1904): per-session tally of
+    calls OLOY decided, accumulated from audit-log events. Counts *calls*,
+    not resources; one call can count as both cleared and masked."""
+
+    cleared: int = 0
+    masked: int = 0
+    blocked: int = 0
+
+    def add(self, event: "ToolCallEvent") -> None:
+        if not event.oloy:
+            return
+        if event.event == "block":
+            self.blocked += 1
+            return
+        if event.auto_cleared:
+            self.cleared += 1
+        if event.masked:
+            self.masked += 1
+
+
+def format_oloy_summary(counts: OloyCounts | None) -> str:
+    """sec24.4: `""` when the session has no OLOY decisions, so the session
+    line is byte-for-byte unchanged for anyone not using OLOY. Same " · "
+    clause separator as `format_scanner_status`."""
+    if counts is None or not (counts.cleared or counts.masked or counts.blocked):
+        return ""
+    return f"OLOY: {counts.cleared} cleared · {counts.masked} masked · {counts.blocked} blocked"
 
 
 @dataclass(frozen=True)
@@ -354,6 +394,9 @@ class AuditTail:
                         tool_input=entry.get("tool_input") or {},
                         log_offset=line_start,
                         timestamp=entry.get("ts", 0.0),
+                        oloy=bool(entry.get("oloy", False)),
+                        auto_cleared=tuple(entry.get("auto_cleared") or ()),
+                        masked=bool(entry.get("masked_fields")),
                     )
                 )
             self._offset = f.tell()

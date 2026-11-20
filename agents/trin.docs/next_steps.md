@@ -1,3 +1,6 @@
+## 2026-11-20
+- Nothing pending. Process note: map ACs to tests at phase UAT.
+
 # Next Steps
 
 ## Immediate Next Action — READ THIS FIRST ON COLD START

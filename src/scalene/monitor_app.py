@@ -21,12 +21,14 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, RadioButto
 from .hook_adapter import DEFAULT_AUDIT_LOG, append_audit_log
 from .monitor_data import (
     AuditTail,
+    OloyCounts,
     ReviewEntry,
     ReviewResolution,
     ToolCallEvent,
     build_review_entry,
     discover_scanner_activity,
     discover_sessions,
+    format_oloy_summary,
     format_scanner_status,
     review_aggregation_key,
     target_status,
@@ -1087,6 +1089,10 @@ class MonitorApp(App):
         self._state_dir = state_dir
         self._audit_log_path = audit_log_path
         self._tail = AuditTail(audit_log_path)
+        # docs/ARCHITECTURE.md sec24.4 (STORY-1904): OLOY decisions per
+        # session_id, accumulated from the same poll() stream (and the same
+        # full-log replay on restart) the queue uses.
+        self._oloy_counts: dict[str, OloyCounts] = {}
         self._cache_path = cache_path
         self._policy_path = policy_path
         self.sub_title = f"policy: {policy_path}  |  state: {state_dir}"
@@ -1176,7 +1182,10 @@ class MonitorApp(App):
         line = self.query_one("#session-line", Static)
         if sessions:
             latest = sessions[0]
-            line.update(f"Session: {latest.session_id}  (trust={latest.trust}, sensitivity={latest.sensitivity})")
+            text = f"Session: {latest.session_id}  (trust={latest.trust}, sensitivity={latest.sensitivity})"
+            # sec24.4: empty string for a session with no OLOY decisions.
+            summary = format_oloy_summary(self._oloy_counts.get(latest.session_id))
+            line.update(f"{text}  ·  {summary}" if summary else text)
         else:
             line.update("")
 
@@ -1198,8 +1207,12 @@ class MonitorApp(App):
                 # log from byte 0, so this now correctly nets out anything
                 # already resolved in a previous session, not just this one.
                 for item in new_items:
+                    if isinstance(item, ToolCallEvent) and item.oloy:
+                        self._oloy_counts.setdefault(item.session_id, OloyCounts()).add(item)
                     if isinstance(item, ToolCallEvent):
-                        if item.event == "block":
+                        # sec24: an OLOY block was decided by a real scan,
+                        # not parked for a human -- never queue it.
+                        if item.event == "block" and not item.oloy:
                             # docs/ARCHITECTURE.md sec23.1 (STORY-1801): a
                             # repeated, byte-for-byte identical call
                             # appends to its existing aggregate group

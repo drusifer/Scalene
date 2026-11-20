@@ -18,7 +18,7 @@ endif
 
 # ── Bob Protocol Targets ─────────────────────────────────────────────────────
 
-.PHONY: tldr test test-q test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
+.PHONY: tldr test test-q test-one test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
 
 tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
 	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
@@ -72,6 +72,11 @@ test: ## Run unit tests
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
 	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests -b; \
+	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
+
+test-one: ## Run one test module only, for validating a focused change (usage: make test-one T=test_oloy)
+	@if [ -z "$(T)" ]; then echo "usage: make test-one T=<module, e.g. test_oloy>" >&2; exit 2; fi
+	@if [ -x .venv/bin/python ]; then .venv/bin/python -m unittest discover -s tests -p '$(T).py'; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
 test-uat: ## Run the full suite PLUS the full end-to-end sprint-close journey tests (tests/uat_test_*.py, named so 'test'/'test-q' never collect them for routine dev iteration) -- use for *qa uat / sprint-close sign-off only
@@ -266,7 +271,7 @@ help: ## Show available make targets
 
 chat: ## Post a message to CHAT.md (usage: make chat MSG="<msg>" [PERSONA="<name>"] [CMD="<cmd>"] [TO="<recipient>"])
 	@[ -n "$(MSG)" ] || { echo "Usage: make chat MSG=\"<message>\" [PERSONA=\"<name>\"] [CMD=\"<cmd>\"] [TO=\"<recipient>\"]"; exit 1; }
-	@python agents/tools/chat.py "$(MSG)" \
+	@python3 agents/tools/chat.py "$(MSG)" \
 		$(if $(PERSONA),--persona "$(PERSONA)") \
 		$(if $(CMD),--cmd "$(CMD)") \
 		$(if $(TO),--to "$(TO)")
@@ -280,6 +285,9 @@ test: ## Run unit tests
 
 test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
 	@./agents/tools/mkf.py $(V) $@
+
+test-one: ## Run one test module only, for validating a focused change (usage: make test-one T=test_oloy)
+	@./agents/tools/mkf.py $(V) $@ T=$(T)
 
 test-uat: ## Run the full suite PLUS the full end-to-end sprint-close journey tests (tests/uat_test_*.py) -- use for *qa uat / sprint-close sign-off only
 	@./agents/tools/mkf.py $(V) $@

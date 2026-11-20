@@ -14,6 +14,7 @@ return shape `resource_verifier.evaluate()` now produces).
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -162,6 +163,14 @@ class PolicyConfig:
     # holds, so a bare `PolicyConfig()` (as most existing tests construct)
     # reproduces today's exact behavior with no config file involved.
     scanners: dict[str, Scanner] = field(default_factory=lambda: dict(SCANNERS))
+    # docs/ARCHITECTURE.md sec24 (OLOY mode, direct user request 2026-11-20):
+    # opt-in. When on, an unknown/stale resource is scanned synchronously
+    # in the hook itself and the scanner's verdict decides the call (clean
+    # -> proceeds, bad -> blocked); nothing is ever parked as "wait for
+    # review". Secrets in an already-tainted session's outgoing payload are
+    # masked instead of the call being blocked. `SCALENE_OLOY` overrides
+    # this per-process -- see `oloy_enabled()`.
+    oloy: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in VALID_MODES:
@@ -239,7 +248,44 @@ class PolicyConfig:
             mode=defaults.get("mode", "mask"),
             rules=tuple(rules),
             scanners=scanners,
+            oloy=bool(defaults.get("oloy", False)),
         )
+
+
+OLOY_ENV_VAR = "SCALENE_OLOY"
+
+
+_OLOY_ON_VALUES = ("1", "true", "on", "yes")
+_OLOY_OFF_VALUES = ("0", "false", "off", "no")
+
+
+def oloy_setting(config: PolicyConfig) -> tuple[bool, str | None]:
+    """sec24.1 (STORY-1901): resolves OLOY mode for this process as
+    `(enabled, warning)`. `SCALENE_OLOY` wins over `defaults.oloy` when it's
+    a recognized value (case/whitespace-insensitive); unset/empty defers to
+    the file. Any other value also defers to the file but returns a warning
+    -- Smith Gates 1+2: a typo must never silently leave OLOY in a state
+    the user didn't ask for, and the caller (`pre_tool_use`) delivers it via
+    `systemMessage`, since nothing configures logging and Claude Code hides
+    an exit-0 hook's stderr."""
+    original = os.environ.get(OLOY_ENV_VAR, "")
+    raw = original.strip().lower()
+    if not raw:
+        return config.oloy, None
+    if raw in _OLOY_ON_VALUES:
+        return True, None
+    if raw in _OLOY_OFF_VALUES:
+        return False, None
+    return config.oloy, (
+        f"Scalene: ignoring {OLOY_ENV_VAR}={original!r} -- expected "
+        f"{'/'.join(_OLOY_ON_VALUES)} (on) or {'/'.join(_OLOY_OFF_VALUES)} (off). "
+        f"Using the policy file's setting instead (oloy={'on' if config.oloy else 'off'})."
+    )
+
+
+def oloy_enabled(config: PolicyConfig) -> bool:
+    """Bool-only convenience over `oloy_setting()` (warning discarded)."""
+    return oloy_setting(config)[0]
 
 
 # sec18.4: shared with onboard.py's write_rule(), so a later, more specific

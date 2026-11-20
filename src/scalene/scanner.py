@@ -56,6 +56,16 @@ _URL_FIELDS = {
     "WebFetch": "url",
 }
 
+
+def locator_fields(tool_name: str) -> frozenset[str]:
+    """docs/ARCHITECTURE.md sec24.3: the argument field(s) a tool's schema
+    uses to *name* its target resource (`file_path`, `url`) -- the same
+    per-tool tables identify() reads. OLOY's auto-mask never masks these:
+    replacing a path/URL breaks the call, and that resource was already
+    vetted by auto-review."""
+    return frozenset(f for f in (_FILE_PATH_FIELDS.get(tool_name), _URL_FIELDS.get(tool_name)) if f)
+
+
 # Conservative on purpose: only path-shaped tokens match, so ordinary words
 # in a Bash command (e.g. "echo hello world") don't produce false-positive
 # file resources. 3 shapes, each requiring a `/` before any path characters
