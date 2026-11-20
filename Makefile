@@ -1,36 +1,24 @@
 .DEFAULT_GOAL := help
 
-# ── Bob Protocol Configuration ───────────────────────────────────────────────
-# Detect if this file is being run directly as Makefile.bob
-_IS_BOB_ENTRY := $(filter %Makefile.bob,$(firstword $(MAKEFILE_LIST)))
+# Scalene project targets. Bob Protocol tooling (chat, tldr, trace-annotate,
+# install/update/pull/clean/diff) lives in the `bobp` CLI, not here. Run any
+# target through `bobp make <target>` for captured output (build/build.out)
+# and a CHAT.md status post, or plain `make <target>` to see output directly.
 
-ifdef MKF_ACTIVE
+.PHONY: help setup clean build install-system publish install-hooks install-scalene-hooks \
+	test test-q test-one test-uat screenshots demo via_index
 
-# ── Re-invocation Layer ──────────────────────────────────────────────────────
-# Included by mkf.py to run the actual target.
-
-# Include the project's original targets.
-# We try Makefile.prj (legacy) and Makefile (if we are running as Makefile.bob).
-ifneq ($(firstword $(MAKEFILE_LIST)),Makefile)
--include Makefile
-endif
--include Makefile.prj
-
-# ── Bob Protocol Targets ─────────────────────────────────────────────────────
-
-.PHONY: tldr test test-q test-one test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
-
-tldr: ## Show TL;DR summaries from all project files (quick orientation for agents)
-	@rg --no-heading "TL;DR:" --glob "*.md" -N | sed 's|^\./||' | sort
+help: ## Show available make targets
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Create project venv and install dependencies (editable install)
 	@python3 -m venv .venv
 	@./.venv/bin/pip install -q --upgrade pip
 	@./.venv/bin/pip install -q -e ".[monitor,dev]"
-	@$(MAKE) MKF_ACTIVE=1 install-hooks
+	@$(MAKE) --no-print-directory install-hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
 
-clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info) — leaves build/ (mkf's own logs) alone
+clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info) — leaves build/ alone
 	@rm -rf .venv dist src/*.egg-info *.egg-info
 	@echo "Removed .venv, dist/, and egg-info."
 
@@ -44,14 +32,10 @@ install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the mon
 	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — install it first (e.g. 'apt install pipx' or 'python3 -m pip install --user pipx')" >&2; exit 1; }
 	@pipx install --force ".[monitor]"
 
-# publish is defined only in the else block below (bypass target, like demo/
-# help/chat) — it shells out to twine, which prompts for credentials
-# interactively; routing that through mkf's output capture would break the
-# prompt.
-
-judge-trace: ## Annotated tool-use trace from real Claude Code JSONL sessions (usage: make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md])
-	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
-	@.venv/bin/python agents/tools/trace_annotate.py $(if $(DATE),--date "$(DATE)") $(if $(FORMAT),--format "$(FORMAT)")
+publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI credentials/token) — interactive, run with plain make
+	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
+	@.venv/bin/pip install -q twine
+	@.venv/bin/python -m twine upload dist/*
 
 install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@chmod +x .githooks/*
@@ -89,249 +73,9 @@ screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_G
 	@if [ -x .venv/bin/python ]; then .venv/bin/python docs/generate_monitor_screenshots.py; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
-via_index: ## Build the via index required by the via MCP server
-	@via index "$(CURDIR)"
-
-install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make install_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Installing BobProtocol into $(TARGET)..."
-	@rsync -a \
-		--exclude='*.docs/context.md' \
-		--exclude='*.docs/current_task.md' \
-		--exclude='*.docs/next_steps.md' \
-		--exclude='CHAT.md' \
-		agents/ $(TARGET)/agents/
-	@echo "Initialising agent state files..."
-	@for dir in $(TARGET)/agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
-	done
-	@cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
-	@echo "Installing Makefile into $(TARGET)..."
-	@if [ -f "$(TARGET)/Makefile" ]; then \
-		if grep -q "MKF_ACTIVE" "$(TARGET)/Makefile"; then \
-			cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-		else \
-			cp Makefile "$(TARGET)/Makefile.bob" && echo "  Installed: Makefile.bob"; \
-			if ! grep -q "include Makefile.bob" "$(TARGET)/Makefile"; then \
-				echo "include Makefile.bob" | cat - "$(TARGET)/Makefile" > "$(TARGET)/Makefile.tmp" && mv "$(TARGET)/Makefile.tmp" "$(TARGET)/Makefile"; \
-				echo "  Modified: Makefile (included Makefile.bob at top)"; \
-			fi; \
-		fi; \
-	else \
-		cp Makefile "$(TARGET)/Makefile" && echo "  Installed: Makefile (bob-managed)"; \
-	fi
-	@echo "Setting up Claude skill links..."
-	@python $(TARGET)/agents/tools/setup_agent_links.py
-	@echo ""
-	@echo "Done. BobProtocol installed in $(TARGET)"
-	@echo "Run 'make tldr' inside $(TARGET) to verify."
-
-update_bob: ## Update bob-protocol personas, skills, tools, and templates in a target project (usage: make update_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make update_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Updating BobProtocol in $(TARGET)..."
-	@rsync -a agents/skills/ $(TARGET)/agents/skills/
-	@rsync -a agents/tools/  $(TARGET)/agents/tools/
-	@rsync -a agents/templates/ $(TARGET)/agents/templates/
-	@for f in agents/*.docs/SKILL.md; do \
-		mkdir -p "$(TARGET)/$$(dirname $$f)"; \
-		rsync -a "$$f" "$(TARGET)/$$f"; \
-	done
-	@echo "Ensuring agent state files are initialised..."
-	@for dir in $(TARGET)/agents/*.docs; do \
-		[ -f $$dir/context.md ]      || cp agents/templates/_template_context.md      $$dir/context.md; \
-		[ -f $$dir/current_task.md ] || cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		[ -f $$dir/next_steps.md ]   || cp agents/templates/_template_next_steps.md   $$dir/next_steps.md; \
-	done
-	@[ -f $(TARGET)/agents/CHAT.md ] || cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
-	@echo "Updating Makefile in $(TARGET)..."
-	@if [ -f "$(TARGET)/Makefile" ]; then \
-		if grep -q "MKF_ACTIVE" "$(TARGET)/Makefile"; then \
-			cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-		else \
-			cp Makefile "$(TARGET)/Makefile.bob" && echo "  Updated: Makefile.bob"; \
-			if ! grep -q "include Makefile.bob" "$(TARGET)/Makefile"; then \
-				echo "include Makefile.bob" | cat - "$(TARGET)/Makefile" > "$(TARGET)/Makefile.tmp" && mv "$(TARGET)/Makefile.tmp" "$(TARGET)/Makefile"; \
-				echo "  Modified: Makefile (included Makefile.bob at top)"; \
-			fi; \
-		fi; \
-	else \
-		cp Makefile "$(TARGET)/Makefile" && echo "  Updated: Makefile (bob-managed)"; \
-	fi
-	@echo "Updating Claude skill links..."
-	@python $(TARGET)/agents/tools/setup_agent_links.py
-	@echo ""
-	@echo "Done. BobProtocol updated in $(TARGET)"
-
-pull_bob: ## Pull bob-protocol personas, skills, tools, and templates from another project (usage: make pull_bob SRC=/path/to/project)
-	@[ -n "$(SRC)" ] || { echo "Usage: make pull_bob SRC=/path/to/project"; exit 1; }
-	@[ -d "$(SRC)" ] || { echo "Error: $(SRC) does not exist"; exit 1; }
-	@echo "Pulling BobProtocol updates from $(SRC)..."
-	@rsync -a --existing $(SRC)/agents/skills/    agents/skills/
-	@rsync -a --existing $(SRC)/agents/tools/     agents/tools/
-	@rsync -a --existing $(SRC)/agents/templates/ agents/templates/
-	@for f in agents/*.docs/SKILL.md; do \
-		[ -f "$(SRC)/$$f" ] && rsync -a "$(SRC)/$$f" "$$f" || true; \
-	done
-	@echo ""
-	@echo "Done. BobProtocol pulled from $(SRC)"
-
-clean_bob: ## Remove generated symlinks and reset agent memory/state files
-	@echo "Removing generated symlinks..."
-	@python agents/tools/teardown_agent_links.py --keep-mcp
-	@echo "Resetting agent state files to templates..."
-	@for dir in agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
-	done
-	@cp agents/templates/_template_CHAT.md agents/CHAT.md
-	@echo "Done. Environment cleaned and state reset."
-
-diff_bob: ## Compare bob-protocol personas, skills, tools, and templates with a target project (usage: make diff_bob TARGET=/path/to/project)
-	@[ -n "$(TARGET)" ] || { echo "Usage: make diff_bob TARGET=/path/to/project"; exit 1; }
-	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
-	@echo "Diffing BobProtocol: $(CURDIR) vs $(TARGET)"
-	@echo ""
-	@for dir in agents/skills agents/tools agents/templates; do \
-		if [ -d "$(TARGET)/$$dir" ]; then \
-			diff -rq "$$dir" "$(TARGET)/$$dir"; \
-		else \
-			echo "Only in this project: $$dir/"; \
-		fi; \
-	done || true
-	@for f in agents/*.docs/SKILL.md; do \
-		tgt="$(TARGET)/$$f"; \
-		if [ -f "$$tgt" ]; then \
-			diff -q "$$f" "$$tgt" || true; \
-		else \
-			echo "Only in this project: $$f"; \
-		fi; \
-	done
-	@echo ""
-	@echo "Done."
-
-else
-
-# ── Interception layer ───────────────────────────────────────────────────────
-# All targets except help, chat, install_bob, update_bob, pull_bob, and clean_bob route through mkf (agents/tools/mkf.py).
-# mkf captures output to build/build.out, posts status to CHAT.md,
-# and prints the last 10 lines on exit.
-#
-# Verbosity (set V=):
-#   make tldr              silent  — exit code only, full log in build/build.out
-#   make tldr V=-v         stderr to terminal
-#   make tldr V=-vv        stderr + filtered failures to terminal
-#   make tldr V=-vvv       stderr + full stdout to terminal
-
-.PHONY: help chat demo test test-q test-uat screenshots setup clean build publish install-hooks install-scalene-hooks install-system via_index judge-trace install_bob update_bob pull_bob clean_bob diff_bob
-
-install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
-
-update_bob: ## Update agents and skills in a project, preserving state (usage: make update_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 update_bob TARGET="$(TARGET)"
-
-pull_bob: ## Pull updates from another project using BobProtocol, preserving local state (usage: make pull_bob SRC=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 pull_bob SRC="$(SRC)"
-
-clean_bob: ## Remove generated symlinks and reset agent memory/state files
-	@$(MAKE) MKF_ACTIVE=1 clean_bob
-
-diff_bob: ## Compare bob-protocol files with a target project, excluding state files (usage: make diff_bob TARGET=/path/to/project)
-	@$(MAKE) MKF_ACTIVE=1 diff_bob TARGET="$(TARGET)"
-
-help: ## Show available make targets
-	@echo ""
-	@echo "  Build output filter (mkf) is active. All targets route through agents/tools/mkf.py."
-	@echo "  Full log: build/build.out   Status posted to: agents/CHAT.md"
-	@echo ""
-	@echo "  Verbosity: append V=-v | V=-vv | V=-vvv to any target"
-	@echo "    (none)   silent — exit code only"
-	@echo "    -v       stderr to terminal"
-	@echo "    -vv      stderr + failures/errors to terminal"
-	@echo "    -vvv     stderr + full stdout to terminal"
-	@echo ""
-	@echo "  Examples:"
-	@echo "    make pull_bob          # silent, log → build/build.out"
-	@echo "    make update_bob V=-vvv # full output"
-	@echo ""
-	@echo "  Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "    \033[36m%-22s\033[0m %s\n", $$1, $$2}'
-	@if [ -f Makefile.prj ]; then \
-		echo ""; \
-		echo "  Project targets (Makefile.prj):"; \
-		grep -E '^[a-zA-Z][a-zA-Z0-9_-]*:' Makefile.prj | \
-		awk 'BEGIN {FS = ":.*?## "}; /##/ {printf "    \033[36m%-22s\033[0m %s\n", $$1, $$2} !/##/ {split($$0,a,":"); printf "    \033[36m%-22s\033[0m\n", a[1]}'; \
-	fi
-	@echo ""
-
-chat: ## Post a message to CHAT.md (usage: make chat MSG="<msg>" [PERSONA="<name>"] [CMD="<cmd>"] [TO="<recipient>"])
-	@[ -n "$(MSG)" ] || { echo "Usage: make chat MSG=\"<message>\" [PERSONA=\"<name>\"] [CMD=\"<cmd>\"] [TO=\"<recipient>\"]"; exit 1; }
-	@python3 agents/tools/chat.py "$(MSG)" \
-		$(if $(PERSONA),--persona "$(PERSONA)") \
-		$(if $(CMD),--cmd "$(CMD)") \
-		$(if $(TO),--to "$(TO)")
-
 demo: ## Run the Scalene demo - watch it mask a real exfiltration attempt (STORY-903)
 	@if [ -x .venv/bin/python ]; then .venv/bin/python demo/run_demo.py; \
 	else echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
 
-test: ## Run unit tests
-	@./agents/tools/mkf.py $(V) $@
-
-test-q: ## Run unit tests with quiet, concise output (E12/STORY-1202) — same suite as 'test', reduces logging/asyncio noise, not perfectly silent
-	@./agents/tools/mkf.py $(V) $@
-
-test-one: ## Run one test module only, for validating a focused change (usage: make test-one T=test_oloy)
-	@./agents/tools/mkf.py $(V) $@ T=$(T)
-
-test-uat: ## Run the full suite PLUS the full end-to-end sprint-close journey tests (tests/uat_test_*.py) -- use for *qa uat / sprint-close sign-off only
-	@./agents/tools/mkf.py $(V) $@
-
-screenshots: ## Regenerate scg monitor's real TUI screenshots for docs/MONITOR_GUIDE.md (docs/generate_monitor_screenshots.py)
-	@./agents/tools/mkf.py $(V) $@
-
-setup: ## Create project venv and install dependencies (editable install)
-	@./agents/tools/mkf.py $(V) $@
-
-clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info)
-	@./agents/tools/mkf.py $(V) $@
-
-build: ## Build sdist + wheel into dist/ for distribution (usage: make setup first)
-	@./agents/tools/mkf.py $(V) $@
-
-install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the monitor TUI (usage: make install-system)
-	@./agents/tools/mkf.py $(V) $@
-
-publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI credentials/token) — interactive, bypasses mkf
-	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
-	@.venv/bin/pip install -q twine
-	@.venv/bin/python -m twine upload dist/*
-
-install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
-	@./agents/tools/mkf.py $(V) $@
-
-install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json PreToolUse/PostToolUse hooks (default TARGET=.)
-	@./agents/tools/mkf.py $(V) $@ TARGET="$(TARGET)"
-
 via_index: ## Build the via index required by the via MCP server
-	@./agents/tools/mkf.py $(V) $@
-
-judge-trace: ## Annotated tool-use trace from real Claude Code JSONL sessions (usage: make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md])
-	@./agents/tools/mkf.py $(V) $@ DATE="$(DATE)" FORMAT="$(FORMAT)"
-
-# Interception logic:
-# If we are the entry point (direct make call), intercept everything.
-# If we are included, we only provide targets, unless specified.
-ifeq ($(MKF_ACTIVE),)
-ifdef _IS_BOB_ENTRY
-%:
-	@./agents/tools/mkf.py $(V) $@
-endif
-endif
-
-endif
+	@via index "$(CURDIR)"

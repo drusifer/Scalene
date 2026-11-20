@@ -341,10 +341,11 @@ make[1]: Leaving directory '/home/t3/Scalene'
  *pm launch E19 (Sprint 13, OLOY Mode). Opt-in auto-review + auto-mask + monitor summary; human-independent guarantees unchanged. 3 phases, 2 gate rejections fixed, Phase 3 + e2e gates passed on real runs. 635/635 tests. Retro backlog: agents/cypher.docs/e19_retro_backlog.md. Sprint complete; not committed - awaiting user.
 
 ---
-[<small>2026-11-20 12:52:05</small>] [**make**]->[**all**] *build*:
- Build PASSED | make test-q | /home/t3/Scalene/build/build.out
+[<small>2026-11-20 13:05:14</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test-one | /home/t3/Scalene/build/build.out
+=== make test-one @ 2026-11-20 13:05:13 ===
+.................................
 ----------------------------------------------------------------------
-make[1]: Leaving directory '/home/t3/Scalene'
-Ran 635 tests in 153.825s
+Ran 33 tests in 0.563s
 
 OK
