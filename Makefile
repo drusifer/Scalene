@@ -5,7 +5,7 @@
 # target through `bobp make <target>` for captured output (build/build.out)
 # and a CHAT.md status post, or plain `make <target>` to see output directly.
 
-.PHONY: help setup clean build install-system publish install-hooks install-scalene-hooks \
+.PHONY: help setup clean build install-system publish install-hooks install-gitleaks install-scalene-hooks \
 	test test-q test-one test-uat screenshots demo via_index
 
 help: ## Show available make targets
@@ -15,6 +15,7 @@ setup: ## Create project venv and install dependencies (editable install)
 	@python3 -m venv .venv
 	@./.venv/bin/pip install -q --upgrade pip
 	@./.venv/bin/pip install -q -e ".[monitor,dev]"
+	@$(MAKE) --no-print-directory install-gitleaks
 	@$(MAKE) --no-print-directory install-hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
 
@@ -37,13 +38,16 @@ publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI c
 	@.venv/bin/pip install -q twine
 	@.venv/bin/python -m twine upload dist/*
 
+install-gitleaks: ## Install a pinned, checksum-verified gitleaks into .venv/bin for the pre-commit secret scan (no sudo; GITLEAKS_VERSION=x.y.z to override)
+	@./scripts/install-gitleaks.sh .venv/bin
+
 install-hooks: ## Wire up tracked git hooks (.githooks/), incl. gitleaks pre-commit secret scan
 	@chmod +x .githooks/*
 	@git config core.hooksPath .githooks
-	@if command -v gitleaks >/dev/null 2>&1; then \
-		echo "git hooks installed (core.hooksPath=.githooks); gitleaks found on PATH."; \
+	@if [ -x .venv/bin/gitleaks ] || command -v gitleaks >/dev/null 2>&1; then \
+		echo "git hooks installed (core.hooksPath=.githooks); gitleaks found."; \
 	else \
-		echo "git hooks installed (core.hooksPath=.githooks); WARNING: gitleaks not found on PATH — pre-commit secret scan will be skipped until installed (e.g. 'apt install gitleaks')."; \
+		echo "git hooks installed (core.hooksPath=.githooks); WARNING: gitleaks not found — pre-commit secret scan will be skipped until you run 'make install-gitleaks'."; \
 	fi
 
 install-scalene-hooks: ## Wire scalene-guard into TARGET's .claude/settings.json PreToolUse/PostToolUse hooks (default TARGET=.)

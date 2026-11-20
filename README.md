@@ -31,7 +31,7 @@ make setup   # create venv, install scalene-guard + dev dependencies, install gi
 make test    # run the test suite
 ```
 
-`make setup` also wires up this repo's tracked git hooks (`.githooks/`, via `core.hooksPath`), including a pre-commit [gitleaks](https://github.com/gitleaks/gitleaks) scan that blocks commits containing secrets. Install `gitleaks` (e.g. `apt install gitleaks`) for it to take effect — if it's missing, the hook warns and allows the commit rather than blocking all commits repo-wide.
+`make setup` also wires up this repo's tracked git hooks (`.githooks/`, via `core.hooksPath`), including a pre-commit [gitleaks](https://github.com/gitleaks/gitleaks) scan that blocks commits containing secrets. It installs a pinned, checksum-verified gitleaks into `.venv/bin` (`make install-gitleaks`, no sudo needed, so no system package required). A gitleaks already on your `PATH` is used as a fallback. If neither is present, the hook warns and allows the commit rather than blocking all commits repo-wide.
 
 See [docs/SETUP.md](docs/SETUP.md) for hook registration and onboarding CLI usage.
 
