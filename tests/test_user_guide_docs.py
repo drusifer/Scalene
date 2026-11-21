@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scalene.cli import main as guard_main
 from scalene.install_hooks import main as install_hooks_main
+from scalene.monitor import main as monitor_main
 from scalene.onboard import main as onboard_main
 
 USER_GUIDE_DOC = Path(__file__).resolve().parent.parent / "docs" / "USER_GUIDE.md"
@@ -75,6 +76,12 @@ class TestUserGuideDocs(unittest.TestCase):
         real_help = _help_output(install_hooks_main)
         self.assertIn("--settings-path", real_help)
         self.assertIn("--settings-path", self.text)
+
+    def test_monitor_flags_match_real_help_output(self):
+        real_help = _help_output(monitor_main)
+        for flag in ("--policy-path", "--cache-path", "--state-dir", "--audit-log-path"):
+            self.assertIn(flag, real_help)
+            self.assertIn(flag, self.text)
 
 
 if __name__ == "__main__":

@@ -5,38 +5,78 @@
 # target through `bobp make <target>` for captured output (build/build.out)
 # and a CHAT.md status post, or plain `make <target>` to see output directly.
 
-.PHONY: help setup clean build install-system publish install-hooks install-gitleaks install-scalene-hooks \
+.PHONY: help install setup clean distclean build check-dist release-check publish \
+	install-system install-hooks install-gitleaks install-scalene-hooks secrets \
 	test test-q test-one test-uat screenshots demo via_index
 
 help: ## Show available make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Create project venv and install dependencies (editable install)
-	@python3 -m venv .venv
+install: ## Create .venv (if absent) and install scalene-guard + [monitor,dev] extras (idempotent)
+	@if [ ! -x .venv/bin/python ]; then python3 -m venv .venv; fi
 	@./.venv/bin/pip install -q --upgrade pip
 	@./.venv/bin/pip install -q -e ".[monitor,dev]"
-	@$(MAKE) --no-print-directory install-gitleaks
-	@$(MAKE) --no-print-directory install-hooks
+
+setup: install install-gitleaks install-hooks ## Full local contributor setup: venv, deps, pinned gitleaks, and git hooks
 	@echo "venv ready at .venv (make test/run use it automatically)"
 
-clean: ## Remove the venv and packaging artifacts (.venv, dist/, *.egg-info) — leaves build/ alone
-	@rm -rf .venv dist src/*.egg-info *.egg-info
-	@echo "Removed .venv, dist/, and egg-info."
+clean: ## Remove packaging artifacts (dist/, *.egg-info) — leaves .venv and build/ alone
+	@rm -rf dist src/*.egg-info *.egg-info
+	@echo "Removed dist/ and egg-info."
 
-build: ## Build sdist + wheel into dist/ for distribution (usage: make setup first)
-	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make setup' first" >&2; exit 1; fi
-	@.venv/bin/pip install -q build
+distclean: clean ## Remove packaging artifacts AND the local .venv
+	@rm -rf .venv
+	@echo "Removed .venv."
+
+build: ## Build sdist + wheel into dist/ for distribution (run 'make install' first)
+	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make install' first" >&2; exit 1; fi
 	@rm -rf dist
 	@.venv/bin/python -m build
+
+check-dist: ## Validate dist/* metadata with twine, check sdist hygiene, and smoke-test the wheel in a clean venv
+	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
+	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make install' first" >&2; exit 1; fi
+	@.venv/bin/python -m twine check --strict dist/*
+	@.venv/bin/python -c 'import glob, sys, tarfile; \
+		sdists = glob.glob("dist/*.tar.gz"); \
+		assert len(sdists) == 1, f"expected 1 sdist, got {sdists}"; \
+		bad = [m for m in tarfile.open(sdists[0]).getnames() if "/.scalene" in m or "/agents/" in m or "/.venv" in m]; \
+		assert not bad, f"unwanted files in sdist: {bad}"; \
+		print(f"sdist hygiene OK ({sdists[0]})")'
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		python3 -m venv "$$tmp/venv" && \
+		"$$tmp/venv/bin/pip" install -q dist/*.whl && \
+		"$$tmp/venv/bin/scalene-guard" --help >/dev/null && \
+		"$$tmp/venv/bin/scg" --help >/dev/null && \
+		"$$tmp/venv/bin/scg" onboard --help >/dev/null && \
+		"$$tmp/venv/bin/scg" install-hooks --help >/dev/null && \
+		"$$tmp/venv/bin/scg" monitor --help >/dev/null && \
+		(cd "$$tmp" && echo '{"hook_event_name":"PreToolUse","session_id":"smoke","tool_name":"Read","tool_input":{"file_path":"README.md"}}' | "$$tmp/venv/bin/scalene-guard" | grep -q '"permissionDecision": "allow"') && \
+		echo "wheel smoke test OK (scalene-guard + scg)"
+
+release-check: ## Verify TAG (e.g. TAG=v0.1.0) matches [project].version in pyproject.toml
+	@if [ -z "$(TAG)" ]; then echo "usage: make release-check TAG=vX.Y.Z" >&2; exit 2; fi
+	@python3 -c 'import sys, tomllib; \
+		ver = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]; \
+		tag = sys.argv[1]; \
+		expected = f"v{ver}"; \
+		assert tag == expected, f"Tag {tag!r} does not match pyproject.toml version {ver!r} (expected {expected!r})"; \
+		print(f"Tag {tag} matches pyproject.toml version {ver}")' "$(TAG)"
 
 install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the monitor TUI (usage: make install-system)
 	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — install it first (e.g. 'apt install pipx' or 'python3 -m pip install --user pipx')" >&2; exit 1; }
 	@pipx install --force ".[monitor]"
 
-publish: ## Upload dist/* to PyPI (run 'make build' first; needs your own PyPI credentials/token) — interactive, run with plain make
+publish: ## Manual fallback: upload dist/* to PyPI interactively (official releases publish via GitHub Release OIDC)
 	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
-	@.venv/bin/pip install -q twine
+	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make install' first" >&2; exit 1; fi
 	@.venv/bin/python -m twine upload dist/*
+
+secrets: ## Scan git history for leaked secrets using gitleaks (git-aware; requires make install-gitleaks)
+	@if [ -x .venv/bin/gitleaks ]; then gl=".venv/bin/gitleaks"; \
+	elif command -v gitleaks >/dev/null 2>&1; then gl="$$(command -v gitleaks)"; \
+	else echo "gitleaks not found — run 'make install-gitleaks' first" >&2; exit 1; fi; \
+	"$$gl" detect --source . --redact
 
 install-gitleaks: ## Install a pinned, checksum-verified gitleaks into .venv/bin for the pre-commit secret scan (no sudo; GITLEAKS_VERSION=x.y.z to override)
 	@./scripts/install-gitleaks.sh .venv/bin

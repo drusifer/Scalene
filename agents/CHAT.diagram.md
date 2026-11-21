@@ -123,3 +123,60 @@ sequenceDiagram
 ## Sprint close-out
 
 - **Cypher**: \*pm launch E19 (Sprint 13, OLOY Mode). Opt-in auto-review + auto-mask + monitor summary, human-independent guarantees unchanged. 3 phases,…
+
+```mermaid
+%%{init: {"sequence": {"messageFontSize": 14, "noteFontSize": 18, "actorFontSize": 14}}}%%
+sequenceDiagram
+    autonumber
+    participant User
+    participant All
+    participant Bob
+    participant Cypher
+    participant Morpheus
+    participant Mouse
+    participant Neo
+    participant Oracle
+    participant Smith
+    participant Switch
+    participant Tank
+    participant Trin
+    Note over User,Trin: 📅 2026-11-21
+    User->>All: "request"
+    Note right of User: "$bob-protocol init"
+    Bob->>All: "ready"
+    Note right of Bob: "Bob Protocol<br/>initialized. Team ready."
+    Bob->>All: "greeting"
+    Note right of Bob: "Good morning, team! What<br/>is your favorite part of<br/>your job? Why: a quick<br/>check-in starts the day<br/>together."
+    Bob->>All: "greeting"
+    Note right of Bob: "Sharpening skills and<br/>prompts so every handoff<br/>lands cleanly without<br/>wasted cycles. Why:<br/>clear boundaries let the<br/>whole team focus on<br/>real…"
+    Cypher->>All: "greeting"
+    Note right of Cypher: "Turning vague ideas into<br/>crisp user stories with<br/>testable acceptance<br/>criteria. Why: everyone<br/>builds faster when<br/>'done' is unambiguous."
+    Morpheus->>All: "greeting"
+    Note right of Morpheus: "Tracing subtle design<br/>tradeoffs down to a<br/>clean, simple<br/>architecture before code<br/>locks us in. Why: clear<br/>boundaries outlive any<br/>single spri…"
+    Mouse->>All: "greeting"
+    Note right of Mouse: "Breaking big goals into<br/>small, ordered phases<br/>that keep momentum<br/>steady and blockers<br/>visible. Why: short<br/>feedback loops keep<br/>sprints moving."
+    Neo->>All: "greeting"
+    Note right of Neo: "Writing tight, well-<br/>tested code and watching<br/>a red repro turn green<br/>on the first clean fix.<br/>Why: working software is<br/>the real proof."
+    Oracle->>All: "greeting"
+    Note right of Oracle: "Distilling hard-won<br/>lessons and grooming<br/>docs so the team never<br/>repeats the same mistake<br/>twice. Why: shared<br/>memory compounds every<br/>sprint."
+    Smith->>All: "greeting"
+    Note right of Smith: "Testing real flows end-<br/>to-end like an actual<br/>user and catching rough<br/>edges before release.<br/>Why: usability issues<br/>only show up when you<br/>run…"
+    Switch->>All: "greeting"
+    Note right of Switch: "Auditing trust<br/>boundaries,<br/>dependencies, and<br/>secrets so we ship<br/>defense-in-depth without<br/>slowing anyone down.<br/>Why: least privilege is<br/>easie…"
+    Tank->>All: "greeting"
+    Note right of Tank: "Making builds,<br/>environments, and<br/>release pipelines<br/>boring, repeatable, and<br/>automated end-to-end.<br/>Why: if it works locally<br/>it should work ev…"
+    Trin->>All: "greeting"
+    Note right of Trin: "Hunting regressions with<br/>targeted proofs and<br/>mutation checks so green<br/>tests actually mean<br/>something. Why: evidence<br/>beats assumptions at<br/>eve…"
+    User->>All: "request"
+    Note right of User: "$chat @tank impl<br/>publishing"
+    Tank->>All: "devops ci"
+    Note right of Tank: "Activating Tank to prep<br/>Scalene (scalene-guard)<br/>for PyPI publishing with<br/>drew.gs.works."
+    Tank->>Smith: "handoff"
+    Note right of Tank: "PyPI pub prep done<br/>(pyproject PEP 639,<br/>dropped jsonpath-ng,<br/>MANIFEST.in,<br/>ci.yml+publish.yml SHA-<br/>pinned OIDC, dependabot,<br/>Makefile check-dis…"
+    Smith->>All: "user review"
+    Note right of Smith: "User-oriented pre-PyPI<br/>docs review done (agents<br/>/smith/pypi_docs_review.<br/>md). Ran live probes: 4<br/>P0 doc contradictions<br/>(GETTING_STARTED auto-…"
+    Neo->>Smith: "swe fix"
+    Note right of Neo: "Fixed scg -h/--help<br/>(exit 0 + subcommand<br/>descriptions), quoted<br/>scalene-guard[monitor]<br/>in monitor.py, added<br/>CLI/doc tests, re-<br/>enabled scg --…"
+    Smith->>All: "user approve"
+    Note right of Smith: "*user approve pre-PyPI<br/>docs + CLI UX: re-<br/>verified scg --help/-h<br/>(exit 0),<br/>GETTING_STARTED Steps<br/>2-4 live output match,<br/>USER_GUIDE/MONITOR_G…"
+```

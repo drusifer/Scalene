@@ -42,7 +42,7 @@ def main(argv: list[str]) -> int:
         from .monitor_app import MonitorApp
     except ImportError:
         print(
-            "scg monitor requires the optional 'monitor' extra: pip install scalene-guard[monitor]",
+            'scg monitor requires the optional \'monitor\' extra: pip install "scalene-guard[monitor]"',
             file=sys.stderr,
         )
         return 1

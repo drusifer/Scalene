@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
@@ -455,6 +456,16 @@ class TestScaleneMainCli(unittest.TestCase):
             exit_code = scalene_main(["monitor"])
         mock_monitor.assert_called_once_with([])
         self.assertEqual(exit_code, 0)
+
+    def test_help_flags_print_subcommands_and_exit_zero(self):
+        for flag in ("--help", "-h"):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = scalene_main([flag])
+            self.assertEqual(exit_code, 0)
+            output = buf.getvalue()
+            for sub in ("install-hooks", "onboard", "monitor"):
+                self.assertIn(sub, output)
 
     def test_unknown_subcommand_returns_error(self):
         exit_code = scalene_main(["bogus"])

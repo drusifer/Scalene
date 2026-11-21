@@ -1,0 +1,4 @@
+include LICENSE README.md pyproject.toml
+recursive-include src/scalene *.py
+recursive-include tests *.py
+global-exclude *.py[cod]

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,20 +8,35 @@ version = "0.1.0"
 description = "Provenance-based DLP layer for AI coding agents"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "drusifer" },
 ]
+keywords = [
+    "ai",
+    "agents",
+    "claude-code",
+    "dlp",
+    "hooks",
+    "mcp",
+    "provenance",
+    "security",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Environment :: Console",
     "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
 ]
 dependencies = [
     "pyyaml>=6.0",
-    "jsonpath-ng>=1.6",
     "filelock>=3.13",
     "detect-secrets>=1.5.0",
     # FileScanner.match() (scanner.py) matches PolicyRule.pattern as
@@ -33,15 +48,21 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/drusifer/Scalene"
 Repository = "https://github.com/drusifer/Scalene"
+Documentation = "https://github.com/drusifer/Scalene/blob/main/docs/USER_GUIDE.md"
+Issues = "https://github.com/drusifer/Scalene/issues"
 
 [project.optional-dependencies]
 # docs/ARCHITECTURE.md sec 11.1: the `scg monitor` TUI's dependency, kept
 # out of the hard `dependencies` list so the hot-path hook adapter
 # (`scalene-guard`) never imports a TUI framework it doesn't use.
 monitor = ["textual>=8.0"]
-# Agent tooling only (agents/tools/trace_annotate.py) — never imported by
-# src/scalene, kept out of the shipped package's dependency footprint.
-dev = ["jinja2>=3.0"]
+# Packaging/verification tools and agent tooling (agents/tools/trace_annotate.py)
+# — never imported by src/scalene, kept out of the shipped package's runtime footprint.
+dev = [
+    "build>=1.2",
+    "jinja2>=3.0",
+    "twine>=6.0",
+]
 
 [project.scripts]
 # scalene-guard: the hook binary Claude Code invokes automatically.

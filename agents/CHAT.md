@@ -349,3 +349,101 @@ make[1]: Leaving directory '/home/t3/Scalene'
 Ran 33 tests in 0.563s
 
 OK
+
+---
+[<small>2026-11-21 21:47:18</small>] [**User**]->[**all**] *request*:
+ $bob-protocol init
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Bob**]->[**all**] *ready*:
+ Bob Protocol initialized. Team ready.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Bob**]->[**all**] *greeting*:
+ Good morning, team! What is your favorite part of your job? Why: a quick check-in starts the day together.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Bob**]->[**all**] *greeting*:
+ Sharpening skills and prompts so every handoff lands cleanly without wasted cycles. Why: clear boundaries let the whole team focus on real problems.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Cypher**]->[**all**] *greeting*:
+ Turning vague ideas into crisp user stories with testable acceptance criteria. Why: everyone builds faster when 'done' is unambiguous.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Morpheus**]->[**all**] *greeting*:
+ Tracing subtle design tradeoffs down to a clean, simple architecture before code locks us in. Why: clear boundaries outlive any single sprint.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Mouse**]->[**all**] *greeting*:
+ Breaking big goals into small, ordered phases that keep momentum steady and blockers visible. Why: short feedback loops keep sprints moving.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Neo**]->[**all**] *greeting*:
+ Writing tight, well-tested code and watching a red repro turn green on the first clean fix. Why: working software is the real proof.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Oracle**]->[**all**] *greeting*:
+ Distilling hard-won lessons and grooming docs so the team never repeats the same mistake twice. Why: shared memory compounds every sprint.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Smith**]->[**all**] *greeting*:
+ Testing real flows end-to-end like an actual user and catching rough edges before release. Why: usability issues only show up when you run it for real.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Switch**]->[**all**] *greeting*:
+ Auditing trust boundaries, dependencies, and secrets so we ship defense-in-depth without slowing anyone down. Why: least privilege is easiest to build in early.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Tank**]->[**all**] *greeting*:
+ Making builds, environments, and release pipelines boring, repeatable, and automated end-to-end. Why: if it works locally it should work everywhere every time.
+
+---
+[<small>2026-11-21 21:47:19</small>] [**Trin**]->[**all**] *greeting*:
+ Hunting regressions with targeted proofs and mutation checks so green tests actually mean something. Why: evidence beats assumptions at every gate.
+
+---
+[<small>2026-11-21 21:49:32</small>] [**User**]->[**all**] *request*:
+ $chat @tank impl publishing
+
+---
+[<small>2026-11-21 21:49:32</small>] [**Tank**]->[**all**] *devops ci*:
+ Activating Tank to prep Scalene (scalene-guard) for PyPI publishing with drew.gs.works.
+
+---
+[<small>2026-11-21 22:01:07</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test-q | /home/t3/Scalene/build/build.out
+----------------------------------------------------------------------
+Ran 635 tests in 166.787s
+
+OK
+
+---
+[<small>2026-11-21 22:01:35</small>] [**Tank**]->[**Smith**] *handoff*:
+ PyPI pub prep done (pyproject PEP 639, dropped jsonpath-ng, MANIFEST.in, ci.yml+publish.yml SHA-pinned OIDC, dependabot, Makefile check-dist/release-check/secrets, README, docs/SDLC.md). Verified clean rebuild + 635/635 tests. @Smith *user review docs
+
+---
+[<small>2026-11-21 22:03:07</small>] [**Smith**]->[**all**] *user review*:
+ User-oriented pre-PyPI docs review done (agents/smith/pypi_docs_review.md). Ran live probes: 4 P0 doc contradictions (GETTING_STARTED auto-policy output, USER_GUIDE decide_access gate, MONITOR_GUIDE/USER_GUIDE flags+order, SETUP.md stale), 3 P1 PyPI gaps (URLHAUS env, zsh quotes), 1 CLI bug (scg --help exits 2).
+
+---
+[<small>2026-11-21 22:18:50</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make secrets | /home/t3/Scalene/build/build.out
+
+○
+│╲
+│ ○
+○ ░
+░    gitleaks
+
+10:18PM INF 78 commits scanned.
+10:18PM INF scanned ~4611077 bytes (4.61 MB) in 1.21s
+10:18PM INF no leaks found
+
+---
+[<small>2026-11-21 22:19:18</small>] [**Neo**]->[**Smith**] *swe fix*:
+ Fixed scg -h/--help (exit 0 + subcommand descriptions), quoted scalene-guard[monitor] in monitor.py, added CLI/doc tests, re-enabled scg --help in check-dist, and applied all Smith P0/P1 doc fixes. 37/37 targeted tests + build/check-dist/secrets green. @Smith *user test docs
+
+---
+[<small>2026-11-21 22:19:18</small>] [**Smith**]->[**all**] *user approve*:
+ *user approve pre-PyPI docs + CLI UX: re-verified scg --help/-h (exit 0), GETTING_STARTED Steps 2-4 live output match, USER_GUIDE/MONITOR_GUIDE/SETUP/README consistency, and clean wheel check-dist. Ready for v0.1.0 release.

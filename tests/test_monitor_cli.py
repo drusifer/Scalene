@@ -22,7 +22,7 @@ class TestMonitorMain(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         printed = "".join(call.args[0] for call in mock_stderr.write.call_args_list)
-        self.assertIn("pip install scalene-guard[monitor]", printed)
+        self.assertIn('pip install "scalene-guard[monitor]"', printed)
 
 
 class TestMonitorMainPathFlags(unittest.TestCase):

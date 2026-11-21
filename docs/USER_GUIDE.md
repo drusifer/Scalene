@@ -92,7 +92,21 @@ Wires `scalene-guard` into `PreToolUse`/`PostToolUse` in `.claude/settings.json`
 
 ### `scg monitor`
 
-Launches a live TUI that revolves around your approval queue: a home screen of pending reviews (oldest first, tracking whichever session is currently active — no session picker), an interactive Verify/Allow/Deny screen with the match-expression fields on top and a live per-target match preview, and a rules screen for viewing and reordering `scalene_policy.yaml`'s real rule precedence. Requires the optional `monitor` extra: `pip install scalene-guard[monitor]` (already included if you used `make setup` in this repo). Takes no flags.
+```
+usage: scg monitor [-h] [--policy-path POLICY_PATH] [--cache-path CACHE_PATH]
+                   [--state-dir STATE_DIR] [--audit-log-path AUDIT_LOG_PATH]
+
+options:
+  -h, --help            show this help message and exit
+  --policy-path POLICY_PATH
+  --cache-path CACHE_PATH
+  --state-dir STATE_DIR
+  --audit-log-path AUDIT_LOG_PATH
+```
+
+Launches a live TUI that revolves around your approval queue: a home screen of pending reviews (**most-recent-first**, tracking whichever session is currently active — no session picker), an interactive Verify/Allow/Deny screen with the match-expression fields on top and a live per-target match preview, and a rules screen for viewing, editing, deleting, and reordering `scalene_policy.yaml`'s real rule precedence. Requires the optional `monitor` extra: `pip install "scalene-guard[monitor]"` (already included if you used `make setup` in this repo).
+
+All four path flags default to the same cwd-relative locations `scalene-guard` uses (`scalene_policy.yaml`, `.scalene/scan_cache.json`, `.scalene/state`, `.scalene/audit.log`). Pass them explicitly if you launch `scg monitor` from a different directory than your agent runs in.
 
 **Full walkthrough with screenshots: [docs/MONITOR_GUIDE.md](MONITOR_GUIDE.md).**
 
@@ -103,17 +117,19 @@ Scalene's core decision (docs/ARCHITECTURE.md §15) is whether a tool call is **
 - **`trust`**: `low` | `med` | `high` (starts `high`).
 - **`sensitivity`**: `public` | `internal` | `restricted` (starts `public`).
 
+On the first call in a project with no `scalene_policy.yaml`, Scalene auto-creates one with a default rule for your project folder (`sensitivity: internal`, `mode: allow`) so ordinary workspace files are classified as internal rather than unrecognized.
+
 For each resource (file path or URL) a call touches:
 
 | Situation | Result |
 |---|---|
-| Matches a rule, cache confirms clean, `mode: allow` | Proceeds. `sensitivity`/`trust` escalate to the rule's declared level if higher than current. Bypasses the block-when-tainted gate below entirely — this is what onboarding + a rule is *for*. |
-| Matches a rule, `mode: allow`, but not yet independently confirmed clean (never scanned, or a scan is still running) | **Proceeds immediately too** — "trust but verify": you already made the trust call by writing the rule, so Scalene doesn't block waiting on the scan. Tags escalate the same way as the row above. A real background scan still runs; if it later comes back bad, your *next* tool call in the same session escalates `trust`/`sensitivity` to their most restrictive levels then (there's no daemon, so "the next call" is the earliest Scalene can notice). |
-| Cache confirms the resource is actually bad (real scan finding), or a matching rule's `mode` isn't `allow` | **Blocked**, unconditionally — a rule can declare intent, but it never overrides a real, validated bad finding. |
+| Cache confirms the resource is actually bad (real scan finding, or hardcoded restricted path like `/etc` / `~/.ssh`), or a matching rule's `mode` isn't `allow` | **Blocked**, unconditionally — a rule can declare intent, but it never overrides a real, validated bad finding. |
+| Matches a rule, cache confirms clean, `mode: allow` | Escalates `sensitivity`/`trust` to the rule's declared levels (if more restrictive), then checks the hard contamination gate: **blocked if the session is now `trust: low` AND `sensitivity: restricted`**; otherwise **proceeds**. (Valid intermediate levels `med` and `internal` are still tracked on the session, but only the `low` + `restricted` combination trips this gate.) |
+| Matches a rule, `mode: allow`, but not yet independently confirmed clean (never scanned, or a scan is still running) | **"Trust but verify"**: escalates tags and applies the same `trust: low` + `sensitivity: restricted` gate immediately without waiting on the scan. A real background scan still runs; if it later comes back bad, your *next* tool call in the same session escalates `trust: low` and `sensitivity: restricted` (there's no daemon, so "the next call" is the earliest Scalene can notice). |
 | No matching rule at all, and the session is still clean (`trust: high`, `sensitivity: public`) | Proceeds — nothing sensitive is at risk yet. Afterward, `trust` drops to `low` (fail-safe: an unrecognized resource could be anything). |
 | No matching rule at all, and the session is already tainted | **Blocked** — no explicit clearance exists for this destination while risk is already present. |
 
-Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session. See `docs/ARCHITECTURE.md` §15.2a for "trust but verify"'s full mechanics and its one honestly-stated limitation (a bad finding on a session's very last call never gets a chance to be noticed).
+Tags persist for the life of the session (most-restrictive-wins if multiple calls touch different classifications) and are only cleared by starting a new session. See `docs/ARCHITECTURE.md` §15.2a–§15.2b for "trust but verify" and the `decide_access()` contamination gate (including the honest limitation that a bad finding on a session's very last call never gets a chance to be noticed).
 
 Clearing a destination is always explicit and validated — one `scg onboard` call, covered above under [`scg onboard`](#scg-onboard), does both halves (a real scan, and declaring what to do with it) together. See [Getting Started](GETTING_STARTED.md) for a full worked example.
 
@@ -156,7 +172,7 @@ The summary only appears once OLOY has decided something in that session, and it
 
 ## Resource verification & the scan cache
 
-Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit):
+Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call actually touches, and looks each one up in a project-wide, time-bounded cache (`.scalene/scan_cache.json`, gitignored — it's runtime state, not something you edit or commit). As a built-in safety floor, `secrets` (`FileScanner`) always treats system credential locations under `/etc` and `~/.ssh` as sensitive/restricted regardless of rules.
 
 | Cache state for a resource | What happens |
 |---|---|
@@ -164,7 +180,7 @@ Each scanner (`secrets`, `reputation`) identifies the file paths and URLs a call
 | Seen recently (within 24h, file unchanged) | Uses the cached, real result directly. |
 | Seen a while ago, or a file's content changed since | Uses the last-known result for this call, and re-scans in the background so the next call reflects reality. |
 
-`scalene_policy.yaml` has no required fields — an empty (or missing) file means nothing has been explicitly claimed, so every unrecognized destination is subject to the block-when-tainted gate. An optional `rules:` list declares explicit, validated trust decisions:
+`scalene_policy.yaml` has no required fields — an empty file means nothing has been explicitly claimed, so every unrecognized destination is subject to the block-when-tainted gate. (When `scalene_policy.yaml` does not exist at all on the first hook invocation, Scalene auto-creates it with a default `project folder default (auto-created)` rule at `sensitivity: internal`, `mode: allow`.) An optional `rules:` list declares explicit, validated trust decisions:
 
 ```yaml
 rules:
@@ -172,6 +188,7 @@ rules:
     pattern: "https://internal\\.example\\.com/.*" # syntax depends on the scanner -- see below
     sensitivity: internal                           # public | internal | restricted
     mode: allow                                     # allow | block
+    trust: high                                     # optional: low | med | high (default: high)
     scanner: reputation                             # optional — inferred otherwise
     description: "Internal wiki — reviewed and trusted"
 ```
@@ -188,6 +205,13 @@ The example above matches a URL, so it's correctly regex — a file-path rule wo
 **Trust vs. sensitivity are independent.** Trust answers "could this source cause the agent to do something malicious" (verified per exact resource — onboarding one path never vouches for a whole host). Sensitivity answers "what's the blast radius if something does go wrong," exactly three levels (`public`/`internal`/`restricted`), set per-rule.
 
 Full field-level class model (`PolicyConfig`, `PolicyRule`, `Scanner`, `TaintState`, `AccessDecision`) is in [docs/ARCHITECTURE.md](ARCHITECTURE.md) §15.
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `SCALENE_OLOY` | Per-process override for `defaults.oloy` in `scalene_policy.yaml`. Accepts `1`/`true`/`on`/`yes` (on) or `0`/`false`/`off`/`no` (off), case-insensitive; invalid values warn in `systemMessage` and defer to the policy file. |
+| `SCALENE_URLHAUS_AUTH_KEY` | Optional free [URLhaus (abuse.ch)](https://auth.abuse.ch/) Auth-Key enabling external URL malware reputation checks alongside Scalene's always-on local URL heuristics. When unset, `URLScanner` degrades cleanly to local heuristics only with no failed outbound requests. |
 
 ## Deployment: keeping the policy file read-only from the agent
 
