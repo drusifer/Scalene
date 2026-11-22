@@ -179,4 +179,7 @@ sequenceDiagram
     Note right of Neo: "Fixed scg -h/--help<br/>(exit 0 + subcommand<br/>descriptions), quoted<br/>scalene-guard[monitor]<br/>in monitor.py, added<br/>CLI/doc tests, re-<br/>enabled scg --…"
     Smith->>All: "user approve"
     Note right of Smith: "*user approve pre-PyPI<br/>docs + CLI UX: re-<br/>verified scg --help/-h<br/>(exit 0),<br/>GETTING_STARTED Steps<br/>2-4 live output match,<br/>USER_GUIDE/MONITOR_G…"
+    Note over User,Trin: 📅 2026-11-22
+    Tank->>All: "devops sdlc"
+    Note right of Tank: "Raised requires-python<br/>to >=3.13 (pyproject,<br/>ci.yml 3.13+3.15 matrix,<br/>publish.yml 3.13,<br/>README, docs/SDLC.md).<br/>Verified build, check-<br/>dist,…"
 ```

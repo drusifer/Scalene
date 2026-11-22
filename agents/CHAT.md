@@ -447,3 +447,14 @@ OK
 ---
 [<small>2026-11-21 22:19:18</small>] [**Smith**]->[**all**] *user approve*:
  *user approve pre-PyPI docs + CLI UX: re-verified scg --help/-h (exit 0), GETTING_STARTED Steps 2-4 live output match, USER_GUIDE/MONITOR_GUIDE/SETUP/README consistency, and clean wheel check-dist. Ready for v0.1.0 release.
+
+---
+[<small>2026-11-22 02:32:52</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make check-dist | /home/t3/Scalene/build/build.out
+Checking dist/scalene_guard-0.1.0.tar.gz: PASSED
+sdist hygiene OK (dist/scalene_guard-0.1.0.tar.gz)
+wheel smoke test OK (scalene-guard + scg)
+
+---
+[<small>2026-11-22 02:36:06</small>] [**Tank**]->[**all**] *devops sdlc*:
+ Raised requires-python to >=3.13 (pyproject, ci.yml 3.13+3.15 matrix, publish.yml 3.13, README, docs/SDLC.md). Verified build, check-dist, and 637/637 tests on Python 3.15.2.

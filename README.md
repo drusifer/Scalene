@@ -6,7 +6,7 @@ Scalene tracks trust and sensitivity during an AI coding agent session and block
 
 ## Install
 
-Requires Python 3.11+.
+Requires Python 3.13+.
 
 ```bash
 # Core hook (`scalene-guard`) and CLI (`scg`)

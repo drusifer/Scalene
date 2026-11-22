@@ -6,7 +6,7 @@ How this project is built, tested, changed, and released — the source of truth
 
 | | Python |
 |---|---|
-| Runtime version | Python 3.11+ (tested on 3.11, 3.12, 3.13) — pinned in `pyproject.toml` (`requires-python = ">=3.11"`) |
+| Runtime version | Python 3.13+ (tested on 3.13 and 3.15) — pinned in `pyproject.toml` (`requires-python = ">=3.13"`) |
 | Manifest | `pyproject.toml` (PEP 621, `setuptools>=77` build backend, `MANIFEST.in` for sdist scoping) |
 | Lockfile | None — project uses stdlib `venv` + `pip` editable installs rather than a locked manager (see Known deviations) |
 | Package manager | `pip` inside `.venv/` |
@@ -25,7 +25,7 @@ make setup
 make test
 ```
 
-Prerequisites not installed by `make setup`: `python3` (>= 3.11 with `venv` module), `git`, `curl`, and `sha256sum`/`shasum` (for `make install-gitleaks`).
+Prerequisites not installed by `make setup`: `python3` (>= 3.13 with `venv` module), `git`, `curl`, and `sha256sum`/`shasum` (for `make install-gitleaks`).
 
 ## 3. Make targets
 
@@ -139,12 +139,12 @@ No PyPI API token is stored in GitHub Secrets. Before the first release:
 Configured in `.github/workflows/` (all actions pinned to full commit SHAs; kept current weekly by `.github/dependabot.yml`):
 
 - **`.github/workflows/ci.yml`** — runs on pushes to `main`, pull requests, and via `workflow_call` from `publish.yml`:
-  - `test`: Python `3.11`, `3.12`, `3.13` matrix running `make install && make test-q`.
-  - `package`: Python `3.12` running `make install && make build && make check-dist`.
+  - `test`: Python `3.13` and `3.15` matrix running `make install && make test-q`.
+  - `package`: Python `3.13` running `make install && make build && make check-dist`.
   - `secrets`: full git history (`fetch-depth: 0`) running `make install-gitleaks && make secrets`.
 - **`.github/workflows/publish.yml`** — runs on GitHub Release `published`:
   - Calls `ci.yml` (`verify` job).
-  - Verifies `make release-check TAG="${{ github.ref_name }}"`, builds and validates `dist/`.
+  - Verifies `make release-check TAG="${{ github.ref_name }}"`, builds and validates `dist/` on Python `3.13`.
   - Publishes `dist/` to PyPI using `pypa/gh-action-pypi-publish` with `id-token: write` inside the `pypi` GitHub Environment.
 
 ## 9. Known deviations
@@ -165,4 +165,4 @@ Run by Tank at sprint close (`*devops sdlc-check`):
 7. All actions in `.github/workflows/*.yml` remain pinned to full commit SHAs with least-privilege `permissions`.
 
 ---
-*Last verified: 2026-11-21 against pre-release PyPI prep (post-b7cfad2) by Tank.*
+*Last verified: 2026-11-22 against Python 3.13+ policy update (post-d94f054) by Tank.*
