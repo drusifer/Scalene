@@ -87,7 +87,7 @@ This document is the project's source of truth for how a change gets from reques
 |---|---|---|---|---|---|
 | Routine | feature, fix, refactor, docs, adding a dependency via section 4 | Cypher story or user request | Trin UAT + Morpheus review (+ Smith gate for UX/docs) | `make test-q`, pre-commit gitleaks | `task.md`, `agents/CHAT.md`, git commit |
 | Mechanism | toolchain, manifest layout, `Makefile` targets, gates, CI, this document | anyone, via `@Tank *devops sdlc` | Tank + user | `make distclean && make setup && make test-q && make build && make check-dist && make secrets` | `docs/SDLC.md`, `agents/CHAT.md` |
-| Release / deploy | version bump, tag `vX.Y.Z`, GitHub Release → PyPI publish | user (or Tank prep) | user (manual GitHub Release + `pypi` environment approval) | CI (`test` matrix + `package` + `secrets`) + `release-check` | git tag `vX.Y.Z`, GitHub Release, PyPI |
+| Release / deploy | version bump, tag `vX.Y.Z` push → PyPI publish | user (or Tank prep) | user (push tag `vX.Y.Z` + `pypi` environment approval) | CI (`test` matrix + `package` + `secrets`) + `release-check` | git tag `vX.Y.Z`, PyPI |
 | Emergency | hotfix outside a sprint | user or Neo | user (may be post-facto) | `make test-q` + `make secrets` at minimum | `agents/CHAT.md`, reviewed at next sprint close |
 
 ### Flow
@@ -116,8 +116,8 @@ This document is the project's source of truth for how a change gets from reques
 - **Release procedure:**
   1. Bump `version` in `pyproject.toml`, ensure `README.md` and docs are current, and run `make build && make check-dist && make secrets`.
   2. Commit and push to `main`; wait for `.github/workflows/ci.yml` to go green.
-  3. Create and push the matching tag `v<version>` (e.g. `git tag -a v0.1.0 -m "Release v0.1.0" && git push origin v0.1.0`) and publish a GitHub Release for that tag.
-  4. Publishing the GitHub Release triggers `.github/workflows/publish.yml`, which re-runs CI, verifies `make release-check`, builds `dist/`, and publishes to PyPI via OIDC Trusted Publishing after the `pypi` environment approval gate.
+  3. Create and push the matching tag `v<version>` (e.g. `git tag -a v0.1.0 -m "Release v0.1.0" && git push origin v0.1.0`).
+  4. Pushing the `v*` tag triggers `.github/workflows/publish.yml`, which re-runs CI, verifies `make release-check`, builds `dist/`, and publishes to PyPI via OIDC Trusted Publishing after the `pypi` environment approval gate.
 
 ### One-time PyPI Trusted Publisher setup (`drew.gs.works`)
 
@@ -142,7 +142,7 @@ Configured in `.github/workflows/` (all actions pinned to full commit SHAs; kept
   - `test`: Python `3.13` and `3.15` matrix running `make install && make test-q`.
   - `package`: Python `3.13` running `make install && make build && make check-dist`.
   - `secrets`: full git history (`fetch-depth: 0`) running `make install-gitleaks && make secrets`.
-- **`.github/workflows/publish.yml`** — runs on GitHub Release `published`:
+- **`.github/workflows/publish.yml`** — runs on `v*` tag pushes:
   - Calls `ci.yml` (`verify` job).
   - Verifies `make release-check TAG="${{ github.ref_name }}"`, builds and validates `dist/` on Python `3.13`.
   - Publishes `dist/` to PyPI using `pypa/gh-action-pypi-publish` with `id-token: write` inside the `pypi` GitHub Environment.
@@ -165,4 +165,4 @@ Run by Tank at sprint close (`*devops sdlc-check`):
 7. All actions in `.github/workflows/*.yml` remain pinned to full commit SHAs with least-privilege `permissions`.
 
 ---
-*Last verified: 2026-11-22 against Python 3.13+ policy update (post-d94f054) by Tank.*
+*Last verified: 2026-11-22 against v*-tag PyPI trigger update (post-e5f53d0) by Tank.*

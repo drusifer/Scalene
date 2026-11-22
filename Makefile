@@ -67,7 +67,7 @@ install-system: ## Install scg/scalene-guard system-wide via pipx, incl. the mon
 	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — install it first (e.g. 'apt install pipx' or 'python3 -m pip install --user pipx')" >&2; exit 1; }
 	@pipx install --force ".[monitor]"
 
-publish: ## Manual fallback: upload dist/* to PyPI interactively (official releases publish via GitHub Release OIDC)
+publish: ## Manual fallback: upload dist/* to PyPI interactively (official releases publish via v* tag push OIDC)
 	@if [ ! -d dist ]; then echo "No dist/ found — run 'make build' first" >&2; exit 1; fi
 	@if [ ! -x .venv/bin/python ]; then echo "No .venv found — run 'make install' first" >&2; exit 1; fi
 	@.venv/bin/python -m twine upload dist/*

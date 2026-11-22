@@ -182,4 +182,6 @@ sequenceDiagram
     Note over User,Trin: 📅 2026-11-22
     Tank->>All: "devops sdlc"
     Note right of Tank: "Raised requires-python<br/>to >=3.13 (pyproject,<br/>ci.yml 3.13+3.15 matrix,<br/>publish.yml 3.13,<br/>README, docs/SDLC.md).<br/>Verified build, check-<br/>dist,…"
+    Tank->>All: "devops ci"
+    Note right of Tank: "Switched publish.yml<br/>trigger to v* tag push<br/>(matching sketch-tastic)<br/>so releases trigger<br/>directly via git SSH<br/>push, updated<br/>docs/SDLC.md an…"
 ```

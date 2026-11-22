@@ -1,12 +1,12 @@
 name: Publish to PyPI
 
-# Triggered when a GitHub Release is published (tag vX.Y.Z must match
-# pyproject.toml [project].version). Authentication uses PyPI OIDC Trusted
-# Publishing for the `drew.gs.works` account — no PyPI API token is stored.
+# Triggered when a version tag (vX.Y.Z) is pushed — must match pyproject.toml
+# [project].version. Authentication uses PyPI OIDC Trusted Publishing for the
+# `drew.gs.works` account — no PyPI API token is stored.
 # Setup details: docs/SDLC.md section 7 & 8.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
 # Least privilege: jobs get read-only contents unless elevated explicitly.
 permissions:

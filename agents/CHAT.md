@@ -458,3 +458,13 @@ wheel smoke test OK (scalene-guard + scg)
 ---
 [<small>2026-11-22 02:36:06</small>] [**Tank**]->[**all**] *devops sdlc*:
  Raised requires-python to >=3.13 (pyproject, ci.yml 3.13+3.15 matrix, publish.yml 3.13, README, docs/SDLC.md). Verified build, check-dist, and 637/637 tests on Python 3.15.2.
+
+---
+[<small>2026-11-22 02:45:46</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make release-check | /home/t3/Scalene/build/build.out
+=== make release-check @ 2026-11-22 02:45:46 ===
+Tag v0.1.0 matches pyproject.toml version 0.1.0
+
+---
+[<small>2026-11-22 02:51:49</small>] [**Tank**]->[**all**] *devops ci*:
+ Switched publish.yml trigger to v* tag push (matching sketch-tastic) so releases trigger directly via git SSH push; updated docs/SDLC.md and Makefile. Re-tagging v0.1.0 now.
